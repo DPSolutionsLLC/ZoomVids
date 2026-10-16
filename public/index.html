@@ -189,6 +189,18 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 @media (max-width: 760px) { .screengrid { grid-template-columns: minmax(0, 1fr); } }
 #screen { width: 100%; aspect-ratio: 16 / 9; max-width: 100%; display: block; border-radius: var(--r); background: #111; }
 .screencap { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.floathead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.screenbox:not(.floating) .floathead { justify-content: flex-end; margin-top: -4px; }
+.screenbox:not(.floating) .floathead .note { display: none; }
+.screenbox.floating { position: fixed; z-index: 50; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); padding: 8px 8px 18px; }
+.screenbox.floating .floathead { cursor: move; touch-action: none; user-select: none; }
+.transport { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-top: 6px; }
+.transport .btnrow { gap: 4px; }
+.speeds .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.floatgrip { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border: 0; background: none; cursor: nwse-resize; touch-action: none; border-radius: 4px; padding: 0; display: grid; place-items: center; }
+.floatgrip i { display: block; width: 10px; height: 10px; border-right: 3px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 0 0 3px 0; }
+.floatgrip:hover i, .floatgrip:focus-visible i { border-color: var(--muted); }
+#speedPill { border: 0; cursor: pointer; font-family: inherit; }
 .opts { display: flex; flex-direction: column; gap: 10px; }
 .opts fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .opts legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 4px; width: 100%; }
@@ -309,6 +321,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
     <div class="deskhead">
       <button class="btn primary" id="playBtn"></button>
       <div class="clock num"><span id="now">0:00</span> <small>of <span id="total">0:00</span></small></div>
+      <button class="pill" id="speedPill" hidden></button>
       <span class="pill" id="status"></span>
       <div class="zoom">
         <span class="note num" id="zoomNote"></span>
@@ -376,9 +389,26 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <section class="stack sec" id="sec-screen">
         <div class="headrow"><h2><button class="sectoggle" data-sec="screen" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>On-screen text</button></h2><span class="note">Used when you export a video</span></div>
         <div class="screengrid">
-          <div>
-            <canvas id="screen" width="960" height="540" aria-label="Preview of the screen with the title showing at this point"></canvas>
-            <div class="screencap note num"><span id="screenAt"></span><span id="screenWhat"></span></div>
+          <div id="screenDock">
+            <div class="screenbox" id="screenBox">
+              <div class="floathead" id="floatHead">
+                <span class="note">Preview</span>
+                <button class="btn small quiet" id="floatBtn" aria-pressed="false">Float</button>
+              </div>
+              <canvas id="screen" width="960" height="540" aria-label="Preview of the screen with the title showing at this point"></canvas>
+              <div class="screencap note num"><span id="screenAt"></span><span id="screenWhat"></span></div>
+              <div class="transport" id="transport" hidden>
+                <div class="btnrow">
+                  <button class="btn small" id="trStart" aria-label="Play from the beginning" title="Play from the beginning"></button>
+                  <button class="btn small" id="trBack" aria-label="Back 15 seconds" title="Back 15 seconds"></button>
+                  <button class="btn small primary" id="trPlay"></button>
+                  <button class="btn small" id="trFwd" aria-label="Forward 15 seconds" title="Forward 15 seconds"></button>
+                </div>
+                <div class="btnrow speeds" role="group" aria-label="Playback speed" id="trSpeeds"></div>
+              </div>
+              <button class="floatgrip" id="floatGrip" hidden aria-label="Drag to resize the preview" title="Drag to resize the preview"><i></i></button>
+            </div>
+            <p class="note" id="dockNote" hidden>The preview is floating. <button class="btn small" id="dockBtn">Put it back</button></p>
           </div>
           <div class="opts">
             <fieldset>
@@ -1250,6 +1280,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var ICON = {
     play: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z"/></svg>',
     stop: '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8"/></svg>',
+    pause: '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="3" height="8"/><rect x="7" y="2" width="3" height="8"/></svg>',
+    back: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2L1 6l5 4zM11 2L6 6l5 4z"/></svg>',
+    fwd: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2l5 4-5 4zM1 2l5 4-5 4z"/></svg>',
+    start: '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="2" width="2" height="8"/><path d="M11 2L4 6l7 4z"/></svg>',
     up: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2l5 7H1z"/></svg>',
     down: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10L1 3h10z"/></svg>',
     folder: '<svg viewBox="0 0 22 18" aria-hidden="true"><path d="M1 3a2 2 0 0 1 2-2h5l2 2.5h9a2 2 0 0 1 2 2V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2z"/></svg>'
@@ -1322,8 +1356,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1
   };
+  var SPEEDS = [1, 1.25, 1.5, 2];
 
   function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [] }; }
   function sampleMix() {
@@ -1746,20 +1781,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
   /* ---------- playback ---------- */
   var Player = {
-    ctx: null, token: 0, sources: [], tag: null, from: 0, to: 0, t0: 0, started: false,
+    ctx: null, token: 0, sources: [], tag: null, from: 0, to: 0, t0: 0, started: false, rate: 1,
     stop: function () {
       Player.token++;
       Player.sources.forEach(function (s) { try { s.stop(); } catch (e) { /* already ended */ } });
       Player.sources = [];
       if (Player.tag) { Player.tag = null; Player.started = false; syncPlay(); }
     },
-    now: function () { return Player.started ? clamp(Player.from + (Player.ctx.currentTime - Player.t0), Player.from, Player.to) : Player.from; },
+    now: function () { return Player.started ? clamp(Player.from + (Player.ctx.currentTime - Player.t0) * Player.rate, Player.from, Player.to) : Player.from; },
     play: async function (pl, from, to, tag) {
       Player.stop();
       var my = Player.token;
       if (!Player.ctx) { var AC = window.AudioContext || window.webkitAudioContext; try { Player.ctx = new AC({ sampleRate: SR }); } catch (e) { Player.ctx = new AC(); } }
       if (Player.ctx.state === 'suspended') Player.ctx.resume();
       Player.tag = tag; Player.from = from; Player.to = to; Player.started = false;
+      Player.rate = isMixTag(tag) ? ui.speed : 1;
       syncPlay();
       var pos = Math.round(from * SR), end = Math.round(to * SR), when = 0, first = true;
       try {
@@ -1771,14 +1807,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           var ab = Player.ctx.createBuffer(2, n, SR);
           ab.getChannelData(0).set(blk.L); ab.getChannelData(1).set(blk.R);
           var src = Player.ctx.createBufferSource();
-          src.buffer = ab; src.connect(Player.ctx.destination);
+          src.buffer = ab; src.playbackRate.value = Player.rate; src.connect(Player.ctx.destination);
           var ct = Player.ctx.currentTime;
           if (first) { when = ct + 0.08; Player.t0 = when; Player.started = true; first = false; requestAnimationFrame(frame); }
           else if (when < ct + 0.01) { var lag = ct + 0.05 - when; Player.t0 += lag; when += lag; }
           src.start(when);
           Player.sources.push(src);
           if (Player.sources.length > 4) Player.sources.shift();
-          when += n / SR; pos += n;
+          when += n / SR / Player.rate; pos += n;
           while (my === Player.token && when - Player.ctx.currentTime > 2.5) await sleep(120);
         }
         while (my === Player.token && Player.ctx.currentTime < when) await sleep(80);
@@ -1808,7 +1844,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function syncPlay() {
     var tag = Player.tag;
-    $('playBtn').innerHTML = tag ? ICON.stop + ' Stop' : ICON.play + ' Play the mix';
+    $('playBtn').innerHTML = tag === 'mix' ? ICON.pause + ' Pause' : tag ? ICON.stop + ' Stop' : ICON.play + ' Play the mix';
     var els = document.querySelectorAll('[data-play]');
     for (var i = 0; i < els.length; i++) {
       var on = els[i].getAttribute('data-play') === tag;
@@ -1822,6 +1858,22 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var h = $('tl').querySelector('.head');
       if (h) { h.hidden = ui.cursor <= 0; h.style.left = (ui.cursor / ui.span * 100) + '%'; }
     }
+    renderTransport();
+  }
+  function renderTransport() {
+    var box = $('trSpeeds');
+    if (!box.children.length) {
+      $('trStart').innerHTML = ICON.start;
+      $('trBack').innerHTML = ICON.back + ' 15';
+      $('trFwd').innerHTML = '15 ' + ICON.fwd;
+      box.innerHTML = SPEEDS.map(function (s) { return '<button class="btn small" data-speed="' + s + '">' + esc(s + '×') + '</button>'; }).join('');
+    }
+    for (var i = 0; i < box.children.length; i++) box.children[i].setAttribute('aria-pressed', String(parseFloat(box.children[i].getAttribute('data-speed')) === ui.speed));
+    $('trPlay').innerHTML = Player.tag === 'mix' ? ICON.pause + ' Pause' : ICON.play + ' Play';
+    var pill = $('speedPill');
+    pill.hidden = ui.speed === 1;
+    pill.textContent = ui.speed + '× speed';
+    pill.title = 'Back to normal speed';
   }
   function playMix(from, to, tag) {
     if (!plan.total) return;
@@ -1829,6 +1881,30 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     Player.play(plan, from, to == null ? plan.total : Math.min(to, plan.total), tag || 'mix');
   }
   function toggle(tag, start) { if (Player.tag === tag) Player.stop(); else start(); }
+  function setSpeed(s) {
+    if (SPEEDS.indexOf(s) < 0) return;
+    ui.speed = s;
+    if (Player.tag && isMixTag(Player.tag)) playMix(Player.now());
+    syncPlay();
+  }
+  function pauseMix() {
+    if (Player.tag === 'mix') ui.cursor = Player.now();
+    Player.stop();
+    drawScreen();
+  }
+  function playOrPause() {
+    if (Player.tag) pauseMix();
+    else playMix(ui.cursor < plan.total - 1 ? ui.cursor : 0);
+  }
+  function playFromStart() { ui.cursor = 0; playMix(0); }
+  function skipBy(seconds) {
+    if (!plan.total) return;
+    var playing = Player.tag && isMixTag(Player.tag);
+    var t = clamp((playing ? Player.now() : ui.cursor) + seconds, 0, Math.max(0, plan.total - 0.2));
+    if (playing) { playMix(t); return; }
+    ui.cursor = t;
+    syncPlay(); placeHead(t, true); drawScreen(t);
+  }
 
   /* ---------- changing the mix ---------- */
   var saveTimer = null;
@@ -3114,7 +3190,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
   /* ---------- events ---------- */
   function bind() {
-    $('playBtn').onclick = function () { if (Player.tag) Player.stop(); else playMix(ui.cursor < plan.total - 1 ? ui.cursor : 0); };
+    $('playBtn').onclick = playOrPause;
     document.addEventListener('keydown', function (ev) {
       if ($('trimDlg').open || $('infoDlg').open) return;
       var t = ev.target.tagName;
@@ -3691,6 +3767,83 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('tlReset').onclick = function () { tlHeight(TL_BASE); lsSet('hp.tlHeight', TL_BASE); };
   })();
 
+  /* ---------- floating preview ---------- */
+  var floatState = readFloat();
+  function readFloat() {
+    var s = lsGet('hp.float');
+    var w = Math.min(420, innerWidth - 32);
+    var fallback = { on: false, x: innerWidth - w - 16, y: innerHeight - Math.round(w * 9 / 16) - 140, w: w };
+    if (!s || typeof s !== 'object' || !Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.w)) return fallback;
+    return { on: s.on === true, x: s.x, y: s.y, w: s.w };
+  }
+  function saveFloat() { lsSet('hp.float', floatState); }
+  function placeFloat(x, y, w) {
+    var box = $('screenBox');
+    w = clamp(Math.round(w), 240, Math.max(240, Math.min(1280, innerWidth - 32)));
+    box.style.width = w + 'px';
+    x = clamp(Math.round(x), 8, Math.max(8, innerWidth - box.offsetWidth - 8));
+    y = clamp(Math.round(y), 8, Math.max(8, innerHeight - box.offsetHeight - 8));
+    box.style.left = x + 'px'; box.style.top = y + 'px';
+    floatState.x = x; floatState.y = y; floatState.w = w;
+  }
+  function floatPreview(on) {
+    var box = $('screenBox');
+    floatState.on = on;
+    if (on) {
+      document.body.appendChild(box);
+      box.classList.add('floating');
+    } else {
+      $('screenDock').insertBefore(box, $('dockNote'));
+      box.classList.remove('floating');
+      box.style.left = ''; box.style.top = ''; box.style.width = '';
+    }
+    $('transport').hidden = !on; $('floatGrip').hidden = !on; $('dockNote').hidden = !on;
+    $('floatBtn').textContent = on ? 'Put back' : 'Float';
+    $('floatBtn').setAttribute('aria-pressed', String(on));
+    if (on) placeFloat(floatState.x, floatState.y, floatState.w);
+    renderTransport();
+    saveFloat();
+    drawScreen();
+  }
+  (function () {
+    var head = $('floatHead'), grip = $('floatGrip'), drag = null, size = null;
+    $('floatBtn').onclick = function () { floatPreview(!floatState.on); };
+    $('dockBtn').onclick = function () { floatPreview(false); };
+    head.addEventListener('pointerdown', function (ev) {
+      if (!floatState.on || ev.target.closest('button')) return;
+      drag = { x: ev.clientX, y: ev.clientY, x0: floatState.x, y0: floatState.y };
+      try { head.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+      ev.preventDefault();
+    });
+    head.addEventListener('pointermove', function (ev) { if (drag) placeFloat(drag.x0 + ev.clientX - drag.x, drag.y0 + ev.clientY - drag.y, floatState.w); });
+    function endDrag() { if (!drag) return; drag = null; saveFloat(); }
+    head.addEventListener('pointerup', endDrag); head.addEventListener('pointercancel', endDrag);
+    grip.addEventListener('pointerdown', function (ev) {
+      size = { x: ev.clientX, w: floatState.w };
+      try { grip.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+      ev.preventDefault();
+    });
+    grip.addEventListener('pointermove', function (ev) { if (size) placeFloat(floatState.x, floatState.y, size.w + ev.clientX - size.x); });
+    function endSize() { if (!size) return; size = null; saveFloat(); }
+    grip.addEventListener('pointerup', endSize); grip.addEventListener('pointercancel', endSize);
+    grip.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight' && ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+      ev.preventDefault(); ev.stopPropagation();
+      placeFloat(floatState.x, floatState.y, floatState.w + (ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 40 : -40));
+      saveFloat();
+    });
+    $('trStart').onclick = playFromStart;
+    $('trBack').onclick = function () { skipBy(-15); };
+    $('trFwd').onclick = function () { skipBy(15); };
+    $('trPlay').onclick = playOrPause;
+    $('trSpeeds').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-speed]');
+      if (b) setSpeed(parseFloat(b.getAttribute('data-speed')));
+    });
+    $('speedPill').onclick = function () { setSpeed(1); };
+    window.addEventListener('resize', function () { if (floatState.on) placeFloat(floatState.x, floatState.y, floatState.w); });
+  })();
+
   /* ---------- hymn checklist ---------- */
   var hymnUI = { book: lsGet('hp.hymnBook') || '1985', show: 'todo', find: '' };
   var hymnSkip = lsGet('hp.hymnSkip') || {};
@@ -4004,6 +4157,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
     var th = lsGet('hp.tlHeight'); if (th) tlHeight(th);
+    if (floatState.on) floatPreview(true);
     Store.open().then(function (ok) {
       if (!ok) return;
       return Store.all('assets').then(function (recs) {
