@@ -215,6 +215,9 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .usednote.overlap { color: var(--warn); font-weight: 600; }
 .textrow .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
 .textrow .txt { overflow-wrap: anywhere; white-space: pre-line; }
+.tapq .list > li { display: flex; gap: 10px; align-items: center; padding: 6px 2px; font-size: 14px; }
+.tapq .list .txt { flex: 1; overflow-wrap: anywhere; }
+#manyMsg { white-space: pre-line; }
 .textrow.picked { background: color-mix(in srgb, var(--sel) 12%, transparent); box-shadow: inset 3px 0 0 var(--sel); }
 .texted { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .edhead { font: 700 11px/1.2 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 4px 0 -4px; }
@@ -403,6 +406,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
                   <button class="btn small" id="trBack" aria-label="Back 15 seconds" title="Back 15 seconds"></button>
                   <button class="btn small primary" id="trPlay"></button>
                   <button class="btn small" id="trFwd" aria-label="Forward 15 seconds" title="Forward 15 seconds"></button>
+                  <button class="btn small" id="trPlace" hidden>Place next</button>
                 </div>
                 <div class="btnrow speeds" role="group" aria-label="Playback speed" id="trSpeeds"></div>
               </div>
@@ -434,12 +438,45 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           </div>
         </div>
         <div class="stack textsec sec" id="sec-texts">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="texts" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Your text on screen</button></h3><button class="btn small" id="addText">Add text</button></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="texts" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Your text on screen</button></h3><span class="btnrow"><button class="btn small" id="addMany">Add scriptures or a list</button><button class="btn small" id="addText">Add text</button></span></div>
+          <div class="texted" id="manyEd" hidden>
+            <div class="btnrow" role="radiogroup" aria-label="What to add">
+              <label><input type="radio" name="manyKind" value="scripture" checked> Scriptures</label>
+              <label><input type="radio" name="manyKind" value="text"> My own text, one per line</label>
+            </div>
+            <label for="manyInput" class="visually-hidden">Scripture references or lines of text</label>
+            <textarea id="manyInput" rows="4" placeholder="John 3:16, Moroni 10:4, D&amp;C 4:2"></textarea>
+            <div class="btnrow" id="manyModeRow" role="radiogroup" aria-label="Verse ranges">
+              <label><input type="radio" name="manyMode" value="together" checked> Whole range on one screen</label>
+              <label><input type="radio" name="manyMode" value="each"> One verse at a time</label>
+            </div>
+            <p class="msg" id="manyMsg" role="status"></p>
+            <div class="btnrow">
+              <button class="btn small primary" id="manyPlace">Put on the timeline</button>
+              <button class="btn small" id="manyQueue">Add to the tap queue</button>
+              <button class="btn small quiet" id="manyClose">Close</button>
+            </div>
+          </div>
+          <div class="texted tapq" id="tapQ" hidden>
+            <h4 class="edhead">Tap queue</h4>
+            <p class="note" id="tapNext"></p>
+            <ol class="list" id="tapList"></ol>
+            <div class="btnrow">
+              <button class="btn small primary" id="tapPlace">Place next (Enter)</button>
+              <button class="btn small" id="tapUndo">Undo last (Backspace)</button>
+              <button class="btn small quiet" id="tapClear">Clear the queue</button>
+            </div>
+            <p class="note" id="tapHint"></p>
+          </div>
           <p class="note">Messages you place yourself. Drag the text in the preview to position it. On the timeline, drag the block to move it, or drag its right edge to change how long it shows.</p>
           <ul class="list" id="texts"></ul>
           <div class="texted" id="textEd" hidden>
             <label for="textBody" class="minor" style="font-size:14px">Text <span class="note" style="font-weight:400">Press Enter for a new line.</span></label>
             <textarea id="textBody" rows="3"></textarea>
+            <div id="textRefRow" hidden>
+              <label for="textRef" class="minor" style="font-size:14px">Reference line</label>
+              <input type="text" id="textRef" style="width:100%">
+            </div>
             <h4 class="edhead">Look</h4>
             <div class="grid look">
               <label>Size <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output></span></label>
@@ -466,6 +503,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <label>Fade out <span><input type="number" id="textFadeOut" min="0" max="10" step="0.1"> s</span></label>
             </div>
             <div class="links">
+              <label class="wide"><input type="checkbox" id="textRead"> Show for as long as it takes to read</label>
               <label><input type="checkbox" id="textAfterPrev"> Start right after the previous text</label>
               <label class="sub"><input type="checkbox" id="textXfIn"> Crossfade with it</label>
               <label><input type="checkbox" id="textUntilNext"> Keep showing until the next text starts</label>
@@ -507,6 +545,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           <label>Fade in at the start <span class="ctl"><input type="range" id="fadeIn" min="0" max="10" step="0.5"><output id="fadeInOut"></output></span></label>
           <label>Fade out at the end <span class="ctl"><input type="range" id="fadeOut" min="0" max="20" step="0.5"><output id="fadeOutOut"></output></span></label>
           <label>Music under spoken clips <span class="ctl"><input type="range" id="duckDb" min="-30" max="-3" step="1"><output id="duckDbOut"></output></span></label>
+          <label>Reading speed for on-screen text <span class="ctl"><input type="range" id="wpm" min="80" max="250" step="10"><output id="wpmOut"></output></span></label>
           <span class="ctl wide"><button class="btn small" id="xfAll">Use this crossfade on every transition</button></span>
           <label class="wide"><input type="checkbox" id="level"> Even out the volume between recordings</label>
           <label class="wide"><input type="checkbox" id="trimSilence"> Skip silence at the start and end of each recording</label>
@@ -1271,6 +1310,140 @@ var Hymns = (function () {
   return { list: list, byNum: byNum, books: BOOKS, identify: identify, label: label, versionOf: versionOf, norm: norm };
 })();
 
+/* Scripture references: parse, look up and split into on-screen items. Pure functions. */
+var Scripture = (function () {
+  var TABLE = [
+    ['old-testament', ['Genesis|gen', 'Exodus|ex|exo|exod', 'Leviticus|lev', 'Numbers|num', 'Deuteronomy|deut', 'Joshua|josh', 'Judges|judg', 'Ruth',
+      '1 Samuel|1 sam', '2 Samuel|2 sam', '1 Kings|1 kgs', '2 Kings|2 kgs', '1 Chronicles|1 chr|1 chron', '2 Chronicles|2 chr|2 chron', 'Ezra',
+      'Nehemiah|neh', 'Esther|esth', 'Job', 'Psalms|ps|psalm', 'Proverbs|prov', 'Ecclesiastes|eccl', "Solomon's Song|solomons song|song|song of solomon|song of songs",
+      'Isaiah|isa', 'Jeremiah|jer', 'Lamentations|lam', 'Ezekiel|ezek', 'Daniel|dan', 'Hosea', 'Joel', 'Amos', 'Obadiah|obad', 'Jonah', 'Micah', 'Nahum',
+      'Habakkuk|hab', 'Zephaniah|zeph', 'Haggai|hag', 'Zechariah|zech', 'Malachi|mal']],
+    ['new-testament', ['Matthew|matt', 'Mark', 'Luke', 'John|jn', 'Acts', 'Romans|rom', '1 Corinthians|1 cor', '2 Corinthians|2 cor', 'Galatians|gal',
+      'Ephesians|eph', 'Philippians|philip|phil', 'Colossians|col', '1 Thessalonians|1 thes|1 thess', '2 Thessalonians|2 thes|2 thess', '1 Timothy|1 tim',
+      '2 Timothy|2 tim', 'Titus', 'Philemon|philem', 'Hebrews|heb', 'James', '1 Peter|1 pet', '2 Peter|2 pet', '1 John|1 jn', '2 John|2 jn', '3 John|3 jn',
+      'Jude', 'Revelation|rev']],
+    ['book-of-mormon', ['1 Nephi|1 ne', '2 Nephi|2 ne', 'Jacob', 'Enos', 'Jarom', 'Omni', 'Words of Mormon|w of m', 'Mosiah', 'Alma', 'Helaman|hel',
+      '3 Nephi|3 ne', '4 Nephi|4 ne', 'Mormon|morm', 'Ether', 'Moroni|moro']],
+    ['doctrine-and-covenants', ['Doctrine and Covenants|d&c|d & c|dc|d and c']],
+    ['pearl-of-great-price', ['Moses', 'Abraham|abr', 'Joseph Smith—Matthew|js-m|js m|jsm|joseph smith matthew', 'Joseph Smith—History|js-h|js h|jsh|joseph smith history',
+      'Articles of Faith|a of f']]
+  ];
+  var BOOKS = [], byAlias = {};
+  TABLE.forEach(function (row) {
+    row[1].forEach(function (entry) {
+      var names = entry.split('|'), book = { name: names[0], vol: row[0], aliases: [] };
+      names.forEach(function (alias) {
+        var key = norm(alias);
+        if (book.aliases.indexOf(key) < 0) book.aliases.push(key);
+        byAlias[key] = book;
+      });
+      BOOKS.push(book);
+    });
+  });
+  var DC = 'Doctrine and Covenants';
+
+  function norm(s) {
+    return String(s == null ? '' : s).toLowerCase().replace(/[–—]/g, '-').replace(/\./g, '').replace(/\s+/g, ' ').trim()
+      .replace(/^(\d) ?(?=[a-z])/, '$1 ').replace(/ ?- ?/g, '-');
+  }
+  function findBook(text) {
+    var key = norm(text);
+    return Object.prototype.hasOwnProperty.call(byAlias, key) ? byAlias[key] : null;
+  }
+  function shortName(name) { return name === DC ? 'D&C' : name; }
+  function format(ref, from, to) {
+    var a = from == null ? ref.from : from, b = to == null ? ref.to : to;
+    return shortName(ref.book) + ' ' + ref.chapter + ':' + a + (b > a ? '–' + b : '');
+  }
+  function fail(input, error) { return { ok: false, input: input, error: error }; }
+  function finish(raw, book, chapter, from, to) {
+    if (chapter < 1 || from < 1) return fail(raw, 'Chapter and verse numbers start at 1.');
+    if (to < from) return fail(raw, 'The range ' + from + '–' + to + ' runs backwards.');
+    return { ok: true, book: book.name, vol: book.vol, chapter: chapter, from: from, to: to };
+  }
+  function unknownBook(raw, bookPart) {
+    return fail(raw, '“' + bookPart + '” isn’t a book of scripture this app knows. Try the full name, e.g. 1 Nephi.');
+  }
+  function parse(input, context) {
+    var raw = String(input == null ? '' : input).replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+    if (!raw) return fail('', 'Type a reference, for example John 3:16.');
+    var bare = raw.match(/^(\d+)(?: ?- ?(\d+))?$/);
+    if (bare) {
+      if (!context) return fail(raw, 'Add the book and chapter, e.g. John 3:16.');
+      return finish(raw, { name: context.book, vol: context.vol }, context.chapter, +bare[1], bare[2] ? +bare[2] : +bare[1]);
+    }
+    var full = raw.match(/^(.+?) ?(\d+) ?: ?(\d+)(?: ?- ?(\d+)(?: ?: ?(\d+))?)?$/);
+    if (full) {
+      var book = findBook(full[1]);
+      if (!book) return unknownBook(raw, full[1].trim());
+      var chapter = +full[2], from = +full[3], to = full[4] ? +full[4] : from;
+      if (full[5]) {
+        if (+full[4] !== chapter) return fail(raw, 'Ranges across chapters aren’t supported. Add each chapter separately.');
+        to = +full[5];
+      }
+      return finish(raw, book, chapter, from, to);
+    }
+    var chapterOnly = raw.match(/^(.*[a-z&].*?) ?(\d+)$/i);
+    if (chapterOnly) {
+      var named = findBook(chapterOnly[1]);
+      if (!named) return unknownBook(raw, chapterOnly[1].trim());
+      return fail(raw, 'Add a verse number, e.g. ' + shortName(named.name) + ' ' + chapterOnly[2] + ':1.');
+    }
+    return fail(raw, '“' + raw + '” doesn’t look like a reference. Write it like John 3:16.');
+  }
+  function parseList(input) {
+    var results = [], lastGood = null;
+    String(input == null ? '' : input).split(/[\n;,]/).forEach(function (part) {
+      part = part.trim();
+      if (!part) return;
+      var r = parse(part, lastGood);
+      if (r.ok) lastGood = r;
+      results.push(r);
+    });
+    return results;
+  }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function lookup(ref, volumeData) {
+    var where = format(ref), chapters = volumeData ? volumeData[ref.book] : null;
+    if (!chapters) return fail(where, 'The text of ' + shortName(ref.book) + ' isn’t available.');
+    if (ref.chapter > chapters.length) {
+      return fail(where, ref.book === DC ? 'The Doctrine and Covenants has ' + plural(chapters.length, 'section') + '.' : ref.book + ' has ' + plural(chapters.length, 'chapter') + '.');
+    }
+    var verses = chapters[ref.chapter - 1];
+    if (ref.to > verses.length) return fail(where, shortName(ref.book) + ' ' + ref.chapter + ' has ' + plural(verses.length, 'verse') + '.');
+    var out = [];
+    for (var n = ref.from; n <= ref.to; n++) out.push({ n: n, text: verses[n - 1] });
+    return { ok: true, ref: ref, verses: out };
+  }
+  function toItems(found, mode) {
+    found.verses.forEach(function (v) {
+      if (typeof v.text !== 'string' || !v.text.trim()) throw new Error(format(found.ref, v.n, v.n) + ' has no text.');
+    });
+    if (mode === 'each') return found.verses.map(function (v) { return { text: v.text, ref: format(found.ref, v.n, v.n) }; });
+    return [{ text: found.verses.map(function (v) { return v.text; }).join(' '), ref: format(found.ref) }];
+  }
+  return { BOOKS: BOOKS, norm: norm, findBook: findBook, parse: parse, parseList: parseList, lookup: lookup, format: format, toItems: toItems };
+})();
+
+/* How long on-screen text stays up: reading time and tap placement. Pure functions. */
+var TextTiming = (function () {
+  var MIN_READ = 4, WPM_MIN = 80, WPM_MAX = 250, WPM_DEFAULT = 150;
+  function round1(x) { return Math.round(x * 10) / 10; }
+  function wordCount(text) {
+    var words = String(text || '').match(/\S+/g);
+    return words ? words.length : 0;
+  }
+  function readSeconds(text, wpm, fadeIn, fadeOut) {
+    var speed = typeof wpm === 'number' && isFinite(wpm) ? Math.min(WPM_MAX, Math.max(WPM_MIN, wpm)) : WPM_DEFAULT;
+    return round1(Math.max(MIN_READ, wordCount(text) * 60 / speed) + (fadeIn || 0) + (fadeOut || 0));
+  }
+  function cutForTap(prev, tapTime) {
+    if (tapTime >= prev.start + prev.dur) return null;
+    return Math.max(0.5, round1(tapTime - prev.start + prev.fadeOut));
+  }
+  return { MIN_READ: MIN_READ, WPM_MIN: WPM_MIN, WPM_MAX: WPM_MAX, WPM_DEFAULT: WPM_DEFAULT, wordCount: wordCount, readSeconds: readSeconds, cutForTap: cutForTap };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -1346,7 +1519,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- state ---------- */
   var DEFAULTS = {
     level: true, trimSilence: true, defaultXf: 5, fadeIn: 2, fadeOut: 8, duckDb: -14,
-    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'dark', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917
+    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'dark', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150
   };
   var lib = {}, libOrder = [];
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
@@ -1356,11 +1529,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: []
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
-  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [] }; }
+  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [] }; }
   function sampleMix() {
     var m = blankMix();
     SAMPLES.forEach(function (s, i) {
@@ -1859,6 +2032,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (h) { h.hidden = ui.cursor <= 0; h.style.left = (ui.cursor / ui.span * 100) + '%'; }
     }
     renderTransport();
+    renderQueue();
   }
   function renderTransport() {
     var box = $('trSpeeds');
@@ -1929,7 +2103,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     list.forEach(function (tx) {
       var el = elementSpan(tx.during);
       var st = tx.fromStart ? 0 : tx.start;
-      base[tx.id] = el ? { start: el.start, end: el.end, fixed: true } : { start: st, end: st + tx.dur, fixed: false };
+      base[tx.id] = el ? { start: el.start, end: el.end, fixed: true } : { start: st, end: st + textLen(tx), fixed: false };
     });
     var order = list.slice().sort(function (a, b) { return base[a.id].start - base[b.id].start || mix.texts.indexOf(a) - mix.texts.indexOf(b); });
     order.forEach(function (tx, i) {
@@ -2548,14 +2722,23 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // A message placed by hand: centered on (x, y), lines broken where the
   // text has line breaks.
   function paintText(g, W, H, tx, alpha, boxes, avoid) {
-    var s = H / 1080, px = Math.max(8, Math.round((tx.size || 64) * s)), lh = px * (tx.lh || 1.25);
+    var s = H / 1080, px = Math.max(8, Math.round((tx.size || 64) * s)), lh, lines, refPx = 0, refLh = 0, refH = 0;
+    var hasRef = typeof tx.ref === 'string' && tx.ref.trim() !== '', minPx = Math.round(24 * s);
+    var wrapW = tx.wrap && tx.wrap < 100 ? tx.wrap / 100 * W : 0;
     g.save();
-    g.font = textFont(tx, px);
-    var lines = [], wrapW = tx.wrap && tx.wrap < 100 ? tx.wrap / 100 * W : 0;
-    String(tx.text || '').split('\n').forEach(function (ln) { if (wrapW && ln) lines = lines.concat(wrapText(g, ln, wrapW)); else lines.push(ln); });
+    function layout() {
+      lh = px * (tx.lh || 1.25);
+      g.font = textFont(tx, px);
+      lines = [];
+      String(tx.text || '').split('\n').forEach(function (ln) { if (wrapW && ln) lines = lines.concat(wrapText(g, ln, wrapW)); else lines.push(ln); });
+      if (hasRef) { refPx = Math.round(px * 0.6); refLh = refPx * (tx.lh || 1.25); refH = 0.5 * lh + refLh; }
+    }
+    layout();
+    while (hasRef && lh * lines.length + refH > 0.86 * H && px > minPx) { px = Math.max(minPx, Math.min(px - 1, Math.round(px * 0.94))); layout(); }
     var w = 0;
     lines.forEach(function (ln) { w = Math.max(w, g.measureText(ln).width); });
-    var bh = lh * lines.length, pad = tx.box ? px * 0.5 : px * 0.15;
+    if (hasRef) { g.font = textFont(tx, refPx); w = Math.max(w, g.measureText(tx.ref).width); g.font = textFont(tx, px); }
+    var bh = lh * lines.length + refH, pad = tx.box ? px * 0.5 : px * 0.15;
     var cx = tx.x * W, cy = tx.y * H;
     if (avoid && tx.avoid) {
       var bottom = cy + bh / 2 + pad, top = cy - bh / 2 - pad, m = 24 * s;
@@ -2573,10 +2756,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     g.textAlign = tx.align || 'center';
     var ax = tx.align === 'left' ? cx - w / 2 : tx.align === 'right' ? cx + w / 2 : cx;
     lines.forEach(function (ln, i) { g.fillText(ln, ax, cy - bh / 2 + lh * (i + 0.5)); });
+    if (hasRef) { g.font = textFont(tx, refPx); g.fillText(tx.ref, ax, cy - bh / 2 + lh * lines.length + 0.5 * lh + refLh / 2); }
     g.restore();
     if (boxes) boxes.push({ kind: 'text', id: tx.id, x: bx, y: by, w: bw, h: bbh });
   }
-  function txSpan(tx) { return tspan[tx.id] || (tx.whole ? { start: 0, dur: Math.max(1, exportLen()) } : { start: tx.start, dur: tx.dur }); }
+  function textLen(tx) { return tx.readTime ? TextTiming.readSeconds(tx.text, mix.opts.wpm, tx.fadeIn, tx.fadeOut) : tx.dur; }
+  function txSpan(tx) { return tspan[tx.id] || (tx.whole ? { start: 0, dur: Math.max(1, exportLen()) } : { start: tx.start, dur: textLen(tx) }); }
   function textAlpha(tx, t) {
     var sp = txSpan(tx);
     tx = { start: sp.start, dur: sp.dur, fadeIn: Math.min(tx.fadeIn, sp.dur / 2), fadeOut: Math.min(tx.fadeOut, sp.dur / 2) };
@@ -2736,8 +2921,156 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     set('fadeIn', o.fadeIn); $('fadeInOut').textContent = secs(o.fadeIn);
     set('fadeOut', o.fadeOut); $('fadeOutOut').textContent = secs(o.fadeOut);
     set('duckDb', o.duckDb); $('duckDbOut').textContent = o.duckDb + ' dB';
+    set('wpm', o.wpm); $('wpmOut').textContent = o.wpm + ' words a minute';
     $('level').checked = !!o.level; $('trimSilence').checked = !!o.trimSilence;
     $('xfAll').disabled = !mix.items.some(function (it) { return it.xf != null && it.xf !== o.defaultXf; });
+  }
+
+  /* ---------- scriptures ---------- */
+  var scriptureCache = {};
+  async function loadVolume(vol) {
+    if (scriptureCache[vol]) return scriptureCache[vol];
+    var r;
+    try { r = await fetch('scriptures/' + vol + '.json'); }
+    catch (e) { throw new Error('The scripture text could not be loaded. Check the internet connection and try again.'); }
+    if (!r.ok) throw new Error('The scripture text could not be loaded (' + r.status + '). Check the internet connection and try again.');
+    var data = await r.json();
+    scriptureCache[vol] = data;
+    return data;
+  }
+  async function resolveRefs(input, mode) {
+    var out = { items: [], errors: [] }, parsed = Scripture.parseList(input);
+    for (var i = 0; i < parsed.length; i++) {
+      var r = parsed[i], data;
+      if (!r.ok) { out.errors.push({ input: r.input, error: r.error }); continue; }
+      try { data = await loadVolume(r.vol); }
+      catch (e) { out.errors.push({ input: Scripture.format(r), error: e.message }); continue; }
+      var found = Scripture.lookup(r, data);
+      if (!found.ok) { out.errors.push({ input: found.input, error: found.error }); continue; }
+      Scripture.toItems(found, mode).forEach(function (piece) { out.items.push(piece); });
+    }
+    return out;
+  }
+  function newScriptureItem(piece) {
+    return { id: nid(), text: piece.text, ref: piece.ref, readTime: true, start: 0, dur: 8, fadeIn: 2, fadeOut: 2, x: 0.5, y: 0.42, size: 56, font: 'serif', align: 'center', color: '#FFFFFF', box: false, wrap: 80, lh: 1.3 };
+  }
+  function newQueuedTextItem(line) {
+    return { id: nid(), text: line, readTime: true, start: 0, dur: 8, fadeIn: 3, fadeOut: 3, x: 0.5, y: 0.3, size: 72, font: 'sans', align: 'center', color: '#FFFFFF', box: false };
+  }
+  function manyKind() { return document.querySelector('input[name="manyKind"]:checked').value; }
+  function manySay(text, isErr) { var m = $('manyMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
+  function syncManyKind() {
+    var scripture = manyKind() === 'scripture';
+    $('manyModeRow').hidden = !scripture;
+    $('manyInput').placeholder = scripture ? 'John 3:16, Moroni 10:4, D&C 4:2' : 'One message per line';
+  }
+  async function gatherMany() {
+    var input = $('manyInput').value;
+    if (manyKind() === 'scripture') {
+      var found = await resolveRefs(input, document.querySelector('input[name="manyMode"]:checked').value);
+      return { items: found.items.map(newScriptureItem), errors: found.errors };
+    }
+    var lines = input.split('\n').map(function (ln) { return ln.trim(); }).filter(Boolean);
+    return { items: lines.map(newQueuedTextItem), errors: [] };
+  }
+  async function runMany(use) {
+    $('manyPlace').disabled = $('manyQueue').disabled = true;
+    manySay('Looking up…', false);
+    try {
+      var result = await gatherMany();
+      var bad = result.errors.map(function (e) { return e.input + ': ' + e.error; });
+      if (!result.items.length) {
+        manySay(bad.length ? bad.join('\n') : manyKind() === 'scripture' ? 'Type a reference, for example John 3:16.' : 'Type at least one line of text.', true);
+        return;
+      }
+      var done = use(result.items);
+      if (bad.length) {
+        manySay(done + ' These need fixing:\n' + bad.join('\n'), true);
+        $('manyInput').value = result.errors.map(function (e) { return e.input; }).join('\n');
+      } else {
+        manySay(done, false);
+        $('manyInput').value = '';
+      }
+    } catch (err) {
+      manySay('That could not be added. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
+    } finally {
+      $('manyPlace').disabled = $('manyQueue').disabled = false;
+    }
+  }
+  function placeMany(items) {
+    var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor > 0 ? ui.cursor : 5;
+    if (Player.tag) Player.stop();
+    items.forEach(function (tx, i) {
+      tx.start = Math.round(t * 10) / 10;
+      if (i > 0) { tx.afterPrev = true; tx.xfIn = true; }
+      mix.texts.push(tx);
+    });
+    ui.sel = { lane: 'texts', id: items[0].id };
+    changed(); revealSel();
+    return 'Added ' + items.length + '.';
+  }
+  function queueMany(items) {
+    mix.queue = mix.queue.concat(items);
+    changed();
+    return items.length + ' added to the queue.';
+  }
+
+  /* ---------- tap to place ---------- */
+  var tapFlash = null, tapFlashTimer = null;
+  function mixPlaying() { return !!(Player.tag && isMixTag(Player.tag)); }
+  function queueLabel(tx) {
+    var body = String(tx.text || '').replace(/\s+/g, ' ').trim();
+    return (tx.ref ? tx.ref + ' · ' : '') + (body.length > 60 ? body.slice(0, 60) + '…' : body);
+  }
+  function flashTap(text) {
+    tapFlash = text; renderQueue();
+    clearTimeout(tapFlashTimer);
+    tapFlashTimer = setTimeout(function () { tapFlash = null; renderQueue(); }, 3000);
+  }
+  function renderQueue() {
+    var q = mix.queue, playing = mixPlaying(), box = $('tapQ'), canPlace = q.length > 0 && playing;
+    box.hidden = !q.length && !ui.taps.length;
+    $('tapPlace').disabled = !canPlace;
+    $('trPlace').hidden = !q.length; $('trPlace').disabled = !canPlace;
+    $('tapUndo').disabled = !ui.taps.length;
+    $('tapClear').disabled = !q.length;
+    $('tapNext').textContent = tapFlash || (q.length ? 'Next (1 of ' + q.length + '): ' + queueLabel(q[0]) : 'Queue empty. Every item is placed.');
+    setHTML($('tapList'), q.map(function (tx) {
+      return '<li><span class="txt">' + esc(queueLabel(tx)) + '</span><button class="btn small quiet" data-act="rmq" data-id="' + tx.id + '">Remove</button></li>';
+    }).join(''));
+    $('tapHint').textContent = playing ? '' : 'Play the mix, then press Enter at each moment you want the next item to appear. Backspace undoes the last one.';
+  }
+  function refreshAfterTap() { persistMix(); resolveTexts(); renderTimeline(); renderTexts(); drawScreen(); }
+  function placeNext() {
+    if (!mixPlaying()) return;
+    if (!mix.queue.length) { flashTap('The queue is empty.'); return; }
+    var t = Player.now();
+    if (t >= plan.total - 0.5) { flashTap('That’s past the end of the mix, so nothing was placed.'); return; }
+    var tx = mix.queue.shift(), prev = null;
+    tx.start = Math.round(t * 10) / 10; tx.readTime = true;
+    var last = ui.taps[ui.taps.length - 1], p = last ? findItem('texts', last.id) : null;
+    if (p && !p.untilNext && !p.toEnd && !p.during && !p.whole) {
+      var sp = txSpan(p), nd = TextTiming.cutForTap({ start: sp.start, dur: sp.dur, fadeOut: p.fadeOut }, t);
+      if (nd != null) { prev = { id: p.id, dur: p.dur, readTime: p.readTime }; p.readTime = false; p.dur = nd; }
+    }
+    mix.texts.push(tx);
+    ui.taps.push({ id: tx.id, prev: prev });
+    refreshAfterTap();
+  }
+  function undoTap() {
+    var entry = ui.taps.pop();
+    if (!entry) return;
+    var tx = findItem('texts', entry.id);
+    if (tx) {
+      mix.texts = mix.texts.filter(function (x) { return x !== tx; });
+      delete tx.start;
+      mix.queue.unshift(tx);
+    }
+    if (entry.prev) {
+      var p = findItem('texts', entry.prev.id);
+      if (p) { p.dur = entry.prev.dur; p.readTime = entry.prev.readTime; }
+    }
+    refreshAfterTap();
   }
 
   /* ---------- your own text on screen ---------- */
@@ -2746,12 +3079,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var h = '', sel = selText();
     mix.texts.slice().sort(function (a, b) { return a.start - b.start; }).forEach(function (tx) {
       var sp = txSpan(tx);
-      h += '<li class="textrow' + (sel && sel.id === tx.id ? ' picked' : '') + '" data-text="' + tx.id + '"><span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + esc(tx.text || '') + '</span>' +
+      h += '<li class="textrow' + (sel && sel.id === tx.id ? ' picked' : '') + '" data-text="' + tx.id + '"><span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(tx.text || '') + '</span>' +
         '<button class="btn small quiet" data-act="rmtext" data-id="' + tx.id + '">Remove</button></li>';
     });
     if (!h) h = '<li class="blank">No text of your own yet. Press Add text to put a message on screen at the playhead.</li>';
     setHTML($('texts'), h);
     renderTextEditor();
+    renderQueue();
   }
   var edId = null;
   function renderTextEditor() {
@@ -2762,6 +3096,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     edId = tx.id;
     function set(id, v) { var el = $(id); if (fresh || document.activeElement !== el) el.value = v; }
     set('textBody', tx.text || '');
+    $('textRefRow').hidden = tx.ref == null;
+    set('textRef', tx.ref || '');
     set('textSize', tx.size); $('textSizeOut').textContent = Math.round(tx.size) + ' px';
     set('textFont', tx.font); set('textAlign', tx.align); set('textColor', tx.color || '#FFFFFF');
     $('textBox').checked = !!tx.box;
@@ -2777,17 +3113,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (tx.during && !elementSpan(tx.during)) opts += '<option value="' + esc(tx.during) + '">A recording no longer in the mix</option>';
     setHTML($('textDuring'), opts);
     $('textDuring').value = tx.during || '';
-    ['textWhole', 'textAfterPrev', 'textXfIn', 'textUntilNext', 'textXfOut', 'textFromStart', 'textToEnd', 'textLock', 'textAvoid'].forEach(function (id) { $(id).checked = !!tx[{ textWhole: 'whole', textAfterPrev: 'afterPrev', textXfIn: 'xfIn', textUntilNext: 'untilNext', textXfOut: 'xfOut', textFromStart: 'fromStart', textToEnd: 'toEnd', textLock: 'locked', textAvoid: 'avoid' }[id]]; });
+    ['textRead', 'textWhole', 'textAfterPrev', 'textXfIn', 'textUntilNext', 'textXfOut', 'textFromStart', 'textToEnd', 'textLock', 'textAvoid'].forEach(function (id) { $(id).checked = !!tx[{ textRead: 'readTime', textWhole: 'whole', textAfterPrev: 'afterPrev', textXfIn: 'xfIn', textUntilNext: 'untilNext', textXfOut: 'xfOut', textFromStart: 'fromStart', textToEnd: 'toEnd', textLock: 'locked', textAvoid: 'avoid' }[id]]; });
     syncTextDisabled(tx);
   }
   function syncTextDisabled(tx) {
     var tied = !!(tx.during && elementSpan(tx.during)) || !!tx.during;
     $('textStart').disabled = tx.whole || tied || tx.afterPrev || tx.fromStart;
-    $('textDurMin').disabled = $('textDurSec').disabled = tx.whole || tied || tx.untilNext || tx.toEnd;
+    var endOwned = tx.whole || tied || tx.untilNext || tx.toEnd;
+    $('textRead').disabled = !tx.readTime && endOwned;
+    $('textDurMin').disabled = $('textDurSec').disabled = endOwned || tx.readTime;
     $('textAfterPrev').disabled = tx.whole || tied || tx.fromStart;
-    $('textUntilNext').disabled = tx.whole || tied || tx.toEnd;
+    $('textUntilNext').disabled = tx.whole || tied || tx.toEnd || tx.readTime;
     $('textFromStart').disabled = tx.whole || tied || tx.afterPrev;
-    $('textToEnd').disabled = tx.whole || tied || tx.untilNext;
+    $('textToEnd').disabled = tx.whole || tied || tx.untilNext || tx.readTime;
     $('textXfIn').disabled = !tx.afterPrev || tx.whole || tied;
     $('textXfOut').disabled = !tx.untilNext || tx.whole || tied;
     $('textDuring').disabled = !!tx.whole;
@@ -2797,6 +3135,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (tx.toEnd && !tx.afterPrev && !tx.untilNext) note = 'Runs to ' + fmt(mix.target) + ', the length to cover. Change that in Mix settings and this follows.';
     else if (tx.fromStart && !tx.afterPrev && !tx.untilNext) note = 'Starts at 0:00 and shows for the length you set.';
     else if (tx.afterPrev || tx.untilNext) note = 'These links stay live: when the text before or after moves, this one follows.' + ((tx.xfIn || tx.xfOut) ? ' Crossfades overlap by this text’s fade time, so matching fades on both texts look smoothest.' : '');
+    if (tx.readTime && endOwned) note += (note ? ' ' : '') + 'Reading time is not used while another setting decides when this text ends. Untick one of them.';
+    else if (tx.readTime) {
+      var words = TextTiming.wordCount(tx.text);
+      note = 'Shows for ' + secs(textLen(tx)) + ': ' + words + (words === 1 ? ' word' : ' words') + ' at ' + mix.opts.wpm + ' a minute (at least 4 s), plus the fades. Change the speed in Mix settings.' + (note ? ' ' + note : '');
+    }
     $('textLinkNote').textContent = note;
   }
   function addText() {
@@ -2810,8 +3153,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function editText(final) {
     var tx = selText(); if (!tx) return;
-    var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole };
+    var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole, readTime: tx.readTime };
     tx.text = $('textBody').value;
+    if (!$('textRefRow').hidden) { var ref = $('textRef').value.trim(); if (ref) tx.ref = ref; else delete tx.ref; }
+    tx.readTime = $('textRead').checked;
     tx.size = parseFloat($('textSize').value) || 72; $('textSizeOut').textContent = Math.round(tx.size) + ' px';
     tx.font = $('textFont').value; tx.align = $('textAlign').value; tx.color = $('textColor').value; tx.box = $('textBox').checked;
     tx.whole = $('textWhole').checked;
@@ -2823,11 +3168,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     tx.lh = parseFloat($('textLh').value) || 1.25; $('textLhOut').textContent = tx.lh.toFixed(2);
     // turning a link off leaves the text exactly where it was showing
     if ((before.afterPrev && !tx.afterPrev) || (before.untilNext && !tx.untilNext) || (before.fromStart && !tx.fromStart) || (before.toEnd && !tx.toEnd) || (before.during && !tx.during)) { tx.start = Math.round(was.start * 10) / 10; tx.dur = Math.round(was.dur * 10) / 10; }
+    else if (before.readTime && !tx.readTime) tx.dur = Math.round(was.dur * 10) / 10;
     else if (!$('textDurMin').disabled) {
       var d = (parseFloat($('textDurMin').value) || 0) * 60 + (parseFloat($('textDurSec').value) || 0);
       if (d >= 0.5) tx.dur = Math.round(d * 10) / 10;
     }
-    var linksChanged = before.afterPrev !== tx.afterPrev || before.untilNext !== tx.untilNext || !before.fromStart !== !tx.fromStart || !before.toEnd !== !tx.toEnd || before.during !== tx.during || before.whole !== tx.whole;
+    var linksChanged = before.afterPrev !== tx.afterPrev || before.untilNext !== tx.untilNext || !before.fromStart !== !tx.fromStart || !before.toEnd !== !tx.toEnd || before.during !== tx.during || before.whole !== tx.whole || !before.readTime !== !tx.readTime;
     var fi = parseFloat($('textFadeIn').value); if (fi >= 0) tx.fadeIn = fi;
     var fo = parseFloat($('textFadeOut').value); if (fo >= 0) tx.fadeOut = fo;
     if (final || linksChanged) {
@@ -2836,8 +3182,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     persistMix();
     resolveTexts();
-    renderTimeline(); renderSel(); drawScreen();
-    var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.textContent = tx.text;
+    renderTimeline(); renderSel(); drawScreen(); syncTextDisabled(tx);
+    var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.textContent = (tx.ref ? tx.ref + ' · ' : '') + tx.text;
   }
   function persistMix() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250); }
 
@@ -3196,6 +3542,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var t = ev.target.tagName;
       if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
       if (ev.code === 'Space' && t !== 'BUTTON') { ev.preventDefault(); $('playBtn').click(); return; }
+      if (ev.key === 'Enter' && mix.queue.length && Player.tag && isMixTag(Player.tag)) { ev.preventDefault(); placeNext(); return; }
+      if (ev.key === 'Backspace' && ui.taps.length) { ev.preventDefault(); undoTap(); return; }
       if (!ui.sel) return;
       if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         ev.preventDefault();
@@ -3238,7 +3586,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         else sn = snapTo([drag.base + dt, drag.base + dt + hit2.c.len], edges, thr);
         if (sn) { dt += sn.d; ui.snapT = sn.at; }
       }
-      if (drag.resize) { if (hit2 && !hit2.t.locked) hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
+      if (drag.resize) { if (hit2 && !hit2.t.locked) { hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); } }
       else if (!shiftClip(drag.sel, drag.base, dt)) { drag.sel = null; ui.snapT = null; return; }
       live(); renderTextEditor();
     });
@@ -3536,6 +3884,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
     // your own text
     $('addText').onclick = addText;
+    $('addMany').onclick = function () { $('manyEd').hidden = false; syncManyKind(); $('manyInput').focus(); };
+    $('manyClose').onclick = function () { $('manyEd').hidden = true; manySay('', false); };
+    $('manyEd').addEventListener('change', function (ev) { if (ev.target.name === 'manyKind') syncManyKind(); });
+    $('manyPlace').onclick = function () { runMany(placeMany); };
+    $('manyQueue').onclick = function () { runMany(queueMany); };
+    $('tapPlace').onclick = placeNext;
+    $('trPlace').onclick = placeNext;
+    $('tapUndo').onclick = undoTap;
+    $('tapClear').onclick = function () { if (!confirm('Remove every item from the tap queue?')) return; mix.queue = []; changed(); };
+    $('tapList').addEventListener('click', function (ev) {
+      var rm = ev.target.closest('[data-act="rmq"]'); if (!rm) return;
+      var id = rm.getAttribute('data-id');
+      mix.queue = mix.queue.filter(function (x) { return x.id !== id; });
+      changed();
+    });
     $('texts').addEventListener('click', function (ev) {
       var rm = ev.target.closest('[data-act="rmtext"]');
       if (rm) { var id = rm.getAttribute('data-id'); mix.texts = mix.texts.filter(function (x) { return x.id !== id; }); if (ui.sel && ui.sel.id === id) ui.sel = null; changed(); return; }
@@ -3638,7 +4001,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (isLive) el.addEventListener('input', function () { apply(false); });
       el.addEventListener('change', function () { apply(true); });
     }
-    opt('defaultXf', 'defaultXf', true); opt('fadeIn', 'fadeIn', true); opt('fadeOut', 'fadeOut', true); opt('duckDb', 'duckDb', true);
+    opt('defaultXf', 'defaultXf', true); opt('fadeIn', 'fadeIn', true); opt('fadeOut', 'fadeOut', true); opt('duckDb', 'duckDb', true); opt('wpm', 'wpm', true);
     $('target').addEventListener('change', function () { var v = parseFloat(this.value); if (v > 0) mix.target = clamp(v, 1, 90) * 60; changed(); });
     $('level').onchange = function () { mix.opts.level = this.checked; if (Player.tag) Player.stop(); changed(); };
     $('trimSilence').onchange = function () { mix.opts.trimSilence = this.checked; if (Player.tag) Player.stop(); changed(); };
@@ -3659,7 +4022,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var saved = lsGet('hp.saved') || {}, m = saved[this.value];
       if (!m) return;
       Player.stop();
-      mix = clone(m); mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.texts = mix.texts || [];
+      mix = clone(m); mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.texts = mix.texts || []; mix.queue = mix.queue || []; ui.taps = [];
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
     };
@@ -3678,7 +4041,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
       Player.stop();
       var o = mix.opts, t = mix.target;
-      mix = blankMix(); mix.opts = o; mix.target = t; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
+      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
     };
 
@@ -4044,7 +4407,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken) { mix = work; mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.target = mix.target || 1200; mix.texts = mix.texts || []; }
+    if (work && work.items && work.spoken) { mix = work; mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.target = mix.target || 1200; mix.texts = mix.texts || []; mix.queue = mix.queue || []; ui.taps = []; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
   }
   async function openLinked(h) {
@@ -4152,7 +4515,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('fileName').value = 'sacrament-' + nextSunday();
     addSamples();
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = work; mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.target = mix.target || 1200; mix.texts = mix.texts || []; }
+    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = work; mix.opts = Object.assign(clone(DEFAULTS), mix.opts || {}); mix.target = mix.target || 1200; mix.texts = mix.texts || []; mix.queue = mix.queue || []; ui.taps = []; }
     else mix = sampleMix();
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
