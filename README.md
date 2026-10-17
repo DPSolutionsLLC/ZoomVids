@@ -29,13 +29,23 @@ New downloads: drag them onto the page (they're copied into the folder you have 
 
 The motion background and still graphic are still kept in the browser. Keep the original files in your Drive so you can pick them again if needed.
 
+### Placing text
+
+Every text item sits in a box. Select a text, then drag inside its box in the preview to move it, or drag an edge or corner to resize it. Lines wrap at the box edges. **Line up** sets left, centered or right, and **Up and down** sets top, middle or bottom. Text shrinks to fit the box, down to a smallest readable size; **Largest size** is as big as it gets. The **Top**, **Upper third**, **Center** and **Lower third** buttons move the box without resizing it.
+
 ### Scriptures on screen
 
-Under **Your text on screen**, press **Add scriptures or a list**, choose **Scriptures**, and type or paste references such as `John 3:16, Moroni 10:4, D&C 4:2, Alma 32:21-23`. Full book names and the usual abbreviations both work. Choose **Whole range on one screen** to show a range as one item, or **One verse at a time** to give each verse its own item, one after another. Each item shows the verse with its reference on a line underneath. A reference with a typo is listed with the reason and left in the box to fix; the others are still added.
+Under **Your text on screen**, press **Add scriptures or a list**, choose **Scriptures**, and type or paste references such as `John 3:16, Moroni 10:4, D&C 4:2, Alma 32:21-23`. Full book names and the usual abbreviations both work. Each reference becomes one block on the timeline, and you choose how it plays:
+
+- **All at once** shows every verse together.
+- **One verse at a time** shows each verse in turn, crossfading from one to the next.
+- **Build up verse by verse** adds each verse under the ones before, and the earlier ones stay.
+
+You can change this later in the text editor. Each verse starts on its own line with a small raised verse number (a single verse has none). The full reference, for example `Luke 3:10–15`, shows at the bottom or, if you choose **Reference at the top**, above the verses. Selecting a one-verse-at-a-time passage shows its longest verse in the preview, so you size the box for the worst case. A reference with a typo is listed with the reason and left in the box to fix; the others are still added. Playlists made before this keep their separate verse items.
 
 ### Tap to place
 
-In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button.
+In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button. A scripture passage is one entry in the queue, and one **Enter** places the whole passage.
 
 ### Reading time
 

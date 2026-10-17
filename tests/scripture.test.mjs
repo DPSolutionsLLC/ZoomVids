@@ -146,24 +146,25 @@ describe('lookup against the real data files', () => {
   });
 });
 
-describe('toItems', () => {
-  test('together puts the whole range on one item', () => {
+describe('toPassage', () => {
+  test('a range becomes one passage with the full reference and numbered verses', () => {
+    const passage = Scripture.toPassage(find('Alma 32:21-23'));
+    assert.equal(passage.ref, 'Alma 32:21–23');
+    assert.deepEqual(passage.verses.map((v) => v.n), [21, 22, 23]);
+    for (const verse of passage.verses) assert.ok(verse.text.trim().length > 0);
+  });
+
+  test('a single verse gives one verse and its own reference', () => {
+    const passage = Scripture.toPassage(find('John 3:16'));
+    assert.equal(passage.ref, 'John 3:16');
+    assert.equal(passage.verses.length, 1);
+  });
+
+  test('a verse with no text is refused', () => {
     const found = find('Alma 32:21-23');
-    const items = Scripture.toItems(found, 'together');
-    assert.equal(items.length, 1);
-    assert.equal(items[0].ref, 'Alma 32:21–23');
-    assert.equal(items[0].text, found.verses.map((v) => v.text).join(' '));
-  });
-
-  test('each makes one item per verse', () => {
-    const items = Scripture.toItems(find('Alma 32:21-23'), 'each');
-    assert.deepEqual(items.map((i) => i.ref), ['Alma 32:21', 'Alma 32:22', 'Alma 32:23']);
-  });
-
-  test('no item has empty text', () => {
-    for (const mode of ['together', 'each']) {
-      for (const item of Scripture.toItems(find('Alma 32:21-23'), mode)) assert.ok(item.text.trim().length > 0);
-    }
+    assert.ok(found.ok);
+    found.verses[1].text = '   ';
+    assert.throws(() => Scripture.toPassage(found), /has no text/);
   });
 });
 
