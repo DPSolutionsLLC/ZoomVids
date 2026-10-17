@@ -1,9 +1,20 @@
 {
   "hosting": {
     "public": "public",
-    "ignore": ["firebase.json", "**/.*"],
+    "ignore": [
+      "firebase.json",
+      "**/.*"
+    ],
     "headers": [
-      { "regex": "^/(index\\.html)?$", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      {
+        "regex": "^/(index\\.html)?$",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ]
   }
 }
