@@ -3,7 +3,7 @@
     "public": "public",
     "ignore": ["firebase.json", "**/.*"],
     "headers": [
-      { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      { "regex": "^/(index\\.html)?$", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
     ]
   }
 }
