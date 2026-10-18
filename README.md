@@ -53,7 +53,7 @@ Under **Your text on screen**, press **Add scriptures or a list**, choose **Scri
 - **One verse at a time** shows each verse in turn, crossfading from one to the next.
 - **Build up verse by verse** adds each verse under the ones before, and the earlier ones stay.
 
-You can change this later in the text editor. Each verse starts on its own line with a small raised verse number (a single verse has none). The full reference, for example `Luke 3:10–15`, shows at the bottom or, if you choose **Reference at the top**, above the verses. Selecting a one-verse-at-a-time passage shows its longest verse in the preview, so you size the box for the worst case. A reference with a typo is listed with the reason and left in the box to fix; the others are still added. Playlists made before this keep their separate verse items.
+You can change this later in the text editor. Each verse starts on its own line with a small raised verse number (a single verse has none). The full reference, for example `Luke 3:10–15`, shows at the bottom or, if you choose **Reference at the top**, above the verses. It's the same size as the verses and shrinks with them, and a long reference wraps onto a second line. Selecting a one-verse-at-a-time passage shows its longest verse in the preview, so you size the box for the worst case. A reference with a typo is listed with the reason and left in the box to fix; the others are still added. Playlists made before this keep their separate verse items.
 
 ### Tap to place
 

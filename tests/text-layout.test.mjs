@@ -222,6 +222,12 @@ describe('fitSize', () => {
   test('a box too small for even the smallest size returns exactly that size', () => {
     assert.equal(TextLayout.fitSize(spec({ size: 40, frame: { x: 0, y: 0, w: 400, h: 5 } }), measure), 10);
   });
+
+  test('a long reference wraps instead of shrinking the text to its width', () => {
+    const frame = { x: 0, y: 0, w: 100, h: 300 };
+    const px = TextLayout.fitSize(spec({ frame, paragraphs: [{ num: null, text: 'ab' }], size: 20, ref: 'aaaa bbbb cccc' }), measure);
+    assert.equal(px, 20);
+  });
 });
 
 describe('place', () => {
@@ -250,18 +256,46 @@ describe('place', () => {
 
   test('the reference goes above the text when placed at the top', () => {
     const layout = TextLayout.place(spec({ ref: 'Ref', refPos: 'top' }), 20, measure);
-    assert.ok(layout.ref.y < layout.lines[0].y);
+    assert.ok(layout.ref.lines[0].y < layout.lines[0].y);
   });
 
   test('the reference goes below the text when placed at the bottom', () => {
     const layout = TextLayout.place(spec({ ref: 'Ref', refPos: 'bottom' }), 20, measure);
-    assert.ok(layout.ref.y > layout.lines[layout.lines.length - 1].y);
+    assert.ok(layout.ref.lines[layout.ref.lines.length - 1].y > layout.lines[layout.lines.length - 1].y);
+  });
+
+  test('the reference is the same size as the verses', () => {
+    assert.equal(TextLayout.place(spec({ ref: 'Ref' }), 20, measure).refPx, 20);
+  });
+
+  const narrow = { x: 0, y: 0, w: 100, h: 300 };
+
+  test('a long reference wraps onto more lines', () => {
+    const layout = TextLayout.place(spec({ frame: narrow, ref: 'aaaa bbbb cccc' }), 20, measure);
+    assert.deepEqual(layout.ref.lines.map((ln) => ln.text), ['aaaa bbbb', 'cccc']);
+  });
+
+  test('each reference line follows the alignment', () => {
+    const layout = TextLayout.place(spec({ frame: narrow, ref: 'aaaa bbbb cccc', align: 'right' }), 20, measure);
+    layout.ref.lines.forEach((ln) => assert.equal(ln.x + ln.w, 100));
+  });
+
+  test('a wrapped reference counts toward the height', () => {
+    const one = TextLayout.place(spec({ frame: narrow, ref: 'aaaa' }), 20, measure);
+    const two = TextLayout.place(spec({ frame: narrow, ref: 'aaaa bbbb cccc' }), 20, measure);
+    assert.equal(two.refH - one.refH, 20);
+  });
+
+  test('the reference at the top pushes the verses down by its full height', () => {
+    const layout = TextLayout.place(spec({ frame: narrow, ref: 'aaaa bbbb cccc', refPos: 'top' }), 20, measure);
+    assert.equal(layout.refH, 50);
+    assert.equal(layout.lines[0].y, 60);
   });
 
   test('a fixed text area keeps the reference still for short and long verses', () => {
     const short = TextLayout.place(spec({ ref: 'Ref', valign: 'middle', areaH: 100, paragraphs: [{ num: '1', text: 'ab' }] }), 20, measure);
     const long = TextLayout.place(spec({ ref: 'Ref', valign: 'middle', areaH: 100, paragraphs: [{ num: '2', text: 'aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee' }] }), 20, measure);
     assert.ok(long.lines.length > short.lines.length);
-    assert.equal(short.ref.y, long.ref.y);
+    assert.equal(short.ref.lines[0].y, long.ref.lines[0].y);
   });
 });

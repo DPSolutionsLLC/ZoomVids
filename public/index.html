@@ -1643,7 +1643,7 @@ var TextGroup = (function () {
 
 /* Where on-screen text goes inside its box. Pure functions; measuring is passed in. */
 var TextLayout = (function () {
-  var MIN_W = 0.08, MIN_H = 0.06, MIN_SIZE = 24, NUM_SCALE = 0.55, REF_SCALE = 0.6;
+  var MIN_W = 0.08, MIN_H = 0.06, MIN_SIZE = 24, NUM_SCALE = 0.55;
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
   function round4(v) { return Math.round(v * 1e4) / 1e4; }
   function legacyFrame(x, y, wrap) {
@@ -1705,16 +1705,17 @@ var TextLayout = (function () {
     return lines;
   }
   function measureBlock(paragraphs, ref, frameW, px, lh, measure) {
-    var lines = [], maxW = 0, refPx = 0, refH = 0;
+    var lines = [], maxW = 0, refPx = 0, refH = 0, refLines = [];
     paragraphs.forEach(function (p, i) {
       wrapParagraph(p, frameW, px, measure).forEach(function (ln) { ln.para = i; lines.push(ln); maxW = Math.max(maxW, ln.w); });
     });
     if (typeof ref === 'string' && ref.trim()) {
-      refPx = Math.round(px * REF_SCALE);
-      refH = 0.5 * px * lh + refPx * lh;
-      maxW = Math.max(maxW, measure(ref, refPx));
+      refPx = px;
+      refLines = wrapParagraph({ num: null, text: ref.trim() }, frameW, refPx, measure);
+      refH = 0.5 * px * lh + refLines.length * refPx * lh;
+      refLines.forEach(function (ln) { maxW = Math.max(maxW, ln.w); });
     }
-    return { lines: lines, textH: lines.length * px * lh, refPx: refPx, refH: refH, maxW: maxW };
+    return { lines: lines, textH: lines.length * px * lh, refPx: refPx, refH: refH, refLines: refLines, maxW: maxW };
   }
   function fitSize(spec, measure) {
     var px = Math.round(spec.size), f = spec.frame;
@@ -1738,13 +1739,13 @@ var TextLayout = (function () {
     });
     var ref = null;
     if (m.refH) {
-      var refW = measure(spec.ref, m.refPx);
-      ref = { text: spec.ref, x: startX(refW), y: spec.refPos === 'top' ? top + m.refPx * lh / 2 : top + areaH + 0.5 * px * lh + m.refPx * lh / 2, w: refW };
+      var refTop = spec.refPos === 'top' ? top : top + areaH + 0.5 * px * lh;
+      ref = { text: spec.ref, lines: m.refLines.map(function (ln, i) { return { text: ln.text, x: startX(ln.w), y: refTop + m.refPx * lh * (i + 0.5), w: ln.w }; }) };
     }
     return { px: px, numPx: Math.round(px * NUM_SCALE), refPx: m.refPx, lh: lh, lines: lines, ref: ref, textH: m.textH, refH: m.refH,
       content: { x: startX(m.maxW), y: top, w: m.maxW, h: blockH } };
   }
-  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, REF_SCALE: REF_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fitSize: fitSize, place: place };
+  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fitSize: fitSize, place: place };
 })();
 
 
@@ -3157,7 +3158,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (d.ln.num) { g.font = textFont(tx, L.numPx); g.fillText(d.ln.num, d.ln.x, d.ln.y + lift - 0.3 * L.px); }
         if (d.ln.text) { g.font = textFont(tx, L.px); g.fillText(d.ln.text, d.ln.x + d.ln.numW, d.ln.y + lift); }
       });
-      if (L.ref) { g.globalAlpha = alpha; g.font = textFont(tx, L.refPx); g.fillText(L.ref.text, L.ref.x, L.ref.y + lift); }
+      if (L.ref) { g.globalAlpha = alpha; g.font = textFont(tx, L.refPx); L.ref.lines.forEach(function (ln) { g.fillText(ln.text, ln.x, ln.y + lift); }); }
       g.restore();
       if (boxes) boxes.push({ kind: 'text', id: tx.id, x: bx, y: by, w: bw, h: bh });
     }
