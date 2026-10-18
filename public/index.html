@@ -121,7 +121,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .sec.collapsed > .headrow::after { content: attr(data-summary); color: var(--muted); font-size: 13px; margin-right: auto; }
 .cols.lib-collapsed { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .cols.lib-collapsed #sec-library { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-@media (prefers-reduced-motion: reduce) { .sectoggle svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sectoggle svg, .textrow .exp svg { transition: none; } }
 .headrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
@@ -207,14 +207,19 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .cues { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .minor { font: 600 15px/1.3 var(--ui); margin: 0; }
 .textsec { border-top: 1px solid var(--line); padding-top: 14px; }
-.textrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 2px; cursor: pointer; font-size: 14px; }
+.textrow { display: grid; grid-template-columns: auto 96px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 2px; cursor: pointer; font-size: 14px; }
 .missing { background: var(--warn-soft); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .missing ul { margin: 0; padding-left: 20px; }
 .missing li { overflow-wrap: anywhere; }
 .usednote { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .usednote.overlap { color: var(--warn); font-weight: 600; }
 .textrow .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
-.textrow .txt { overflow-wrap: anywhere; white-space: pre-line; }
+.textrow .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.textrow.open .txt { white-space: pre-line; overflow-wrap: anywhere; overflow: visible; }
+.textrow .exp svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform 0.15s; }
+.textrow:not(.open) .exp svg { transform: rotate(-90deg); }
+.textrow.checked { background: color-mix(in srgb, var(--sel) 7%, transparent); }
+.list > li.edslot { padding: 0 0 10px; }
 .tapq .list > li { display: flex; gap: 10px; align-items: center; padding: 6px 2px; font-size: 14px; }
 .tapq .list .txt { flex: 1; overflow-wrap: anywhere; }
 #manyMsg { white-space: pre-line; }
@@ -229,6 +234,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip.textc.lp.ln { box-shadow: inset 3px 0 0 currentColor, inset -3px 0 0 currentColor; }
 .tl .clip.textc.ld { background-image: repeating-linear-gradient(90deg, transparent 0 10px, rgba(255,255,255,0.18) 10px 12px); }
 .tl .clip.textc.locked { cursor: default; opacity: 0.8; }
+.tl .clip.textc.checked { outline: 2px solid var(--sel); outline-offset: 1px; }
 .tl .clip .lk { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; }
 .tl .snapline { position: absolute; top: 18px; bottom: 0; width: 0; border-left: 1px solid var(--sel); z-index: 4; pointer-events: none; }
 .texted textarea { width: 100%; font: 16px/1.4 var(--ui); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; resize: vertical; }
@@ -469,9 +475,15 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             </div>
             <p class="note" id="tapHint"></p>
           </div>
-          <p class="note">Messages you place yourself. Select one, then drag its box in the preview to move it, or drag the box’s edges to resize it. On the timeline, drag the block to move it, or drag its right edge to change how long it shows.</p>
+          <p class="note">Messages you place yourself. Select one, then drag its box in the preview to move it, or drag the box’s edges to resize it. On the timeline, drag the block to move it, or drag its right edge to change how long it shows. Tick rows to remove several at once.</p>
+          <div class="btnrow" id="textBar" hidden>
+            <label><input type="checkbox" id="textAll"> Select all</label>
+            <button class="btn small" id="textRmChecked" disabled>Remove selected</button>
+            <button class="btn small quiet" id="textCollapseAll" disabled>Collapse all</button>
+          </div>
           <ul class="list" id="texts"></ul>
           <div class="texted" id="textEd" hidden>
+            <div class="btnrow"><button class="btn small primary" id="textDoneTop" style="margin-left:auto">Done</button></div>
             <div id="textBodyRow">
               <label for="textBody" class="minor" style="font-size:14px">Text <span class="note" style="font-weight:400">Press Enter for a new line.</span></label>
               <textarea id="textBody" rows="3"></textarea>
@@ -1491,6 +1503,22 @@ var TextTiming = (function () {
   return { MIN_READ: MIN_READ, WPM_MIN: WPM_MIN, WPM_MAX: WPM_MAX, WPM_DEFAULT: WPM_DEFAULT, wordCount: wordCount, readSeconds: readSeconds, cutForTap: cutForTap, passageSchedule: passageSchedule, verseAlphas: verseAlphas, sizingTime: sizingTime };
 })();
 
+/* Which texts are checked or expanded in the list. Maps are { id: true }; inputs are never changed. */
+var TextPick = (function () {
+  function has(map, id) { return !!(map && map[id]); }
+  function toggle(map, id) { var out = Object.assign({}, map); if (out[id]) delete out[id]; else out[id] = true; return out; }
+  function set(map, id, on) { var out = Object.assign({}, map); if (on) out[id] = true; else delete out[id]; return out; }
+  function all(texts) { var out = {}; texts.forEach(function (tx) { out[tx.id] = true; }); return out; }
+  function ids(map, texts) { return texts.filter(function (tx) { return has(map, tx.id); }).map(function (tx) { return tx.id; }); }
+  function count(map, texts) { return ids(map, texts).length; }
+  function allChecked(map, texts) { return texts.length > 0 && count(map, texts) === texts.length; }
+  function prune(map, texts) { var out = {}; ids(map, texts).forEach(function (id) { out[id] = true; }); return out; }
+  function without(texts, idList) { return texts.filter(function (tx) { return idList.indexOf(tx.id) < 0; }); }
+  function rowClick(withModifier, anyChecked) { return withModifier || anyChecked ? 'check' : 'open'; }
+  function removeQuestion(n) { return n === 1 ? 'Remove this item?' : 'Remove ' + n + ' items?'; }
+  return { has: has, toggle: toggle, set: set, all: all, ids: ids, count: count, allChecked: allChecked, prune: prune, without: without, rowClick: rowClick, removeQuestion: removeQuestion };
+})();
+
 /* Where on-screen text goes inside its box. Pure functions; measuring is passed in. */
 var TextLayout = (function () {
   var MIN_W = 0.08, MIN_H = 0.06, MIN_SIZE = 24, NUM_SCALE = 0.55, REF_SCALE = 0.6;
@@ -1682,7 +1710,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: []
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -2291,6 +2319,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function changed() {
     relayout();
     if (ui.sel && !findItem(ui.sel.lane, ui.sel.id)) ui.sel = null;
+    ui.checked = TextPick.prune(ui.checked, mix.texts); ui.expanded = TextPick.prune(ui.expanded, mix.texts);
     if (ui.cursor >= plan.total) ui.cursor = 0;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250);
@@ -2462,7 +2491,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     mix.texts.forEach(function (tx, row) {
       var line = plainText(tx).split('\n')[0], first = tx.ref ? tx.ref + ' · ' + line : line || 'Text';
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
-      var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '');
+      var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '') + (TextPick.has(ui.checked, tx.id) ? ' checked' : '');
       var fixedEnd = tx.whole || during || tx.untilNext || tx.toEnd || tx.locked;
       h += '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '" title="' + esc(plainText(tx)) + '" style="top:' + (100 + row * 22) + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
     });
@@ -2520,7 +2549,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var selFlash = null;
   function flashSel(text) { selFlash = text; renderSel(); setTimeout(function () { selFlash = null; renderSel(); }, 2500); }
   function renderSel() {
-    var bar = $('selbar'), hit = clipOf(ui.sel), h;
+    var bar = $('selbar'), hit = clipOf(ui.sel), h, picked = TextPick.count(ui.checked, mix.texts);
+    if (picked) {
+      setHTML(bar, '<span class="what">' + picked + (picked === 1 ? ' text' : ' texts') + ' selected</span><button class="btn small" data-selact="rmchecked">Remove ' + picked + '</button><button class="btn small quiet" data-selact="uncheck">Clear selection</button><span class="note">Ctrl+click text on the timeline to add or take away. Delete removes them. Esc clears the selection.</span>');
+      return;
+    }
     if (!hit) {
       setHTML(bar, '<span class="note">Click a recording on the timeline to select it, then drag it or use the arrow keys to move it. Click empty space to play from there. Hold Ctrl and scroll to zoom.</span>');
       return;
@@ -3256,21 +3289,60 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
   /* ---------- your own text on screen ---------- */
   function selText() { return ui.sel && ui.sel.lane === 'texts' ? findItem('texts', ui.sel.id) : null; }
+  var textEdEl = $('textEd');
   function renderTexts() {
     var h = '', sel = selText();
     mix.texts.slice().sort(function (a, b) { return a.start - b.start; }).forEach(function (tx) {
-      var sp = txSpan(tx);
-      h += '<li class="textrow' + (sel && sel.id === tx.id ? ' picked' : '') + '" data-text="' + tx.id + '"><span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(plainText(tx)) + '</span>' +
-        '<button class="btn small quiet" data-act="rmtext" data-id="' + tx.id + '">Remove</button></li>';
+      var sp = txSpan(tx), picked = sel && sel.id === tx.id, open = TextPick.has(ui.expanded, tx.id), checked = TextPick.has(ui.checked, tx.id);
+      var label = (plainText(tx).split('\n')[0] || tx.ref || 'Text').slice(0, 60);
+      h += '<li class="textrow' + (picked ? ' picked' : '') + (checked ? ' checked' : '') + (open ? ' open' : '') + '" data-text="' + tx.id + '">' +
+        '<input type="checkbox" data-act="check" aria-label="Select: ' + esc(label) + '"' + (checked ? ' checked' : '') + '>' +
+        '<span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(plainText(tx)) + '</span>' +
+        '<button class="btn small quiet exp" data-act="expand" aria-expanded="' + open + '" aria-label="' + (open ? 'Show one line' : 'Show all of it') + '"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg></button></li>';
+      if (picked) h += '<li class="edslot" data-slot="1"></li>';
     });
     if (!h) h = '<li class="blank">No text of your own yet. Press Add text to put a message on screen at the playhead.</li>';
-    setHTML($('texts'), h);
+    keepEditorSteady(function () { placeTextEditor(h); });
+    renderTextBar();
     renderTextEditor();
     renderQueue();
   }
+  function placeTextEditor(html) {
+    var list = $('texts'), home = list.parentNode;
+    if (list._html !== html && list.contains(textEdEl)) home.insertBefore(textEdEl, list.nextSibling);
+    setHTML(list, html);
+    var slot = list.querySelector('[data-slot]');
+    if (slot) { if (textEdEl.parentNode !== slot) slot.appendChild(textEdEl); }
+    else if (textEdEl.parentNode !== home) home.insertBefore(textEdEl, list.nextSibling);
+  }
+  function keepEditorSteady(run) {
+    var ed = textEdEl, active = document.activeElement, inside = ed.contains(active);
+    var caret = inside && /^(text|search|textarea)$/.test(active.type) ? [active.selectionStart, active.selectionEnd] : null;
+    var top = ed.getBoundingClientRect().top;
+    run();
+    if (!inside) return;
+    if (document.activeElement !== active) {
+      active.focus({ preventScroll: true });
+      if (caret) active.setSelectionRange(caret[0], caret[1]);
+    }
+    window.scrollBy(0, ed.getBoundingClientRect().top - top);
+  }
+  function renderTextBar() {
+    var n = TextPick.count(ui.checked, mix.texts), all = TextPick.allChecked(ui.checked, mix.texts), box = $('textAll');
+    $('textBar').hidden = !mix.texts.length;
+    box.checked = all; box.indeterminate = n > 0 && !all;
+    $('textRmChecked').textContent = n ? 'Remove selected (' + n + ')' : 'Remove selected';
+    $('textRmChecked').disabled = !n;
+    $('textCollapseAll').disabled = !TextPick.count(ui.expanded, mix.texts);
+  }
+  function closeTextEditor() { ui.sel = null; render(); }
+  function revealTextEditor() {
+    if (collapsed.screen || collapsed.texts) { collapsed.screen = false; collapsed.texts = false; lsSet('hp.collapsed', collapsed); renderSections(); }
+    textEdEl.scrollIntoView({ block: 'nearest' });
+  }
   var edId = null;
   function renderTextEditor() {
-    var tx = selText(), ed = $('textEd');
+    var tx = selText(), ed = textEdEl;
     ed.hidden = !tx;
     if (!tx) { edId = null; return; }
     var fresh = edId !== tx.id;
@@ -3339,6 +3411,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed(); revealSel();
     var b = $('textBody'); b.focus(); b.select();
   }
+  function removeTexts(idList) {
+    if (!idList.length) return;
+    if (!confirm(TextPick.removeQuestion(idList.length))) return;
+    mix.texts = TextPick.without(mix.texts, idList);
+    changed();
+  }
+  function checkedIds() { return TextPick.ids(ui.checked, mix.texts); }
+  function checksChanged() { renderTimeline(); renderSel(); renderTexts(); }
   function editText(final) {
     var tx = selText(); if (!tx) return;
     var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole, readTime: tx.readTime, mode: tx.passage && tx.passage.mode };
@@ -3728,13 +3808,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- events ---------- */
   function bind() {
     $('playBtn').onclick = playOrPause;
+    function pickKey(ev) {
+      if (!TextPick.count(ui.checked, mix.texts)) return false;
+      if (ev.key === 'Delete') { ev.preventDefault(); removeTexts(checkedIds()); return true; }
+      if (ev.key === 'Escape') { ui.checked = {}; checksChanged(); return true; }
+      return false;
+    }
     document.addEventListener('keydown', function (ev) {
       if ($('trimDlg').open || $('infoDlg').open) return;
       var t = ev.target.tagName;
+      if (ev.target.matches && ev.target.matches('[data-act="check"], #textAll') && pickKey(ev)) return;
       if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
       if (ev.code === 'Space' && t !== 'BUTTON') { ev.preventDefault(); $('playBtn').click(); return; }
       if (ev.key === 'Enter' && mix.queue.length && Player.tag && isMixTag(Player.tag)) { ev.preventDefault(); placeNext(); return; }
       if (ev.key === 'Backspace' && ui.taps.length) { ev.preventDefault(); undoTap(); return; }
+      if (pickKey(ev)) return;
       if (!ui.sel) return;
       if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         ev.preventDefault();
@@ -3750,6 +3838,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     tl.addEventListener('pointerdown', function (ev) {
       if (ev.button !== 0) return;
       var el = ev.target.closest ? ev.target.closest('.clip') : null;
+      if (el && el.getAttribute('data-lane') === 'texts' && (ev.ctrlKey || ev.metaKey)) {
+        ui.checked = TextPick.toggle(ui.checked, el.getAttribute('data-id')); drag = null; checksChanged();
+        return;
+      }
       drag = { x: ev.clientX, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: !!(ev.target.closest && ev.target.closest('[data-grip]')) };
       if (drag.sel) {
         drag.base = null;
@@ -3785,7 +3877,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!drag) return;
       var d = drag; drag = null;
       if (ui.snapT != null) { ui.snapT = null; }
-      if (d.sel) { if (d.moved) changed(); else render(); return; }
+      if (d.sel) {
+        if (d.moved) changed(); else render();
+        if (d.sel.lane === 'texts' && !d.moved) revealTextEditor();
+        return;
+      }
       if (ev.type === 'pointercancel' || Math.abs(ev.clientX - d.x) > 4) return;
       ui.cursor = timeAt(ev);
       if (plan.total && ui.cursor < plan.total) playMix(ui.cursor); else { ui.cursor = 0; syncPlay(); }
@@ -3818,12 +3914,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('selbar').addEventListener('click', function (ev) {
       var b = ev.target.closest('button'); if (!b) return;
       if (b.hasAttribute('data-nudge')) { nudge(parseFloat(b.getAttribute('data-nudge'))); return; }
-      var act = b.getAttribute('data-selact'), hit = clipOf(ui.sel);
+      var act = b.getAttribute('data-selact');
+      if (act === 'rmchecked') { removeTexts(checkedIds()); return; }
+      if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
+      var hit = clipOf(ui.sel);
       if (!hit) return;
       if (act === 'play') playMix(Math.max(0, hit.c.start - 4));
       else if (act === 'info') openInfo(hit.c.key, ui.sel.lane);
       else if (act === 'trim') openTrim(ui.sel.lane, ui.sel.id);
-      else if (act === 'edittext') { if (collapsed.screen) { collapsed.screen = false; lsSet('hp.collapsed', collapsed); renderSections(); } $('textBody').focus(); $('textEd').scrollIntoView({ block: 'nearest' }); }
+      else if (act === 'edittext') { revealTextEditor(); $('textBody').focus(); }
       else if (act === 'clear') { ui.sel = null; render(); }
     });
 
@@ -4091,11 +4190,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       changed();
     });
     $('texts').addEventListener('click', function (ev) {
-      var rm = ev.target.closest('[data-act="rmtext"]');
-      if (rm) { var id = rm.getAttribute('data-id'); mix.texts = mix.texts.filter(function (x) { return x.id !== id; }); if (ui.sel && ui.sel.id === id) ui.sel = null; changed(); return; }
-      var row = ev.target.closest('[data-text]');
-      if (row) select({ lane: 'texts', id: row.getAttribute('data-text') });
+      if (ev.target.closest('[data-slot]')) return;
+      var row = ev.target.closest('[data-text]'); if (!row) return;
+      var id = row.getAttribute('data-text');
+      if (ev.target.closest('[data-act="expand"]')) { ui.expanded = TextPick.toggle(ui.expanded, id); renderTexts(); return; }
+      var box = ev.target.closest('[data-act="check"]');
+      if (box) { ui.checked = TextPick.set(ui.checked, id, box.checked); checksChanged(); return; }
+      if (TextPick.rowClick(ev.ctrlKey || ev.metaKey, TextPick.count(ui.checked, mix.texts) > 0) === 'check') { ui.checked = TextPick.toggle(ui.checked, id); checksChanged(); return; }
+      select({ lane: 'texts', id: id });
     });
+    $('textAll').addEventListener('change', function () { ui.checked = this.checked ? TextPick.all(mix.texts) : {}; checksChanged(); });
+    $('textRmChecked').onclick = function () { removeTexts(checkedIds()); };
+    $('textCollapseAll').onclick = function () { ui.expanded = {}; renderTexts(); };
     $('textEd').addEventListener('input', function (ev) { if (ev.target.id !== 'textStart') editText(false); });
     $('textEd').addEventListener('change', function () { editText(true); });
     $('textEd').addEventListener('click', function (ev) {
@@ -4116,9 +4222,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var tb = $('textBody'); tb.focus(); tb.select();
     };
     $('textPlay').onclick = function () { var tx = selText(); if (tx) playMix(Math.max(0, txSpan(tx).start - 3)); };
-    $('textDone').onclick = function () { ui.sel = null; render(); };
+    $('textDone').onclick = $('textDoneTop').onclick = closeTextEditor;
     ['lenMix', 'lenFull'].forEach(function (id) { $(id).onchange = function () { ui.expLen = this.value; lsSet('hp.expLen', ui.expLen); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); }; });
-    $('textRemove').onclick = function () { var tx = selText(); if (!tx) return; mix.texts = mix.texts.filter(function (x) { return x !== tx; }); ui.sel = null; changed(); };
+    $('textRemove').onclick = function () { var tx = selText(); if (tx) removeTexts([tx.id]); };
 
     // drag titles and text around in the preview
     var scr = $('screen'), sd = null;
@@ -4222,7 +4328,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var saved = lsGet('hp.saved') || {}, m = saved[this.value];
       if (!m) return;
       Player.stop();
-      mix = upgradeMix(clone(m)); ui.taps = [];
+      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.expanded = {};
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
     };
@@ -4241,7 +4347,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
       Player.stop();
       var o = mix.opts, t = mix.target;
-      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
+      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.expanded = {}; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
     };
 
@@ -4607,7 +4713,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; }
+    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.expanded = {}; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
   }
   async function openLinked(h) {
@@ -4715,7 +4821,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('fileName').value = 'sacrament-' + nextSunday();
     addSamples();
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = upgradeMix(work); ui.taps = []; }
+    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.expanded = {}; }
     else mix = sampleMix();
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
