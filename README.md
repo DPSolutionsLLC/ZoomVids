@@ -39,6 +39,12 @@ Each row in **Your text on screen** shows one line. The arrow on the right shows
 
 To remove several at once, tick their rows (or **Select all**) and press **Remove selected**. Ctrl+click (⌘+click on a Mac) a row, or a text block on the timeline, to tick it. While anything is ticked, clicking a row ticks it instead of opening it. **Delete** removes the ticked items and **Esc** clears the ticks. Removing always asks first. To remove a single item, open it and press **Remove this text**.
 
+**Moving several at once.** Tick the items, then drag any ticked block on the timeline, or use the arrow keys or the **‹ 1 s** / **0.1 ›** buttons. They all move by the same amount, so the gaps between them stay the same. Locked items, items shown for the whole video, items that start at 0:00 and items tied to a song or talk stay put, and the bar under the timeline says how many stayed and why. Nothing moves before 0:00.
+
+**Hiding.** Press the eye on a row (or **Hide selected**) to hide an item. It stays on the timeline, dimmed with a dashed edge, and keeps its place in the timing, but it isn't shown in the preview or the video. Press the eye again to show it.
+
+**Groups.** Tick items and press **Group selected**, then type a name and press Enter. A group is a heading in the list that you can open and close, with an eye to hide or show the whole group. On the timeline, drag the group's bar to move all of it, or click the bar to tick its items. **Duplicate** makes a copy at the same times (for example "take 3" from "take 2") and hides the original, so you can try a different set and switch between them. **Ungroup** keeps the items; **Remove group and its items** deletes them (it asks first). Inside a group, "Start right after the previous text" and "Keep showing until the next text starts" look only at texts in the same group. To take one item out, open it and press **Take it out of the group**.
+
 ### Scriptures on screen
 
 Under **Your text on screen**, press **Add scriptures or a list**, choose **Scriptures**, and type or paste references such as `John 3:16, Moroni 10:4, D&C 4:2, Alma 32:21-23`. Full book names and the usual abbreviations both work. Each reference becomes one block on the timeline, and you choose how it plays:
