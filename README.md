@@ -73,6 +73,8 @@ You can change this later in the text editor. Each verse starts on its own line 
 
 In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button. A scripture passage is one entry in the queue, and one **Enter** places the whole passage.
 
+**Preview sizes.** When the preview is floating, **Phone** shrinks or grows it to about the real size of the video on a phone turned sideways (about 12 cm wide), so you can check the text is readable for people watching on a phone. **1** and **2** remember sizes you like: press **Save…** then **1** or **2** to store the current size, and press **1** or **2** later to go back to it. An empty button saves on the first click. Sizes change the width only, and the preview stays where it is.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.

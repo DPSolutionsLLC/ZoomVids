@@ -205,7 +205,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .screenbox.floating .floathead { cursor: move; touch-action: none; user-select: none; }
 .transport { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-top: 6px; }
 .transport .btnrow { gap: 4px; }
-.speeds .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.speeds .btn[aria-pressed="true"], .sizes .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.sizes.saving [data-slot] { outline: 2px dashed var(--accent); outline-offset: 1px; }
 .floatgrip { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border: 0; background: none; cursor: nwse-resize; touch-action: none; border-radius: 4px; padding: 0; display: grid; place-items: center; }
 .floatgrip i { display: block; width: 10px; height: 10px; border-right: 3px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 0 0 3px 0; }
 .floatgrip:hover i, .floatgrip:focus-visible i { border-color: var(--muted); }
@@ -477,6 +478,12 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
                   <button class="btn small" id="trPlace" hidden>Place next</button>
                 </div>
                 <div class="btnrow speeds" role="group" aria-label="Playback speed" id="trSpeeds"></div>
+                <div class="btnrow sizes" role="group" aria-label="Preview size" id="trSizes">
+                  <button class="btn small" id="sizePhone" title="About the real size of the video on a phone turned sideways (about 12 cm wide)">Phone</button>
+                  <button class="btn small" data-slot="0">1</button>
+                  <button class="btn small" data-slot="1">2</button>
+                  <button class="btn small quiet" id="sizeSave" aria-pressed="false">Save…</button>
+                </div>
               </div>
               <button class="floatgrip" id="floatGrip" hidden aria-label="Drag to resize the preview" title="Drag to resize the preview"><i></i></button>
             </div>
@@ -2671,6 +2678,27 @@ var ScriptureFill = (function () {
     return chosen;
   }
   return { MIN_GAP: MIN_GAP, MIN_WINDOW: MIN_WINDOW, gapAt: gapAt, fromDrag: fromDrag, spansInside: spansInside, used: used, fits: fits, left: left, canAdd: canAdd, spaceEvenly: spaceEvenly, randomFill: randomFill };
+})();
+
+/* Floating preview preset and saved widths. Pure functions. */
+var FloatSizes = (function () {
+  var PHONE_WIDTH = 440;
+  var SLOTS = 2;
+  var MIN_WIDTH = 240, MAX_WIDTH = 1280;
+  function validWidth(w) { return typeof w === 'number' && Number.isFinite(w) && w >= MIN_WIDTH && w <= MAX_WIDTH; }
+  function readSlots(raw) {
+    var out = [];
+    for (var i = 0; i < SLOTS; i++) out.push(Array.isArray(raw) && validWidth(raw[i]) ? Math.round(raw[i]) : null);
+    return out;
+  }
+  function saveSlot(slots, index, w) {
+    var out = readSlots(slots);
+    if (index < 0 || index >= SLOTS || !validWidth(w)) return out;
+    out[index] = Math.round(w);
+    return out;
+  }
+  function matches(target, current) { return target != null && Math.abs(target - current) <= 2; }
+  return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches };
 })();
 
 
@@ -7094,7 +7122,35 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!s || typeof s !== 'object' || !Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.w)) return fallback;
     return { on: s.on === true, x: s.x, y: s.y, w: s.w };
   }
+  var floatSlots = FloatSizes.readSlots(lsGet('hp.floatSizes'));
+  var sizeSaving = false;
   function saveFloat() { lsSet('hp.float', floatState); }
+  function renderSizes() {
+    $('sizePhone').setAttribute('aria-pressed', String(FloatSizes.matches(FloatSizes.PHONE_WIDTH, floatState.w)));
+    $('trSizes').querySelectorAll('[data-slot]').forEach(function (b) {
+      var i = +b.getAttribute('data-slot'), saved = floatSlots[i];
+      b.classList.toggle('quiet', saved == null);
+      var title = sizeSaving || saved == null ? 'Save the current size as ' + (i + 1) : 'Go to saved size ' + (i + 1) + ' (' + saved + ' px wide)';
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.setAttribute('aria-pressed', String(!sizeSaving && FloatSizes.matches(saved, floatState.w)));
+    });
+    $('trSizes').classList.toggle('saving', sizeSaving);
+    $('sizeSave').setAttribute('aria-pressed', String(sizeSaving));
+    $('sizeSave').textContent = sizeSaving ? 'Cancel' : 'Save…';
+  }
+  function resizeFloat(w) { placeFloat(floatState.x, floatState.y, w); saveFloat(); renderSizes(); }
+  function saveSize(i) {
+    floatSlots = FloatSizes.saveSlot(floatSlots, i, floatState.w);
+    var ok = lsSet('hp.floatSizes', floatSlots);
+    sizeSaving = false; renderSizes();
+    if (!ok) {
+      var message = 'Couldn\'t save the size in this browser.';
+      var b = $('trSizes').querySelector('[data-slot="' + i + '"]');
+      b.title = message; b.setAttribute('aria-label', message);
+      $('screenWhat').textContent = message;
+    }
+  }
   function placeFloat(x, y, w) {
     var box = $('screenBox');
     w = clamp(Math.round(w), 240, Math.max(240, Math.min(1280, innerWidth - 32)));
@@ -7107,6 +7163,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function floatPreview(on) {
     var box = $('screenBox');
     floatState.on = on;
+    if (!on) sizeSaving = false;
     if (on) {
       document.body.appendChild(box);
       box.classList.add('floating');
@@ -7119,6 +7176,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('floatBtn').textContent = on ? 'Put back' : 'Float';
     $('floatBtn').setAttribute('aria-pressed', String(on));
     if (on) placeFloat(floatState.x, floatState.y, floatState.w);
+    renderSizes();
     renderTransport();
     saveFloat();
     drawScreen();
@@ -7142,13 +7200,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       ev.preventDefault();
     });
     grip.addEventListener('pointermove', function (ev) { if (size) placeFloat(floatState.x, floatState.y, size.w + ev.clientX - size.x); });
-    function endSize() { if (!size) return; size = null; saveFloat(); }
+    function endSize() { if (!size) return; size = null; saveFloat(); renderSizes(); }
     grip.addEventListener('pointerup', endSize); grip.addEventListener('pointercancel', endSize);
     grip.addEventListener('keydown', function (ev) {
       if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight' && ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
       ev.preventDefault(); ev.stopPropagation();
       placeFloat(floatState.x, floatState.y, floatState.w + (ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 40 : -40));
       saveFloat();
+      renderSizes();
     });
     $('trStart').onclick = playFromStart;
     $('trBack').onclick = function () { skipBy(-15); };
@@ -7159,7 +7218,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (b) setSpeed(parseFloat(b.getAttribute('data-speed')));
     });
     $('speedPill').onclick = function () { setSpeed(1); };
-    window.addEventListener('resize', function () { if (floatState.on) placeFloat(floatState.x, floatState.y, floatState.w); });
+    $('sizePhone').onclick = function () { sizeSaving = false; resizeFloat(FloatSizes.PHONE_WIDTH); };
+    $('sizeSave').onclick = function () { sizeSaving = !sizeSaving; renderSizes(); };
+    $('trSizes').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-slot]');
+      if (!b) return;
+      var i = +b.getAttribute('data-slot');
+      if (sizeSaving || floatSlots[i] == null) saveSize(i);
+      else resizeFloat(floatSlots[i]);
+    });
+    $('trSizes').addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape' || !sizeSaving) return;
+      sizeSaving = false; renderSizes(); ev.stopPropagation();
+    });
+    window.addEventListener('resize', function () { if (floatState.on) { placeFloat(floatState.x, floatState.y, floatState.w); renderSizes(); } });
   })();
 
   /* ---------- hymn checklist ---------- */
