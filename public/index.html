@@ -7,7 +7,7 @@
 </head>
 <body>
 <title>Hymn Playlist</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,500;1,700&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=Source+Sans+3:ital,wght@0,400;0,700;1,400;1,700&family=Montserrat:ital,wght@0,400;0,700;1,400;1,700&family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Merriweather:ital,wght@0,400;0,700;1,400;1,700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400;1,700&display=swap">
 <style>
 /* Layout: a mixing desk. The mix drawn to scale across the top, the folder of
    recordings on the left, the running order, titles and export on the right. */
@@ -296,6 +296,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .texted .grid.timing { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
 .texted .grid.look { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
 .sizefield { display: flex; flex-direction: column; gap: 4px; }
+.fontfield { display: flex; flex-direction: column; gap: 4px; }
+.fontadd { grid-column: 1 / -1; background: var(--sunk); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.texted .fontadd input[type="text"] { width: min(100%, 260px); }
+.fontadd .fontrow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 #textSizeNow { color: var(--muted); font-size: 12px; }
 .fitwarn { color: var(--warn); font-weight: 600; }
 .texted input:disabled, .texted select:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -585,7 +589,17 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
                 <label><span id="textSizeLabel">Largest size</span> <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
                 <span class="btnrow"><label><input type="checkbox" id="textFixed"> Fixed size</label> <span id="textSizeNow" data-single></span></span>
               </div>
-              <label>Font <select id="textFont"><option value="sans">Clean</option><option value="bold">Clean, bold</option><option value="serif">Classic</option><option value="italic">Classic italic</option></select></label>
+              <div class="fontfield">
+                <label>Font <select id="textFont"></select></label>
+                <span class="btnrow"><label><input type="checkbox" id="textBold"> Bold</label> <label><input type="checkbox" id="textItalic"> Italic</label></span>
+                <p class="note" id="textFontNote" data-single hidden></p>
+              </div>
+              <div id="fontAdd" class="fontadd" data-single hidden>
+                <span class="btnrow"><label>Font name, as on Google Fonts <input type="text" id="fontAddName" autocomplete="off" spellcheck="false" placeholder="Open Sans"></label> <button type="button" class="btn small" id="fontAddGo">Add</button> <a href="https://fonts.google.com" target="_blank" rel="noopener">Browse Google Fonts</a></span>
+                <p class="note" id="fontAddMsg" role="status" hidden></p>
+                <div id="fontAddList"></div>
+                <span><button type="button" class="link" id="fontAddClose">Close</button></span>
+              </div>
               <label>Line up <select id="textAlign"><option value="center">Centered</option><option value="left">Left</option><option value="right">Right</option></select></label>
               <label>Up and down <select id="textValign"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label>
               <label>Color <input type="color" id="textColor"><span class="tag mixtag" hidden>Mixed</span></label>
@@ -2245,8 +2259,8 @@ var TextOverlap = (function () {
 
 /* Editing several texts at once. Pure functions; inputs are never changed. */
 var TextBulk = (function () {
-  var KINDS = ['locked', 'whole', 'tied', 'clash'];
-  var LABELS = { locked: 'locked', whole: 'shows for the whole video', tied: 'tied to a recording', clash: 'another setting decides it' };
+  var KINDS = ['locked', 'whole', 'tied', 'clash', 'nostyle'];
+  var LABELS = { locked: 'locked', whole: 'shows for the whole video', tied: 'tied to a recording', clash: 'another setting decides it', nostyle: 'in a font without that style' };
   var TIMING = ['dur', 'fadeIn', 'fadeOut', 'readTime', 'afterPrev', 'xfIn', 'untilNext', 'xfOut', 'fromStart', 'toEnd'];
   function norm(v) {
     if (typeof v === 'string') return v.toLowerCase();
@@ -2276,10 +2290,11 @@ var TextBulk = (function () {
     if (field === 'xfOut') return !tx.untilNext;
     return false;
   }
-  function targets(texts, field, value) {
+  function targets(texts, field, value, canStyle) {
     var ids = [], held = [];
-    var timing = TIMING.indexOf(field) >= 0;
+    var timing = TIMING.indexOf(field) >= 0, style = (field === 'bold' || field === 'italic') && typeof canStyle === 'function';
     texts.forEach(function (tx) {
+      if (style) { if (canStyle(tx) === false) held.push('nostyle'); else ids.push(tx.id); return; }
       if (!timing) { ids.push(tx.id); return; }
       var kind = hold(tx) || (clash(tx, field, value) ? 'clash' : '');
       if (kind) held.push(kind); else ids.push(tx.id);
@@ -2313,7 +2328,7 @@ var TextBulk = (function () {
   function lookKey(tx, lk) {
     var extra = lk.look === 'outline' ? [upper(lk.glowColor), lk.glowOpacity, lk.glowWidth, lk.glowSoft]
       : lk.look === 'box' ? [upper(lk.boxColor), lk.boxOpacity] : [];
-    return JSON.stringify([tx.font, Math.round(tx.size), !!tx.fixedSize, String(tx.color || '#FFFFFF').toUpperCase(), lk.look].concat(extra));
+    return JSON.stringify([tx.font, !!tx.bold, !!tx.italic, Math.round(tx.size), !!tx.fixedSize, String(tx.color || '#FFFFFF').toUpperCase(), lk.look].concat(extra));
   }
   return { TIMING: TIMING, common: common, hold: hold, clash: clash, targets: targets, heldNote: heldNote, kindOf: kindOf, mixedKinds: mixedKinds, quick: quick, lookKey: lookKey };
 })();
@@ -2701,6 +2716,132 @@ var FloatSizes = (function () {
   return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches };
 })();
 
+/* Fonts for text on screen: the built-in list, fonts added from Google Fonts, bold and italic. Pure functions; inputs are never changed. */
+var TextFont = (function () {
+  var ALL = { b: true, i: true, bi: true };
+  var BUILT_IN = [
+    { id: 'sans', label: 'Clean (Figtree)', family: 'Figtree', kind: 'sans', regular: 500, styles: ALL },
+    { id: 'atkinson', label: 'Atkinson Hyperlegible', family: 'Atkinson Hyperlegible', kind: 'sans', regular: 400, styles: ALL },
+    { id: 'source', label: 'Source Sans', family: 'Source Sans 3', kind: 'sans', regular: 400, styles: ALL },
+    { id: 'montserrat', label: 'Montserrat', family: 'Montserrat', kind: 'sans', regular: 400, styles: ALL },
+    { id: 'serif', label: 'Classic (Libre Caslon)', family: 'Libre Caslon Text', kind: 'serif', regular: 400, styles: { b: true, i: true, bi: false } },
+    { id: 'lora', label: 'Lora', family: 'Lora', kind: 'serif', regular: 400, styles: ALL },
+    { id: 'merriweather', label: 'Merriweather', family: 'Merriweather', kind: 'serif', regular: 400, styles: ALL },
+    { id: 'baskerville', label: 'Libre Baskerville', family: 'Libre Baskerville', kind: 'serif', regular: 400, styles: ALL }
+  ];
+  var FALLBACK = { sans: ', "Segoe UI", system-ui, sans-serif', serif: ', Georgia, serif' };
+  var TUPLES = ['0,400', '0,700', '1,400', '1,700'];
+  var API = 'https://fonts.googleapis.com/css2?';
+  function rawStyle(tx) {
+    if (tx.font === 'bold') return { id: 'sans', bold: true, italic: !!tx.italic };
+    if (tx.font === 'italic') return { id: 'serif', bold: !!tx.bold, italic: true };
+    return { id: typeof tx.font === 'string' && tx.font ? tx.font : 'sans', bold: !!tx.bold, italic: !!tx.italic };
+  }
+  function upgrade(tx) {
+    var r = rawStyle(tx);
+    tx.font = r.id;
+    if (r.bold) tx.bold = true; else delete tx.bold;
+    if (r.italic) tx.italic = true; else delete tx.italic;
+    return tx;
+  }
+  function addedEntry(item) { return { id: item.id, label: item.family, family: item.family, kind: 'sans', regular: 400, styles: item.styles, added: true }; }
+  function clean(stored) {
+    var items = [], seen = {};
+    BUILT_IN.forEach(function (e) { seen[e.family.toLowerCase()] = true; });
+    (stored && Array.isArray(stored.items) ? stored.items : []).forEach(function (it) {
+      if (!it || typeof it.family !== 'string') return;
+      var family = it.family.trim().replace(/\s+/g, ' ');
+      if (!family || seen[family.toLowerCase()]) return;
+      seen[family.toLowerCase()] = true;
+      var st = it.styles || {};
+      items.push({ id: 'g:' + family, family: family, styles: { b: !!st.b, i: !!st.i, bi: !!st.bi } });
+    });
+    return { v: 1, items: items };
+  }
+  function entries(added) { return BUILT_IN.concat((added || []).map(addedEntry)); }
+  function find(id, added) {
+    var all = entries(added);
+    for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+    return null;
+  }
+  function can(entry, bold, italic) {
+    if (bold && italic) return !!entry.styles.bi;
+    if (bold) return !!entry.styles.b;
+    if (italic) return !!entry.styles.i;
+    return true;
+  }
+  function fitStyle(entry, bold, italic) {
+    if (can(entry, bold, italic)) return { bold: !!bold, italic: !!italic, dropped: '' };
+    if (can(entry, bold, false)) return { bold: !!bold, italic: false, dropped: 'italic' };
+    if (can(entry, false, italic)) return { bold: false, italic: !!italic, dropped: 'bold' };
+    return { bold: false, italic: false, dropped: 'both' };
+  }
+  function resolve(tx, added) {
+    var r = rawStyle(tx), entry = find(r.id, added), missing = !entry;
+    if (missing) entry = BUILT_IN[0];
+    var st = fitStyle(entry, r.bold, r.italic);
+    return { entry: entry, bold: st.bold, italic: st.italic, missing: missing };
+  }
+  function cssFont(tx, px, added) {
+    var rf = resolve(tx, added), e = rf.entry;
+    return (rf.italic ? 'italic ' : '') + (rf.bold ? 700 : e.regular) + ' ' + px + 'px "' + e.family + '"' + FALLBACK[e.kind];
+  }
+  function faces(texts, added) {
+    var out = [];
+    (texts || []).forEach(function (tx) {
+      if (tx.hidden) return;
+      var f = cssFont(tx, 40, added);
+      if (out.indexOf(f) < 0) out.push(f);
+    });
+    return out;
+  }
+  function familyParam(family) { return 'family=' + encodeURIComponent(family).replace(/%20/g, '+'); }
+  function tuplesOf(entry) {
+    var r = entry.regular, list = ['0,' + r];
+    if (entry.styles.b) list.push('0,700');
+    if (entry.styles.i) list.push('1,' + r);
+    if (entry.styles.bi) list.push('1,700');
+    return list.sort();
+  }
+  function cssUrl(list) {
+    if (!list || !list.length) return null;
+    return API + list.map(function (e) { return familyParam(e.family) + ':ital,wght@' + tuplesOf(e).join(';'); }).join('&') + '&display=swap';
+  }
+  function probeUrl(family, tuple) { return API + familyParam(family) + (tuple ? ':ital,wght@' + tuple : ''); }
+  function tidy(s) { return s.trim().replace(/\s+/g, ' '); }
+  function nameCandidates(input) {
+    var s = String(input == null ? '' : input), m = s.match(/fonts\.google\.com\/specimen\/([^?#\/]+)/);
+    if (m) {
+      var seg = m[1].replace(/\+/g, ' ');
+      try { seg = decodeURIComponent(seg); } catch (e) { seg = seg.replace(/%20/g, ' '); }
+      s = seg;
+    }
+    s = tidy(s);
+    if (!s) return [];
+    var titled = s.replace(/(^|\s)([a-z])/g, function (all, sp, c) { return sp + c.toUpperCase(); });
+    return titled === s ? [s] : [s, titled];
+  }
+  function duplicateOf(family, added) {
+    var key = tidy(String(family || '')).toLowerCase(), all = entries(added);
+    for (var i = 0; i < all.length; i++) if (all[i].family.toLowerCase() === key) return all[i];
+    return null;
+  }
+  function usage(texts, id) { return (texts || []).filter(function (tx) { return rawStyle(tx).id === id; }).length; }
+  function replaceFont(texts, id) {
+    var changed = 0;
+    var out = (texts || []).map(function (tx) {
+      if (rawStyle(tx).id !== id) return tx;
+      changed++;
+      var copy = JSON.parse(JSON.stringify(tx));
+      copy.font = 'sans';
+      return copy;
+    });
+    return { texts: out, changed: changed };
+  }
+  return { BUILT_IN: BUILT_IN, TUPLES: TUPLES, upgrade: upgrade, clean: clean, entries: entries, find: find, can: can, fitStyle: fitStyle, resolve: resolve,
+    cssFont: cssFont, faces: faces, cssUrl: cssUrl, probeUrl: probeUrl, nameCandidates: nameCandidates, duplicateOf: duplicateOf, usage: usage, replaceFont: replaceFont };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -2784,6 +2925,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
   var folders = lsGet('hp.folders') || [];     // folders made by hand, kept even when empty
   var scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));          // saved scripture references
+  var userFonts = TextFont.clean(lsGet('hp.fonts'));                         // fonts added from Google Fonts
+  function addedFonts() { return userFonts.items; }
+  var fontsLoaded = function () {};                                          // set up with the redraw below
   var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
   var mix = blankMix();
   var plan = E.layout(mix, {});
@@ -2797,7 +2941,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [], pictures: [] }; }
   function upgradeMix(m) {
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
-    m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); });
+    m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); });
     tidyGroups(m);
@@ -4306,10 +4450,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     g.restore();
   }
-  function textFont(tx, px) {
-    if (tx.font === 'serif') return px + 'px ' + DISPLAY;
-    if (tx.font === 'italic') return 'italic ' + px + 'px ' + DISPLAY;
-    return (tx.font === 'bold' ? '700 ' : '500 ') + px + 'px ' + SANS;
+  function textFont(tx, px) { var f = TextFont.cssFont(tx, px, addedFonts()); wantFont(f); return f; }
+  // Canvas text doesn't wait for a web font, so ask for each face the first
+  // time it's drawn and redraw once it arrives.
+  var fontState = {};
+  function wantFont(f) {
+    var key = f.replace(/\d+(\.\d+)?px/, '40px');
+    if (fontState[key] || !document.fonts) return;
+    if (document.fonts.check(key)) { fontState[key] = 'ok'; return; }
+    fontState[key] = 'loading';
+    document.fonts.load(key).then(function (got) { fontState[key] = got.length ? 'ok' : 'failed'; if (got.length) fontsLoaded(); },
+      function () { fontState[key] = 'failed'; });
   }
   function layoutText(g, W, H, tx, t) {
     var s = H / 1080, f0 = tx.frame || TextLayout.legacyFrame(tx.x, tx.y, tx.wrap);
@@ -5413,6 +5564,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     textEdEl.querySelectorAll('input[type="number"]').forEach(function (n) { if (n.dataset.ph != null) n.placeholder = n.dataset.ph; });
     textEdEl.querySelectorAll('.mixtag').forEach(function (t) { t.hidden = true; });
     textEdEl.querySelectorAll('input[name="textMode"], input[name="textRefPos"]').forEach(function (r) { r.disabled = false; });
+    var addOpt = $('textFont').querySelector('option[value="__add"]'); if (addOpt) addOpt.disabled = false;
   }
   function showValue(el, state) {
     if (document.activeElement === el && !state.mixed) return;
@@ -5448,7 +5600,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var fixed = of(function (tx) { return !!tx.fixedSize; });
     showValue($('textFixed'), fixed);
     $('textSizeLabel').textContent = !fixed.mixed && fixed.value ? 'Size' : 'Largest size';
-    showValue($('textFont'), of(function (tx) { return tx.font; }));
+    var fonts = list.map(function (tx) { return TextFont.resolve(tx, addedFonts()); });
+    showValue($('textFont'), TextBulk.common(fonts.map(function (rf) { return rf.entry.id; })));
+    showValue($('textBold'), TextBulk.common(fonts.map(function (rf) { return rf.bold; })));
+    showValue($('textItalic'), TextBulk.common(fonts.map(function (rf) { return rf.italic; })));
+    $('textBold').disabled = $('textItalic').disabled = false; $('textBold').title = $('textItalic').title = '';
+    var addOpt = $('textFont').querySelector('option[value="__add"]'); if (addOpt) addOpt.disabled = true;
     showValue($('textAlign'), of(function (tx) { return tx.align; }));
     showValue($('textValign'), of(function (tx) { return tx.valign || 'top'; }));
     showValue($('textColor'), of(function (tx) { return tx.color || '#FFFFFF'; }));
@@ -5520,7 +5677,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     set('textRef', tx.ref || '');
     set('textSize', tx.size); $('textSizeOut').textContent = Math.round(tx.size) + ' px';
     $('textFixed').checked = !!tx.fixedSize; $('textSizeLabel').textContent = tx.fixedSize ? 'Size' : 'Largest size';
-    set('textFont', tx.font); set('textAlign', tx.align); set('textValign', tx.valign || 'top'); set('textColor', tx.color || '#FFFFFF');
+    var rf = TextFont.resolve(tx, addedFonts());
+    if (fresh) fontNote = '';
+    set('textFont', rf.missing ? 'sans' : rf.entry.id);
+    $('textBold').checked = rf.bold; $('textItalic').checked = rf.italic;
+    syncStyleBoxes(rf.entry, rf.bold, rf.italic);
+    showFontNote(rf.missing ? 'This text’s font isn’t in your font menu any more, so it shows in Clean.' : rf.entry.added && userFontsErr ? userFontsErr : fontNote);
+    set('textAlign', tx.align); set('textValign', tx.valign || 'top'); set('textColor', tx.color || '#FFFFFF');
     var lk = TextLook.resolve(tx);
     set('textLook', lk.look);
     syncLookRows(lk, fresh);
@@ -5640,9 +5803,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function takeOutOfGroup(id) { var tx = findItem('texts', id); if (tx) { delete tx.group; refreshTexts(); } }
   function checksChanged() { renderTimeline(); renderSel(); renderTexts(); }
-  var BULK = Object.assign({ textSize: 'size', textFixed: 'fixedSize', textFont: 'font', textAlign: 'align', textValign: 'valign', textColor: 'color', textLh: 'lh', textLook: 'look', textLookColor: 'lookColor', textLookOpacity: 'lookOpacity', textGlowWidth: 'glowWidth', textGlowSoft: 'glowSoft', textFadeIn: 'fadeIn', textFadeOut: 'fadeOut', textDurMin: 'dur', textDurSec: 'dur' }, BOX_FIELDS, TEXT_TICKS);
+  var BULK = Object.assign({ textSize: 'size', textFixed: 'fixedSize', textFont: 'font', textBold: 'bold', textItalic: 'italic', textAlign: 'align', textValign: 'valign', textColor: 'color', textLh: 'lh', textLook: 'look', textLookColor: 'lookColor', textLookOpacity: 'lookOpacity', textGlowWidth: 'glowWidth', textGlowSoft: 'glowSoft', textFadeIn: 'fadeIn', textFadeOut: 'fadeOut', textDurMin: 'dur', textDurSec: 'dur' }, BOX_FIELDS, TEXT_TICKS);
   var BULK_RADIOS = { textMode: 'mode', textRefPos: 'refPos' };
-  var BULK_LOOK_FIELDS = ['look', 'lookColor', 'lookOpacity', 'glowWidth', 'glowSoft', 'size', 'font', 'color', 'fixedSize'];
+  var BULK_LOOK_FIELDS = ['look', 'lookColor', 'lookOpacity', 'glowWidth', 'glowSoft', 'size', 'font', 'bold', 'italic', 'color', 'fixedSize'];
   var BULK_RELINK = ['look', 'readTime', 'afterPrev', 'untilNext', 'fromStart', 'toEnd', 'whole', 'mode'];
   function bulkValue(el, field) {
     if (el.type === 'checkbox') return el.checked;
@@ -5669,6 +5832,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (['x', 'y', 'w', 'h'].indexOf(field) >= 0) tx.frame = TextLayout.setFrameField(TextLayout.upgradeText(tx).frame, field, value);
     else if (field === 'dur') tx.dur = Math.round(value * 10) / 10;
     else if (field === 'mode' || field === 'refPos') tx.passage[field] = value;
+    else if (field === 'font') { var fe = TextFont.find(value, addedFonts()), fs = TextFont.fitStyle(fe, !!tx.bold, !!tx.italic); tx.font = fe.id; setStyleFlags(tx, fs.bold, fs.italic); }
+    else if (field === 'bold' || field === 'italic') { if (value) tx[field] = true; else delete tx[field]; }
     else {
       var before = tx[field];
       tx[field] = value;
@@ -5682,12 +5847,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!field) return;
     var value = el.type === 'radio' ? el.value : bulkValue(el, field);
     if (value == null) return;
+    if (field === 'font' && !TextFont.find(value, addedFonts())) return;
     var list = checkedTexts();
     if (field === 'mode' || field === 'refPos') {
       if (TextBulk.mixedKinds(list)) return;
       list = list.filter(function (tx) { return tx.passage; });
     }
-    var t = TextBulk.targets(list, field, value);
+    var t = TextBulk.targets(list, field, value, canStyleFor(field, value));
     t.ids.forEach(function (id) { applyBulkField(findItem('texts', id), field, value); });
     bulkNote = TextBulk.heldNote(t.ids.length, t.held);
     if (final && BULK_LOOK_FIELDS.indexOf(field) >= 0 && !TextBulk.common(list.map(function (tx) { return TextBulk.lookKey(tx, TextLook.resolve(tx)); })).mixed) lsSet('hp.textLook', TextLook.pick(list[0]));
@@ -5706,6 +5872,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function editText(final, target) {
     var tx = selText(); if (!tx) return;
+    if ($('textFont').value === '__add') { $('textFont').value = TextFont.resolve(tx, addedFonts()).entry.id; openFontAdd(); return; }
     if (target && BOX_FIELDS[target.id]) {
       var bv = parseFloat(target.value);
       if (!isNaN(bv)) tx.frame = TextLayout.setFrameField(TextLayout.upgradeText(tx).frame, BOX_FIELDS[target.id], bv / 100);
@@ -5721,7 +5888,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     tx.size = parseFloat($('textSize').value) || 72; $('textSizeOut').textContent = Math.round(tx.size) + ' px';
     if ($('textFixed').checked) tx.fixedSize = true; else delete tx.fixedSize;
     $('textSizeLabel').textContent = tx.fixedSize ? 'Size' : 'Largest size';
-    tx.font = $('textFont').value; tx.align = $('textAlign').value; tx.valign = $('textValign').value; tx.color = $('textColor').value;
+    applyFont(tx, TextFont.find($('textFont').value, addedFonts()) || TextFont.find('sans'), $('textBold').checked, $('textItalic').checked);
+    tx.align = $('textAlign').value; tx.valign = $('textValign').value; tx.color = $('textColor').value;
     tx.look = $('textLook').value;
     if (tx.look === before.look) {
       var lookColor = $('textLookColor').value, lookOpacity = parseFloat($('textLookOpacity').value);
@@ -5765,6 +5933,158 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     showTextFit(tx.id);
   }
   function persistMix() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250); checkpointSoon(); }
+
+  /* ---------- fonts for text on screen ---------- */
+  // Built-in fonts load with the page; fonts added from Google Fonts are kept
+  // in hp.fonts, which travels to the music folder's data file like the rest.
+  var fontNote = '', userFontsErr = '', fontAdding = false;
+  function setStyleFlags(tx, bold, italic) {
+    if (bold) tx.bold = true; else delete tx.bold;
+    if (italic) tx.italic = true; else delete tx.italic;
+  }
+  function styleName(bold, italic) { return bold && italic ? 'bold italic' : bold ? 'bold' : 'italic'; }
+  function syncStyleBoxes(entry, bold, italic) {
+    var b = $('textBold'), i = $('textItalic');
+    b.disabled = !bold && !TextFont.can(entry, true, italic);
+    i.disabled = !italic && !TextFont.can(entry, bold, true);
+    b.title = b.disabled ? entry.family + ' has no ' + styleName(true, italic) : '';
+    i.title = i.disabled ? entry.family + ' has no ' + styleName(bold, true) : '';
+  }
+  function showFontNote(text) { var el = $('textFontNote'); el.textContent = text || ''; el.hidden = !text; }
+  function applyFont(tx, entry, bold, italic) {
+    var fit = TextFont.fitStyle(entry, bold, italic), was = [tx.font, !!tx.bold, !!tx.italic].join();
+    tx.font = entry.id;
+    setStyleFlags(tx, fit.bold, fit.italic);
+    if (fit.dropped) {
+      fontNote = entry.family + ' has no ' + styleName(bold, italic) + ', so ' + (fit.dropped === 'both' ? 'Bold and Italic were' : fit.dropped === 'bold' ? 'Bold was' : 'Italic was') + ' turned off.';
+      $('textBold').checked = fit.bold; $('textItalic').checked = fit.italic;
+    } else if (was !== [tx.font, !!tx.bold, !!tx.italic].join()) fontNote = '';
+    syncStyleBoxes(entry, fit.bold, fit.italic);
+    showFontNote(fontNote);
+  }
+  function canStyleFor(field, value) {
+    if (field !== 'bold' && field !== 'italic') return null;
+    return function (tx) {
+      var rf = TextFont.resolve(tx, addedFonts());
+      return TextFont.can(rf.entry, field === 'bold' ? value : rf.bold, field === 'italic' ? value : rf.italic);
+    };
+  }
+  function renderFontMenu() {
+    var sel = $('textFont'), was = sel.value, list = TextFont.entries(addedFonts());
+    function opts(items) { return items.map(function (e) { return '<option value="' + esc(e.id) + '">' + esc(e.label) + '</option>'; }).join(''); }
+    var mine = list.filter(function (e) { return e.added; });
+    var html = '<optgroup label="Clean fonts">' + opts(list.filter(function (e) { return !e.added && e.kind === 'sans'; })) + '</optgroup>'
+      + '<optgroup label="Classic fonts">' + opts(list.filter(function (e) { return !e.added && e.kind === 'serif'; })) + '</optgroup>'
+      + (mine.length ? '<optgroup label="Your fonts">' + opts(mine) + '</optgroup>' : '')
+      + '<option value="__add"' + (textEdEl.classList.contains('bulk') ? ' disabled' : '') + '>Add a font…</option>';
+    sel.innerHTML = html;
+    sel.value = list.some(function (e) { return e.id === was; }) ? was : 'sans';
+    renderFontList();
+  }
+  function renderFontList() {
+    var mine = addedFonts();
+    setHTML($('fontAddList'), mine.length ? '<p class="note">Your fonts</p>' + mine.map(function (it) {
+      return '<div class="fontrow"><span>' + esc(it.family) + '</span><button type="button" class="btn small" data-font-remove="' + esc(it.id) + '">Remove</button></div>';
+    }).join('') : '');
+  }
+  function fontMsg(html) { var el = $('fontAddMsg'); el.innerHTML = html || ''; el.hidden = !html; }
+  function openFontAdd() { $('fontAdd').hidden = false; renderFontList(); $('fontAddName').focus(); }
+  function closeFontAdd() { $('fontAdd').hidden = true; fontMsg(''); }
+  // The added fonts' stylesheet. The old one stays until the new one has
+  // loaded, so text already on screen never drops to a fallback font.
+  function loadUserFonts() {
+    var url = TextFont.cssUrl(TextFont.entries(addedFonts()).filter(function (e) { return e.added; })), old = document.getElementById('userFontsCss');
+    if (!url) { if (old) old.remove(); userFontsErr = ''; return Promise.resolve(); }
+    if (old && old.getAttribute('href') === url && !userFontsErr) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.onload = function () {
+        if (old) old.remove();
+        link.id = 'userFontsCss'; userFontsErr = '';
+        fontState = {}; fontsLoaded();
+        resolve();
+      };
+      link.onerror = function () { link.remove(); userFontsErr = 'Your added fonts couldn’t be loaded from Google Fonts. Check the internet connection.'; reject(new Error(userFontsErr)); };
+      link.href = url;
+      document.head.appendChild(link);
+    });
+  }
+  function loadUserFontsQuietly() { loadUserFonts().catch(function () { if (!textEdEl.hidden) renderTextEditor(); }); }
+  function useFont(id) {
+    var tx = selText();
+    if (!tx || bulkOn()) return;
+    $('textFont').value = id;
+    editText(true, $('textFont'));
+  }
+  // Google Fonts answers "not found" without the header that lets a page read
+  // it, so a blocked request looks like no connection. A font that surely
+  // exists tells the two apart.
+  function probeFont(url) {
+    function unreachable() { var e = new Error('Google Fonts couldn’t be reached. Check the internet connection and try again.'); e.reach = true; throw e; }
+    function notFoundOrOffline() { return fetch(TextFont.probeUrl('Figtree')).then(function (r) { return r.ok ? false : unreachable(); }, unreachable); }
+    return fetch(url).then(function (r) { if (r.ok) return true; if (r.status === 400) return false; return unreachable(); }, notFoundOrOffline);
+  }
+  async function addGoogleFont(input) {
+    if (fontAdding) return;
+    var names = TextFont.nameCandidates(input);
+    if (!names.length) { fontMsg('Type a font name, such as Open Sans.'); return; }
+    var dup = TextFont.duplicateOf(names[0], addedFonts()) || (names[1] ? TextFont.duplicateOf(names[1], addedFonts()) : null);
+    if (dup) { fontMsg(esc('“' + dup.family + '” is already in the font menu.')); useFont(dup.id); return; }
+    fontAdding = true; $('fontAddGo').disabled = true; fontMsg('Checking…');
+    try {
+      var family = null;
+      for (var i = 0; i < names.length && !family; i++) if (await probeFont(TextFont.probeUrl(names[i]))) family = names[i];
+      if (!family) { fontMsg('No Google Font is called “' + esc(names[0]) + '”. Check the spelling on <a href="https://fonts.google.com" target="_blank" rel="noopener">fonts.google.com</a>.'); return; }
+      var has = await Promise.all(TextFont.TUPLES.map(function (t) { return probeFont(TextFont.probeUrl(family, t)); }));
+      if (!has[0]) { fontMsg(esc('“' + family + '” has no regular style, so it can’t be used here.')); return; }
+      var id = 'g:' + family, loaded = false;
+      userFonts = TextFont.clean({ items: addedFonts().concat([{ family: family, styles: { b: has[1], i: has[2], bi: has[3] } }]) });
+      try { await loadUserFonts(); loaded = (await document.fonts.load('400 40px "' + family + '"')).length > 0; }
+      catch (e) { loaded = false; }
+      if (!loaded) {
+        userFonts = TextFont.clean({ items: addedFonts().filter(function (it) { return it.id !== id; }) });
+        loadUserFontsQuietly();
+        fontMsg(esc('“' + family + '” was found but didn’t load. Try again in a moment.'));
+        return;
+      }
+      if (!lsSet('hp.fonts', userFonts)) { fontMsg(esc('“' + family + '” is in the menu for now, but it couldn’t be saved: the browser’s storage is full.')); renderFontMenu(); useFont(id); return; }
+      renderFontMenu();
+      $('fontAddName').value = '';
+      fontMsg(esc('Added “' + family + '”.'));
+      useFont(id);
+    } catch (e) {
+      fontMsg(esc(e && e.reach ? e.message : 'Adding the font didn’t work: ' + (e && e.message ? e.message : 'unknown problem')));
+    } finally { fontAdding = false; $('fontAddGo').disabled = false; }
+  }
+  function removeGoogleFont(id) {
+    var entry = TextFont.find(id, addedFonts());
+    if (!entry || !entry.added) return;
+    var saved = lsGet('hp.saved') || {}, n = TextFont.usage(mix.texts.concat(mix.queue), id), p = n ? 1 : 0;
+    Object.keys(saved).forEach(function (name) {
+      if (name === mix.name) return;
+      var c = TextFont.usage((saved[name].texts || []).concat(saved[name].queue || []), id);
+      if (c) { n += c; p++; }
+    });
+    var question = 'Remove “' + entry.family + '” from your fonts?';
+    if (n) question += ' ' + n + ' text' + (n === 1 ? '' : 's') + ' in ' + p + ' playlist' + (p === 1 ? '' : 's') + (n === 1 ? ' uses' : ' use') + ' it and will switch to Clean.';
+    if (!confirm(question)) return;
+    Object.keys(saved).forEach(function (name) {
+      var m = saved[name];
+      m.texts = TextFont.replaceFont(m.texts || [], id).texts;
+      if (m.queue) m.queue = TextFont.replaceFont(m.queue, id).texts;
+    });
+    var savedOk = lsSet('hp.saved', saved), openChanged = 0;
+    mix.texts.concat(mix.queue).forEach(function (tx) { if (TextFont.usage([tx], id)) { tx.font = 'sans'; openChanged++; } });
+    userFonts = TextFont.clean({ items: addedFonts().filter(function (it) { return it.id !== id; }) });
+    var fontsOk = lsSet('hp.fonts', userFonts);
+    loadUserFontsQuietly();
+    renderFontMenu();
+    if (openChanged) { historyBarrier = true; changed(); } else renderTextEditor();
+    var msg = 'Removed “' + entry.family + '”.' + (n ? ' ' + n + (n === 1 ? ' text now uses' : ' texts now use') + ' Clean.' : '');
+    if (!savedOk || !fontsOk) msg += ' It couldn’t all be saved: the browser’s storage is full.';
+    fontMsg(esc(msg));
+  }
 
   /* ---------- pictures and video clips on screen ---------- */
   var picEdEl = $('picEd');
@@ -6034,7 +6354,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           catch (e) { throw new Error('the video “' + (lib[l.key] ? lib[l.key].name : l.key) + '” could not be read (' + errText(e, 'unknown problem') + ')'); }
           clips[l.id] = { layer: l, player: new Media.ClipPlayer(idx) };
         }
-        if (document.fonts) { try { await Promise.all(['italic 50px "Libre Caslon Text"', '54px "Libre Caslon Text"', '600 36px Figtree', '28px Figtree'].map(function (f) { return document.fonts.load(f); })); } catch (e) { /* fallback fonts */ } }
         var vcfg = { codec: how.vcodec, width: v.W, height: v.H, bitrate: v.bitrate, framerate: v.fps };
         if (how.vmux === 'avc') vcfg.avc = { format: 'avc' };
         ve = new VideoEncoder({ output: function (c, m) { muxer.addVideoChunk(c, m); }, error: function (e) { err = e; } });
@@ -6087,6 +6406,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     return { blob: sink.blob(how.container === 'mp4' ? 'video/mp4' : 'video/webm'), ext: how.container };
   }
+  // Every face the video draws must be loaded first, or the frames would use a fallback font.
+  async function loadExportFonts() {
+    if (!document.fonts) return;
+    say('Loading the fonts…');
+    if (userFontsErr) { try { await loadUserFonts(); } catch (e) { /* reported below, when the font itself doesn't load */ } }
+    var list = ['italic 50px "Libre Caslon Text"', '54px "Libre Caslon Text"', '600 36px "Figtree"', '28px "Figtree"'].concat(TextFont.faces(mix.texts, addedFonts()));
+    for (var i = 0; i < list.length; i++) {
+      var got = null;
+      try { got = await document.fonts.load(list[i]); } catch (e) { got = null; }
+      if (!got || !got.length) throw new Error('the font “' + (list[i].match(/"([^"]+)"/) || [0, 'unknown'])[1] + '” could not be loaded (check the internet connection)');
+    }
+  }
   async function exportMix() {
     if (ui.exporting || !plan.total) return;
     Player.stop();
@@ -6100,6 +6431,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (fmtNow === 'video' || fmtNow === 'webm') {
         var withVideo = fmtNow === 'video', plans = withVideo ? await videoPlans(videoShape()) : [{ container: 'webm', acodec: 'opus', amux: 'A_OPUS' }];
         if (!plans.length) throw new Error('this browser cannot make video files');
+        if (withVideo) await loadExportFonts();
         for (var i = 0; i < plans.length; i++) {
           try { res = await encodeMedia(pl, withVideo, plans[i], len); break; }
           catch (e) { if (i === plans.length - 1) throw e; say('Trying another way to build the video…'); }
@@ -6823,13 +7155,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (which === 'look') flashSel('Ticked ' + ids.length + ' with the same look.');
     });
     $('textEd').addEventListener('input', function (ev) {
+      if (ev.target.closest('#fontAdd')) return;
       if (bulkOn()) { editChecked(ev.target, false); return; }
       if (ev.target.id !== 'textStart') editText(false, ev.target);
     });
     $('textEd').addEventListener('change', function (ev) {
+      if (ev.target.closest('#fontAdd')) return;
       if (bulkOn()) { editChecked(ev.target, true); return; }
       editText(true, ev.target);
     });
+    $('fontAddGo').onclick = function () { addGoogleFont($('fontAddName').value); };
+    $('fontAddName').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addGoogleFont(this.value); } });
+    $('fontAddClose').onclick = closeFontAdd;
+    $('fontAddList').addEventListener('click', function (ev) { var b = ev.target.closest('[data-font-remove]'); if (b) removeGoogleFont(b.getAttribute('data-font-remove')); });
     $('textEd').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-place]'); if (!b) return;
       var line = parseFloat(b.getAttribute('data-place'));
@@ -7075,6 +7413,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', later); } catch (e) { /* older browsers */ }
     try { new MutationObserver(later).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) { /* fine */ }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(later);
+    fontsLoaded = later;
   }
   function loadMotion(blob) {
     return Media.openMotion(blob).then(function (src) {
@@ -7438,6 +7777,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     folders = lsGet('hp.folders') || [];
     scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));
     scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));
+    userFonts = TextFont.clean(lsGet('hp.fonts')); renderFontMenu(); loadUserFontsQuietly();
     cui.open = null; cui.suggest = []; cui.fillTicks = []; ui.fillWin = null; ui.fillPick = false;
     hymnSkip = lsGet('hp.hymnSkip') || {};
     hymnFolderPick = lsGet('hp.hymnFolders');
@@ -7579,6 +7919,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     // ask the browser to keep the library instead of clearing it when space runs low
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* fine */ }
     bind();
+    renderFontMenu();
+    loadUserFontsQuietly();
     var f = lsGet('hp.format'); ui.format = ['mp3', 'wav', 'webm', 'video'].indexOf(f) >= 0 ? f : 'mp3';
     ui.vidSize = lsGet('hp.vidSize') === 1080 ? 1080 : 720;
     ui.expLen = lsGet('hp.expLen') === 'full' ? 'full' : 'mix';

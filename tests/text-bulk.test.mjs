@@ -71,6 +71,17 @@ describe('targets', () => {
     assert.deepEqual(TextBulk.targets([{ id: 'a', untilNext: true }], 'readTime', true).held, ['clash']);
     assert.deepEqual(TextBulk.targets([{ id: 'a', untilNext: true, readTime: true }], 'readTime', false).ids, ['a']);
   });
+  test('Bold skips items whose font has no bold, and only those', () => {
+    const texts = [{ id: 'a', font: 'plain' }, { id: 'b', font: 'lora' }, { id: 'c', font: 'plain' }];
+    const canStyle = (tx) => tx.font !== 'plain';
+    assert.deepEqual(TextBulk.targets(texts, 'bold', true, canStyle), { ids: ['b'], held: ['nostyle', 'nostyle'] });
+  });
+  test('Italic with no style check reaches every item, locked ones too', () => {
+    assert.deepEqual(TextBulk.targets(five, 'italic', true), { ids: ['a', 'b', 'c', 'd', 'e'], held: [] });
+  });
+  test('the style check is ignored for other fields', () => {
+    assert.deepEqual(TextBulk.targets([{ id: 'a' }], 'color', '#FF0000', () => false).ids, ['a']);
+  });
 });
 
 describe('heldNote', () => {
@@ -79,6 +90,9 @@ describe('heldNote', () => {
   });
   test('several held, counted by kind', () => {
     assert.equal(TextBulk.heldNote(2, ['locked', 'tied', 'locked']), 'Changed 2. 3 stayed as they were: 2 locked, 1 tied to a recording.');
+  });
+  test('a font without that style', () => {
+    assert.equal(TextBulk.heldNote(4, ['nostyle']), 'Changed 4. 1 stayed as it was: 1 in a font without that style.');
   });
   test('nothing changed', () => {
     assert.equal(TextBulk.heldNote(0, ['whole']), 'Nothing changed: 1 shows for the whole video.');
@@ -121,6 +135,13 @@ describe('lookKey', () => {
   });
   test('a different font does not match', () => {
     assert.notEqual(TextBulk.lookKey(base(), lk()), TextBulk.lookKey(base({ font: 'serif' }), lk()));
+  });
+  test('bold or italic differing does not match', () => {
+    assert.notEqual(TextBulk.lookKey(base(), lk()), TextBulk.lookKey(base({ bold: true }), lk()));
+    assert.notEqual(TextBulk.lookKey(base(), lk()), TextBulk.lookKey(base({ italic: true }), lk()));
+  });
+  test('a missing style flag matches one that is off', () => {
+    assert.equal(TextBulk.lookKey(base(), lk()), TextBulk.lookKey(base({ bold: false }), lk()));
   });
   test('leftover glow settings on a shadow look are ignored', () => {
     assert.equal(TextBulk.lookKey(base(), lk()), TextBulk.lookKey(base(), lk({ glowColor: '#FF0000' })));
