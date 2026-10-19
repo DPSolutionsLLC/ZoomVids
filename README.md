@@ -25,6 +25,8 @@ Firebase prints the site link: `https://zoommedia-e2d78.web.app`. Bookmark it on
 
 When you come back, Chrome may ask you to allow the folder again: press **Reconnect** in the Library. Choosing "Allow on every visit" stops the question.
 
+The folder can also hold videos (.mp4, .mov, .m4v, .webm) and pictures (.jpg, .png, .webp); see **Pictures and video clips** below.
+
 New downloads: drag them onto the page (they're copied into the folder you have open in the Library), or put them in the folder yourself and press **Rescan**. When you switch back to the app, it checks your music folder again on its own, so files you added, moved or removed show up without pressing anything. **Rescan** still does the same by hand.
 
 The motion background and still graphic are still kept in the browser. Keep the original files in your Drive so you can pick them again if needed.
@@ -87,9 +89,33 @@ Press **Choose a stretch** in the Scripture collection, then click a gap between
 
 **Place** spaces them evenly: the first starts where the stretch starts, the last ends where it ends, with equal gaps of at least 2 seconds. A single passage is centred. They become ordinary scripture blocks, and one **Undo** takes them all away. If the stretch you dragged across already has texts, **Space evenly** spreads them out the same way, keeping their order and length. Locked texts, texts tied to a song or talk, and texts that follow the one before can't be moved, so it tells you and leaves everything as it was.
 
+### Pictures and video clips
+
+**Video clips.** A video in the library has a **Video** tag, and its second button reads **Clip**. Press **Clip** and it goes into **Spoken clips over the music**, and Trim opens so you can pick the part you want. The clip plays in a window in the lower right of the screen, over your background, and the music steps aside while it talks, just like a spoken clip. Its row has **Show the picture** (untick it to hear the talk with no picture) and a **Picture** button that opens its settings. Talks you added as spoken clips before this change stay sound-only until you tick **Show the picture**.
+
+**Picture only.** In a clip's picture settings, untick **Play its sound** to show the picture with no sound. The music doesn't dip under a clip that has no sound. A video with no sound track at all shows a **No sound** tag and is always picture only; its **Add** button (for the music lane) is off.
+
+**Pictures.** A picture in the library (.jpg, .png, .webp) has one **Add** button. It puts the picture on the timeline at the playhead for 8 seconds, filling the screen with a slow zoom. If a picture is already showing there, the new one starts as that one fades out, so pressing **Add** on several pictures in a row makes them crossfade one into the next. Pictures sit on their own rows on the timeline, under the spoken clips: drag a block to move it, or drag its right edge to change how long it shows.
+
+**The picture settings.** Click a picture or clip in **Pictures and video on screen** (or on the timeline) to open its settings:
+
+- **Where**: **Full screen**, the four corners, or **Center**. **Left**, **Top**, **Width** and **Height** set the box exactly, in % of the screen. **Match the picture's shape** makes the box the same shape as the picture, keeping its width and center.
+- **Fit**: **Fill the box** crops the edges so there are no bars; **Show the whole picture** fits all of it inside the box.
+- **Rounded corners** and **Soft shadow**: on for the window positions, off for **Full screen**. Tick them to change that.
+- **Fade in** and **Fade out**, in seconds.
+- For pictures: **Starts at**, **Shows for**, **Motion** (None, Slow zoom in, Slow zoom out, Drift left, Drift right, Drift up, Zoom and drift, Slight turn) and **Strength** (**Subtle** or **Medium**). The motion runs over the picture's whole time on screen, fades included, and the picture is always made just big enough that its edges never show.
+
+**Moving boxes in the preview.** Select a picture or clip, then drag inside its box in the preview to move it, or drag an edge or corner to resize it, the same as text. It snaps to the center and the text place lines; hold **Shift** to place it freely.
+
+**What's on top.** Titles and your own text are always on top of pictures. Among pictures, the one that starts later is on top. Several pictures can show at once, and their boxes can overlap.
+
+**Exporting.** With video clips or moving pictures, the video is built at 30 frames a second, so it takes longer: 10 minutes or more for a full mix.
+
+**Large videos.** A clip's sound is read from the whole file the first time you use it, so a smaller download (720p or 360p) is quicker and uses less memory than 1080p. The picture is read a little at a time. Some downloads use a "streaming" MP4 format the app can't read; it says so, and a regular MP4 download works. If a video or picture can't be read, its row says why, and an export stops with the reason instead of leaving it out.
+
 ### Undo and redo
 
-Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
+Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, pictures and video clips, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
 
 ### Reading time
 

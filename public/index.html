@@ -93,6 +93,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.textc { background: var(--msg); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
 .tl .clip.textc.sel { background: var(--sel); color: #1A1406; }
+.tl .clip.picc { background: var(--accent); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
+.tl .clip.picc.sel { background: var(--sel); color: #1A1406; }
 .tl .clip .grip { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255, 255, 255, 0.28); }
 .tl .duck { position: absolute; top: 20px; height: 52px; background: var(--brass); opacity: 0.16; pointer-events: none; }
 .tl .mark { position: absolute; top: 0; bottom: 0; z-index: 4; border-left: 2px dashed var(--warn); pointer-events: none; }
@@ -181,6 +183,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .row canvas { width: 100%; height: 26px; display: block; margin-top: 6px; }
 .row.missing .name { color: var(--bad); }
 .row .vol { width: 58px; padding: 3px 6px; font-size: 13px; }
+.row .facts .err { color: var(--bad); font-weight: 600; }
 .onscreen { font-size: 13px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .row { grid-template-columns: 26px minmax(0, 1fr); } .row .acts { grid-column: 2; justify-content: flex-start; } }
 .vmark { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--brass); }
@@ -230,7 +233,12 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tapq .list .txt { flex: 1; overflow-wrap: anywhere; }
 #manyMsg, #collMsg, #collFill .msg { white-space: pre-line; }
 .textrow.picked { background: color-mix(in srgb, var(--sel) 12%, transparent); box-shadow: inset 3px 0 0 var(--sel); }
-.textrow.off .txt, .textrow.off .t { color: var(--muted); }
+.picrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 2px; cursor: pointer; font-size: 14px; }
+.picrow .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.picrow .txt { overflow-wrap: anywhere; display: flex; flex-direction: column; }
+.picrow .err { color: var(--bad); font-size: 13px; }
+.picrow.picked { background: color-mix(in srgb, var(--sel) 12%, transparent); box-shadow: inset 3px 0 0 var(--sel); }
+.picrow.off .txt { color: var(--muted); }.textrow.off .txt, .textrow.off .t { color: var(--muted); }
 .textrow .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
 .textrow .tag.warn { color: var(--warn); }
 .eye svg, .tl .hi { fill: none; stroke: currentColor; stroke-width: 1.4; }
@@ -410,7 +418,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
         </div>
       </div>
       <input type="file" id="folderInput" webkitdirectory multiple hidden>
-      <input type="file" id="filesInput" multiple accept="audio/*,video/mp4,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.mp4,.mov,.webm" hidden>
+      <input type="file" id="filesInput" multiple accept="audio/*,video/mp4,image/jpeg,image/png,image/webp,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.mp4,.m4v,.mov,.webm,.jpg,.jpeg,.png,.webp" hidden>
       <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
       <div class="libtools">
         <label for="filter" class="visually-hidden">Search this folder</label>
@@ -627,6 +635,11 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             </div>
             <p class="note" id="textGroupRow" data-single hidden>In the group <b id="textGroupName"></b>. <button class="btn small quiet" id="textUngroupOne">Take it out of the group</button></p>
           </div>
+        </div>
+        <div class="stack textsec sec" id="sec-pictures">
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="pictures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Pictures and video on screen</button></h3><span class="note">Add pictures with Add in the library. Video clips come in with Clip.</span></div>
+          <ul class="list" id="pictures"></ul>
+          <div class="texted" id="picEd" hidden></div>
         </div>
         <div class="stack sec" id="sec-titles">
           <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="titles" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Song and talk titles</button></h3></div>
@@ -912,7 +925,7 @@ var Engine = (function () {
       if (!meta) { missing.push(it.id); continue; }
       r = clipRange(it, meta, o.trimSilence);
       if (r[1] - r[0] < 0.05) continue;
-      spoken.push({ id: it.id, key: it.key, in: r[0], len: r[1] - r[0], start: Math.max(0, it.at || 0), gainDb: it.gainDb || 0, meta: meta });
+      spoken.push({ id: it.id, key: it.key, in: r[0], len: r[1] - r[0], start: Math.max(0, it.at || 0), gainDb: it.gainDb || 0, mute: !!it.mute || !!meta.silent, meta: meta });
     }
 
     // Loudness target: the loudest level every clip in the music lane can
@@ -961,8 +974,8 @@ var Engine = (function () {
     for (i = 0; i < spoken.length; i++) {
       var s = spoken[i];
       s.level = voiceTarget != null ? levelGain(s.meta, voiceTarget) : 1;
-      s.gain = s.level * dbToGain(s.gainDb);
-      s.fade = Math.min(VOICE_FADE, s.len / 2);
+      s.gain = s.mute ? 0 : s.level * dbToGain(s.gainDb);
+      s.fade =Math.min(VOICE_FADE, s.len / 2);
       if (s.start + s.len > total) total = s.start + s.len;
       delete s.meta;
     }
@@ -984,7 +997,7 @@ var Engine = (function () {
   function keysBetween(plan, t0, t1) {
     var out = {}, i, c;
     for (i = 0; i < plan.music.length; i++) { c = plan.music[i]; if (c.start < t1 && c.start + c.len > t0) out[c.key] = 1; }
-    for (i = 0; i < plan.spoken.length; i++) { c = plan.spoken[i]; if (c.start < t1 && c.start + c.len > t0) out[c.key] = 1; }
+    for (i = 0; i < plan.spoken.length; i++) { c = plan.spoken[i]; if (!c.mute && c.start < t1 && c.start + c.len > t0) out[c.key] = 1; }
     return Object.keys(out);
   }
 
@@ -1061,6 +1074,7 @@ var Engine = (function () {
       var rampS = Math.round(plan.ramp * SR), duck = null;
       for (i = 0; i < plan.spoken.length; i++) {
         c = plan.spoken[i];
+        if (c.mute) continue;
         cs = Math.round(c.start * SR); ce = cs + Math.round(c.len * SR);
         a = Math.max(cs - rampS, s0); b = Math.min(ce + rampS, s0 + n);
         if (a >= b) continue;
@@ -1078,6 +1092,7 @@ var Engine = (function () {
 
     for (i = 0; i < plan.spoken.length; i++) {
       c = plan.spoken[i];
+      if (c.mute) continue;
       cs = Math.round(c.start * SR); ce = cs + Math.round(c.len * SR);
       a = Math.max(cs, s0); b = Math.min(ce, s0 + n);
       if (a >= b) continue;
@@ -1202,10 +1217,24 @@ var Media = (function () {
 
   /* ---------- reading an MP4 motion background ---------- */
 
+  var READER_MISSING = 'The video reader did not load. Check the internet connection and reload the page.';
+  function decoderDescription(trak) {
+    var desc, entries = trak.mdia.minf.stbl.stsd.entries;
+    for (var e = 0; e < entries.length; e++) {
+      var box = entries[e].avcC || entries[e].hvcC || entries[e].vpcC || entries[e].av1C;
+      if (box) {
+        var st = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
+        box.write(st);
+        desc = new Uint8Array(st.buffer, 8);
+      }
+    }
+    return desc;
+  }
+
   // Pull every video frame's compressed data out of an MP4 or MOV file.
   function parseMp4(buf) {
     return new Promise(function (res, rej) {
-      if (typeof MP4Box === 'undefined') { rej(new Error('The video reader did not load. Check the internet connection and reload the page.')); return; }
+      if (typeof MP4Box === 'undefined') { rej(new Error(READER_MISSING)); return; }
       var file = MP4Box.createFile(), info = null, samples = [], failed = false;
       file.onError = function () { failed = true; };
       file.onReady = function (i) {
@@ -1220,16 +1249,7 @@ var Media = (function () {
       if (failed || !info) { rej(new Error('That file is not an MP4 video this page can read. Export the motion background as MP4.')); return; }
       var tr = info.videoTracks[0];
       if (!tr || !samples.length) { rej(new Error('That file has no video in it.')); return; }
-      var trak = file.getTrackById(tr.id), desc;
-      var entries = trak.mdia.minf.stbl.stsd.entries;
-      for (var e = 0; e < entries.length; e++) {
-        var box = entries[e].avcC || entries[e].hvcC || entries[e].vpcC || entries[e].av1C;
-        if (box) {
-          var st = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
-          box.write(st);
-          desc = new Uint8Array(st.buffer, 8);
-        }
-      }
+      var desc = decoderDescription(file.getTrackById(tr.id));
       // Videos with B-frames often show their first frame a little after
       // zero (players hide that with an edit list). Shift every frame so the
       // first one shows at zero; otherwise each loop starts with a blink.
@@ -1310,6 +1330,147 @@ var Media = (function () {
     return this.cur;
   };
 
+  /* ---------- video clips: read only the index, then frames on demand ---------- */
+  var NOT_MP4 = 'That video is not an MP4 this page can read. Save or download it as a regular MP4.';
+  var FRAGMENTED = 'This video is saved in a streaming format this page can’t read. Save or download it as a regular MP4.';
+  var TOP_BOXES = ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide', 'pnot', 'uuid'];
+  function boxHeader(bytes, pos) {
+    pos = pos || 0;
+    if (!bytes || bytes.length - pos < 8) return null;
+    var v = new DataView(bytes.buffer, bytes.byteOffset + pos, bytes.length - pos);
+    var size = v.getUint32(0), type = String.fromCharCode(bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7]);
+    if (size === 1) {
+      if (bytes.length - pos < 16) return null;
+      return { type: type, size: v.getUint32(8) * 4294967296 + v.getUint32(12), header: 16 };
+    }
+    return { type: type, size: size, header: 8 };
+  }
+  // Byte ranges of the ftyp and moov boxes, found by reading 16 bytes per box.
+  async function findMoov(blob) {
+    var pos = 0, total = blob.size, found = {};
+    while (pos + 8 <= total) {
+      var h = boxHeader(new Uint8Array(await blob.slice(pos, pos + 16).arrayBuffer()), 0);
+      if (!h) break;
+      if (pos === 0 && TOP_BOXES.indexOf(h.type) < 0) throw new Error(NOT_MP4);
+      var size = h.size === 0 ? total - pos : h.size;
+      if (size < h.header) throw new Error(NOT_MP4);
+      if (h.type === 'moof') throw new Error(FRAGMENTED);
+      if (h.type === 'ftyp' || h.type === 'moov') found[h.type] = { start: pos, end: Math.min(total, pos + size) };
+      if (h.type === 'moov') return found;
+      pos += size;
+    }
+    throw new Error(FRAGMENTED);
+  }
+  async function indexVideo(blob) {
+    if (typeof VideoDecoder === 'undefined') throw new Error('Video clips need Chrome or Edge.');
+    if (typeof MP4Box === 'undefined') throw new Error(READER_MISSING);
+    var at = await findMoov(blob), parts = [], size = 0;
+    if (at.ftyp) parts.push(new Uint8Array(await blob.slice(at.ftyp.start, at.ftyp.end).arrayBuffer()));
+    parts.push(new Uint8Array(await blob.slice(at.moov.start, at.moov.end).arrayBuffer()));
+    parts.forEach(function (p) { size += p.length; });
+    var bytes = new Uint8Array(size), o = 0;
+    parts.forEach(function (p) { bytes.set(p, o); o += p.length; });
+    var buf = bytes.buffer, file = MP4Box.createFile(), info = null, failed = false;
+    file.onError = function () { failed = true; };
+    file.onReady = function (i) { info = i; };
+    try { buf.fileStart = 0; file.appendBuffer(buf); file.flush(); } catch (e) { failed = true; }
+    if (failed || !info) throw new Error(NOT_MP4);
+    var tr = info.videoTracks[0];
+    if (!tr) throw new Error('That file has no video in it.');
+    var trak = file.getTrackById(tr.id), raw = trak.samples || [];
+    if (!raw.length) throw new Error('That file has no video in it.');
+    // Samples stay in decode order, which is the order the decoder needs.
+    var scale = raw[0].timescale, shift = null, edits = trak.edts && trak.edts.elst && trak.edts.elst.entries;
+    if (edits) for (var e = 0; e < edits.length; e++) if (edits[e].media_time >= 0) { shift = edits[e].media_time * 1e6 / scale; break; }
+    if (shift == null) { shift = Infinity; raw.forEach(function (s) { shift = Math.min(shift, s.cts * 1e6 / s.timescale); }); }
+    var end = 0;
+    var samples = raw.map(function (s) {
+      var ts = Math.round(s.cts * 1e6 / s.timescale - shift), dur = Math.round(s.duration * 1e6 / s.timescale);
+      if (ts + dur > end) end = ts + dur;
+      return { offset: s.offset, size: s.size, ts: ts, dur: dur, key: !!s.is_sync };
+    });
+    var cfg = { codec: tr.codec, codedWidth: tr.video.width, codedHeight: tr.video.height }, desc = decoderDescription(trak);
+    if (desc) cfg.description = desc;
+    var ok = false;
+    try { ok = (await VideoDecoder.isConfigSupported(cfg)).supported; } catch (err) { ok = false; }
+    if (!ok) throw new Error('This browser cannot play that video format (' + cfg.codec + '). An H.264 MP4 works best.');
+    return { cfg: cfg, samples: samples, duration: end / 1e6, width: tr.video.width, height: tr.video.height, blob: blob };
+  }
+  function keyIndexBefore(samples, us) {
+    var k = 0;
+    for (var i = 0; i < samples.length; i++) if (samples[i].key && samples[i].ts <= us) k = i;
+    return k;
+  }
+  // One read covers the samples from `from` up to (not including) the index returned.
+  function readRuns(samples, from, maxBytes, maxCount) {
+    var first = samples[from].offset, end = from + 1;
+    while (end < samples.length && end - from < maxCount) {
+      var s = samples[end];
+      if (s.offset < first || s.offset + s.size - first > maxBytes) break;
+      end++;
+    }
+    return end;
+  }
+  // Like Player, but plays once (no loop) and reads the file a little at a time.
+  function ClipPlayer(src) { this.src = src; this.dec = null; this.queue = []; this.cur = null; this.next = 0; this.ended = false; this.lastUs = -1; this.err = null; this.wake = null; this.buf = null; this.bufFrom = 0; this.bufTo = 0; this.bufAt = 0; }
+  ClipPlayer.prototype.reset = function (us) {
+    var self = this;
+    this.queue.forEach(function (f) { f.close(); });
+    this.queue = [];
+    if (this.dec) { try { this.dec.close(); } catch (e) { /* already closed */ } }
+    this.err = null;
+    this.dec = new VideoDecoder({
+      output: function (f) { self.queue.push(f); if (self.wake) self.wake(); },
+      error: function (e) { self.err = e; if (self.wake) self.wake(); }
+    });
+    this.dec.configure(this.src.cfg);
+    this.next = keyIndexBefore(this.src.samples, us); this.ended = false;
+  };
+  ClipPlayer.prototype.closeFrames = Player.prototype.closeFrames;
+  ClipPlayer.prototype.close = function () {
+    this.closeFrames();
+    this.buf = null;
+    if (this.dec) { try { this.dec.close(); } catch (e) { /* fine */ } this.dec = null; }
+  };
+  ClipPlayer.prototype.sampleData = async function (i) {
+    var S = this.src.samples;
+    if (!this.buf || i < this.bufFrom || i >= this.bufTo) {
+      var end = readRuns(S, i, 4e6, 60), a = S[i].offset, b = a;
+      for (var j = i; j < end; j++) b = Math.max(b, S[j].offset + S[j].size);
+      this.buf = await this.src.blob.slice(a, b).arrayBuffer();
+      this.bufFrom = i; this.bufTo = end; this.bufAt = a;
+    }
+    return new Uint8Array(this.buf, S[i].offset - this.bufAt, S[i].size);
+  };
+  ClipPlayer.prototype.frameAt = async function (t) {
+    var us = Math.min(Math.max(0, t), this.src.duration) * 1e6, S = this.src.samples, self = this;
+    if (!this.dec || this.err || this.dec.state === 'closed' || us < this.lastUs - 1 || us - this.lastUs > 3e6) this.reset(us);
+    this.lastUs = us;
+    for (var guard = 0; guard < 200000; guard++) {
+      while (this.queue.length && this.queue[0].timestamp <= us + 500) {
+        if (this.cur) this.cur.close();
+        this.cur = this.queue.shift();
+      }
+      if (this.queue.length) { if (!this.cur) { this.cur = this.queue.shift(); } break; }
+      if (this.err) throw this.err;
+      if (this.next < S.length) {
+        while (this.next < S.length && this.dec.decodeQueueSize < 4) {
+          var s = S[this.next], data = await this.sampleData(this.next);
+          if (this.err) throw this.err;
+          this.next++;
+          this.dec.decode(new EncodedVideoChunk({ type: s.key ? 'key' : 'delta', timestamp: s.ts, duration: s.dur, data: data }));
+        }
+      } else if (!this.ended) {
+        await this.dec.flush();
+        this.ended = true;
+        continue;
+      } else break;
+      await new Promise(function (r) { self.wake = r; setTimeout(r, 4); });
+      this.wake = null;
+    }
+    return this.cur;
+  };
+
   /* ---------- QR codes ---------- */
   var qrCache = {};
   function fullUrl(u) { u = String(u || '').trim(); if (!u) return ''; return /^[a-z]+:\/\//i.test(u) ? u : 'https://' + u.replace(/^\/+/, ''); }
@@ -1352,7 +1513,7 @@ var Media = (function () {
   };
   Sink.prototype.blob = function (type) { return new Blob(this.parts.map(function (p) { return p.data; }), { type: type }); };
 
-  return { openMotion: openMotion, Player: Player, qrCanvas: qrCanvas, fullUrl: fullUrl, Sink: Sink };
+  return { openMotion: openMotion, Player: Player, indexVideo: indexVideo, ClipPlayer: ClipPlayer, boxHeader: boxHeader, keyIndexBefore: keyIndexBefore, readRuns: readRuns, qrCanvas: qrCanvas, fullUrl: fullUrl, Sink: Sink };
 })();
 
 /* Hymn numbers: recognize which hymn a downloaded file is, and which
@@ -1829,6 +1990,191 @@ var TextLayout = (function () {
   return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, setFrameField: setFrameField, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fits: fits, fitSize: fitSize, place: place };
 })();
 
+/* Picture boxes: where an image or a video clip shows on screen, how it fits, fades and stacks. Pure functions; inputs are never changed. */
+var PictureBox = (function () {
+  var IMAGE_EXT = /\.(jpe?g|png|webp)$/i, VIDEO_EXT = /\.(mp4|m4v|mov|webm)$/i, AUDIO_EXT = /\.(mp3|wav|wave|m4a|aac|flac|ogg|oga|opus)$/i;
+  var MIN_W = 0.08, MIN_H = 0.06;
+  var MOTIONS = ['none', 'zoomIn', 'zoomOut', 'driftLeft', 'driftRight', 'driftUp', 'zoomDrift', 'turn'];
+  var PRESETS = {
+    full: { x: 0, y: 0, w: 1, h: 1 },
+    lowerRight: { x: 0.6, y: 0.6, w: 0.36, h: 0.36 },
+    upperRight: { x: 0.6, y: 0.04, w: 0.36, h: 0.36 },
+    lowerLeft: { x: 0.04, y: 0.6, w: 0.36, h: 0.36 },
+    upperLeft: { x: 0.04, y: 0.04, w: 0.36, h: 0.36 },
+    center: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }
+  };
+  var PRESET_LABELS = { full: 'Full screen', lowerRight: 'Lower right', upperRight: 'Upper right', lowerLeft: 'Lower left', upperLeft: 'Upper left', center: 'Center' };
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+  function round4(v) { return Math.round(v * 1e4) / 1e4; }
+  function num(v) { return typeof v === 'number' && isFinite(v); }
+  function copyFrame(f) { return { x: f.x, y: f.y, w: f.w, h: f.h }; }
+  function fileKind(name) {
+    var n = String(name == null ? '' : name);
+    if (IMAGE_EXT.test(n)) return 'image';
+    if (VIDEO_EXT.test(n)) return 'video';
+    if (AUDIO_EXT.test(n)) return 'audio';
+    return null;
+  }
+  function isMedia(name) { return fileKind(name) !== null; }
+  function isFull(f) {
+    var p = PRESETS.full;
+    return !!f && Math.abs(f.x - p.x) <= 0.002 && Math.abs(f.y - p.y) <= 0.002 && Math.abs(f.w - p.w) <= 0.002 && Math.abs(f.h - p.h) <= 0.002;
+  }
+  function defaults(kind) {
+    if (kind === 'video') return { frame: copyFrame(PRESETS.lowerRight), fit: 'cover', round: true, shadow: true, fadeIn: 1, fadeOut: 1, show: true };
+    return { frame: copyFrame(PRESETS.full), fit: 'cover', round: false, shadow: false, fadeIn: 1.5, fadeOut: 1.5 };
+  }
+  function placeOnScreen(cx, cy, w, h) {
+    w = round4(clamp(w, MIN_W, 1)); h = round4(clamp(h, MIN_H, 1));
+    return { x: round4(clamp(cx - w / 2, 0, 1 - w)), y: round4(clamp(cy - h / 2, 0, 1 - h)), w: w, h: h };
+  }
+  function cleanFrame(f, fallback) {
+    var src = f && num(f.x) && num(f.y) && num(f.w) && num(f.h) ? f : fallback;
+    var w = round4(clamp(src.w, MIN_W, 1)), h = round4(clamp(src.h, MIN_H, 1));
+    return { x: round4(clamp(src.x, 0, 1 - w)), y: round4(clamp(src.y, 0, 1 - h)), w: w, h: h };
+  }
+  function clean(pic, kind) {
+    var d = defaults(kind), p = pic && typeof pic === 'object' ? pic : {};
+    var out = {
+      frame: cleanFrame(p.frame, d.frame),
+      fit: p.fit === 'cover' || p.fit === 'contain' ? p.fit : d.fit,
+      round: p.round == null ? d.round : !!p.round,
+      shadow: p.shadow == null ? d.shadow : !!p.shadow,
+      fadeIn: num(p.fadeIn) ? clamp(p.fadeIn, 0, 10) : d.fadeIn,
+      fadeOut: num(p.fadeOut) ? clamp(p.fadeOut, 0, 10) : d.fadeOut
+    };
+    if (kind === 'video') out.show = p.show !== false;
+    return out;
+  }
+  function cleanItem(item) {
+    var it = item && typeof item === 'object' ? item : {};
+    return {
+      id: it.id, key: it.key, name: it.name,
+      start: num(it.start) ? Math.max(0, it.start) : 0,
+      dur: num(it.dur) ? clamp(it.dur, 0.5, 3600) : 8,
+      motion: MOTIONS.indexOf(it.motion) >= 0 ? it.motion : 'zoomIn',
+      strength: it.strength === 'medium' ? 'medium' : 'subtle',
+      pic: clean(it.pic, 'image')
+    };
+  }
+  function applyPreset(pic, name) {
+    var out = JSON.parse(JSON.stringify(pic));
+    if (!Object.prototype.hasOwnProperty.call(PRESETS, name)) return out;
+    out.frame = copyFrame(PRESETS[name]);
+    out.round = out.shadow = !isFull(out.frame);
+    return out;
+  }
+  function shapeFrame(frame, srcW, srcH) {
+    if (!(num(srcW) && srcW > 0 && num(srcH) && srcH > 0)) return copyFrame(frame);
+    var w = frame.w, h = w * (srcH / srcW) * (16 / 9);
+    if (h > 1) { w = w / h; h = 1; }
+    return placeOnScreen(frame.x + frame.w / 2, frame.y + frame.h / 2, w, h);
+  }
+  function fitRect(box, srcW, srcH, fit) {
+    if (fit === 'contain') {
+      var k = Math.min(box.w / srcW, box.h / srcH), dw = srcW * k, dh = srcH * k;
+      return { sx: 0, sy: 0, sw: srcW, sh: srcH, dx: box.x + (box.w - dw) / 2, dy: box.y + (box.h - dh) / 2, dw: dw, dh: dh };
+    }
+    var c = Math.max(box.w / srcW, box.h / srcH), sw = box.w / c, sh = box.h / c;
+    return { sx: (srcW - sw) / 2, sy: (srcH - sh) / 2, sw: sw, sh: sh, dx: box.x, dy: box.y, dw: box.w, dh: box.h };
+  }
+  function alphaRaw(t, start, dur, fadeIn, fadeOut) {
+    if (!(dur > 0) || t < start || t > start + dur) return 0;
+    var fi = clamp(fadeIn || 0, 0, dur / 2), fo = clamp(fadeOut || 0, 0, dur / 2), a = 1;
+    if (fi > 0) a = Math.min(a, (t - start) / fi);
+    if (fo > 0) a = Math.min(a, (start + dur - t) / fo);
+    a = clamp(a, 0, 1);
+    return a * a * (3 - 2 * a);
+  }
+  function contains(outer, inner, tol) {
+    var e = tol == null ? 0.002 : tol;
+    return inner.x >= outer.x - e && inner.y >= outer.y - e && inner.x + inner.w <= outer.x + outer.w + e && inner.y + inner.h <= outer.y + outer.h + e;
+  }
+  function alphas(layers, t) {
+    var out = {};
+    layers.forEach(function (a, i) {
+      var alpha = alphaRaw(t, a.start, a.dur, a.fadeIn, a.fadeOut);
+      var fo = clamp(a.fadeOut || 0, 0, a.dur / 2);
+      if (alpha > 0 && t > a.start + a.dur - fo) {
+        for (var j = i + 1; j < layers.length; j++) {
+          var b = layers[j];
+          if (alphaRaw(t, b.start, b.dur, b.fadeIn, b.fadeOut) > 0 && contains(b.frame, a.frame)) { alpha = 1; break; }
+        }
+      }
+      out[a.id] = alpha;
+    });
+    return out;
+  }
+  function order(layers) {
+    return layers.map(function (l, i) { return { l: l, i: i }; })
+      .sort(function (a, b) { return a.l.start - b.l.start || a.i - b.i; })
+      .map(function (x) { return x.l; });
+  }
+  function rows(spans) {
+    var ends = [], rowOf = {};
+    order(spans).forEach(function (s) {
+      var r = 0;
+      while (r < ends.length && ends[r] > s.start) r++;
+      ends[r] = s.end;
+      rowOf[s.id] = r;
+    });
+    return { rowOf: rowOf, count: ends.length };
+  }
+  function placeAt(spans, cursor, fadeIn) {
+    var t = Math.max(0, num(cursor) ? cursor : 0), fi = num(fadeIn) ? fadeIn : 0;
+    for (var guard = 0; guard < 100; guard++) {
+      var hit = null;
+      for (var i = 0; i < spans.length; i++) {
+        if (spans[i].start <= t + 1e-6 && spans[i].end - fi > t + 1e-6) { hit = spans[i]; break; }
+      }
+      if (!hit) break;
+      t = hit.end - fi;
+    }
+    return Math.round(t * 10) / 10;
+  }
+  return {
+    IMAGE_EXT: IMAGE_EXT, VIDEO_EXT: VIDEO_EXT, AUDIO_EXT: AUDIO_EXT, PRESETS: PRESETS, PRESET_LABELS: PRESET_LABELS, MIN_W: MIN_W, MIN_H: MIN_H,
+    fileKind: fileKind, isMedia: isMedia, isFull: isFull, defaults: defaults, applyPreset: applyPreset, clean: clean, cleanItem: cleanItem,
+    shapeFrame: shapeFrame, fitRect: fitRect, alphaRaw: alphaRaw, contains: contains, alphas: alphas, order: order, rows: rows, placeAt: placeAt
+  };
+})();
+
+/* Slow movement for pictures on screen: zooms, drifts and a slight turn. Pure functions. */
+var PictureMotion = (function () {
+  var PRESETS = [
+    { id: 'none', label: 'None' }, { id: 'zoomIn', label: 'Slow zoom in' }, { id: 'zoomOut', label: 'Slow zoom out' },
+    { id: 'driftLeft', label: 'Drift left' }, { id: 'driftRight', label: 'Drift right' }, { id: 'driftUp', label: 'Drift up' },
+    { id: 'zoomDrift', label: 'Zoom and drift' }, { id: 'turn', label: 'Slight turn' }
+  ];
+  var STRENGTHS = { subtle: { zoom: 0.08, drift: 0.04, turn: 1.5 }, medium: { zoom: 0.15, drift: 0.08, turn: 3 } };
+  function isPreset(id) { return PRESETS.some(function (p) { return p.id === id; }); }
+  function strengthOf(s) { return Object.prototype.hasOwnProperty.call(STRENGTHS, s) ? STRENGTHS[s] : STRENGTHS.subtle; }
+  function at(id, strength, u) {
+    var k = strengthOf(strength), z = k.zoom, d = k.drift, r = k.turn;
+    u = typeof u === 'number' && isFinite(u) ? Math.min(1, Math.max(0, u)) : 0;
+    var out = { scale: 1, dx: 0, dy: 0, rot: 0 };
+    if (id === 'zoomIn') out.scale = 1 + z * u;
+    else if (id === 'zoomOut') out.scale = 1 + z * (1 - u);
+    else if (id === 'driftLeft') out.dx = d / 2 - d * u;
+    else if (id === 'driftRight') out.dx = -d / 2 + d * u;
+    else if (id === 'driftUp') out.dy = d / 2 - d * u;
+    else if (id === 'zoomDrift') { out.scale = 1 + z * u; out.dx = d / 2 - d * u; }
+    else if (id === 'turn') out.rot = (-r / 2 + r * u) * Math.PI / 180;
+    return out;
+  }
+  function coverScale(id, strength, boxW, boxH) {
+    var a = at(id, strength, 0), b = at(id, strength, 1);
+    var dx = Math.max(Math.abs(a.dx), Math.abs(b.dx)), dy = Math.max(Math.abs(a.dy), Math.abs(b.dy)), rot = Math.max(Math.abs(a.rot), Math.abs(b.rot));
+    var ratio = boxW > 0 && boxH > 0 ? Math.max(boxW / boxH, boxH / boxW) : 1;
+    return Math.max(1, 1 + 2 * dx, 1 + 2 * dy, Math.cos(rot) + Math.sin(rot) * ratio);
+  }
+  function transform(id, strength, u, boxW, boxH) {
+    var m = at(id, strength, u);
+    return { scale: m.scale * coverScale(id, strength, boxW, boxH), dx: m.dx, dy: m.dy, rot: m.rot };
+  }
+  return { PRESETS: PRESETS, STRENGTHS: STRENGTHS, isPreset: isPreset, at: at, coverScale: coverScale, transform: transform };
+})();
+
 /* What is drawn behind on-screen text: nothing, a soft shadow, a soft outline or a dark box. Pure functions. */
 var TextLook = (function () {
   var LOOKS = ['none', 'shadow', 'outline', 'box'];
@@ -2001,6 +2347,8 @@ var UndoStack = (function () {
     var a = JSON.parse(beforeJson), b = JSON.parse(afterJson), labels = [];
     var texts = textChanges(a.texts, b.texts);
     if (texts) labels.push(texts === 1 ? '1 text item' : texts + ' text items');
+    var pics = textChanges(a.pictures, b.pictures);
+    if (pics) labels.push(pics === 1 ? '1 picture' : pics + ' pictures');
     if (!same(a.queue, b.queue)) labels.push('the tap queue');
     if (!texts && !same(a.groups, b.groups)) labels.push('text groups');
     if (!same(a.items, b.items) || !same(a.spoken, b.spoken)) labels.push('songs and talks');
@@ -2070,7 +2418,7 @@ var LibSource = (function () {
   }
   function rekeyMix(mix, from, to, newName) {
     var out = JSON.parse(JSON.stringify(mix));
-    ['items', 'spoken'].forEach(function (lane) {
+    ['items', 'spoken', 'pictures'].forEach(function (lane) {
       (out[lane] || []).forEach(function (it) { if (it.key === from) { it.key = to; it.name = newName; } });
     });
     return out;
@@ -2418,10 +2766,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
-  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [] }; }
+  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [], pictures: [] }; }
   function upgradeMix(m) {
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); });
+    m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
+    (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); });
     tidyGroups(m);
     return m;
   }
@@ -2441,7 +2791,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function addSamples() {
     SAMPLES.forEach(function (s) {
       if (lib[s.key]) return;
-      lib[s.key] = { key: s.key, name: s.name, sample: s, meta: s.meta, state: 'ready' };
+      lib[s.key] = { key: s.key, name: s.name, kind: 'audio', sample: s, meta: s.meta, state: 'ready' };
       libOrder.push(s.key);
     });
   }
@@ -2638,23 +2988,96 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
   };
 
+  /* ---------- pictures, decoded once and kept within a memory budget ---------- */
+  var PicCache = {
+    map: new Map(), bytes: 0, BUDGET: 400e6, pending: {}, err: {}, pinned: [], LONG_EDGE: 2560,
+    peek: function (key) { return PicCache.map.get(key) || null; },
+    drop: function (key) {
+      var v = PicCache.map.get(key);
+      if (v) { PicCache.bytes -= v.bytes; PicCache.map.delete(key); v.bmp.close(); }
+      delete PicCache.err[key];
+    },
+    load: async function (key) {
+      var e = lib[key];
+      if (!e || !e.file) throw new Error('that picture is not in the library');
+      var bmp = await createImageBitmap(e.file, { imageOrientation: 'from-image' }), w = bmp.width, h = bmp.height, long = Math.max(w, h);
+      if (long > PicCache.LONG_EDGE) {
+        var k = PicCache.LONG_EDGE / long;
+        var small = await createImageBitmap(bmp, { resizeWidth: Math.round(w * k), resizeHeight: Math.round(h * k), resizeQuality: 'high' });
+        bmp.close(); bmp = small;
+      }
+      return { bmp: bmp, w: w, h: h, bytes: bmp.width * bmp.height * 4 };
+    },
+    get: function (key) {
+      var hit = PicCache.map.get(key);
+      if (hit) { PicCache.map.delete(key); PicCache.map.set(key, hit); return Promise.resolve(hit); }
+      if (PicCache.pending[key]) return PicCache.pending[key];
+      delete PicCache.err[key];
+      var job = PicCache.pending[key] = PicCache.load(key).then(function (v) {
+        delete PicCache.pending[key];
+        PicCache.map.set(key, v); PicCache.bytes += v.bytes;
+        PicCache.evict(key);
+        PicCache.arrived();
+        return v;
+      }, function (err) {
+        delete PicCache.pending[key];
+        PicCache.err[key] = err && err.message ? err.message : 'the browser could not open it';
+        PicCache.arrived();
+        throw err;
+      });
+      return job;
+    },
+    // Start loading for the preview; it redraws when the picture arrives.
+    want: function (key) {
+      if (PicCache.map.has(key) || PicCache.pending[key] || PicCache.err[key]) return;
+      PicCache.get(key).catch(function () { /* PicCache.err holds the message, shown on the picture's rows */ });
+    },
+    arrived: function () { if (!mixPlaying()) drawScreen(); renderLibrary(); renderPictures(); },
+    evict: function (keep) {
+      var it = PicCache.map.keys(), k;
+      while (PicCache.bytes > PicCache.BUDGET && !(k = it.next()).done) {
+        if (k.value === keep || PicCache.pinned.indexOf(k.value) >= 0) continue;
+        PicCache.drop(k.value);
+      }
+    },
+    ensure: async function (keys) {
+      PicCache.pinned = keys.slice();
+      for (var i = 0; i < keys.length; i++) {
+        try { await PicCache.get(keys[i]); }
+        catch (err) { throw new Error('the picture “' + (lib[keys[i]] ? lib[keys[i]].name : keys[i]) + '” could not be read (' + PicCache.err[keys[i]] + ')'); }
+      }
+    }
+  };
+
   /* ---------- reading new files ---------- */
   var queue = [], pumping = false;
-  var AUDIO_EXT = /\.(mp3|wav|wave|m4a|aac|flac|ogg|oga|opus|mp4|m4v|mov|webm)$/i;
+  function isMediaFile(f) { return PictureBox.isMedia(f.name) || /^(audio|video|image)\//.test(f.type); }
+  function kindOfFile(f) { return PictureBox.fileKind(f.name) || (/^image\//.test(f.type) ? 'image' : /^video\//.test(f.type) ? 'video' : 'audio'); }
+  function errText(err, fallback) { return err && err.message ? err.message : fallback; }
   function enqueue(key, front) { if (front) queue.unshift(key); else queue.push(key); pump(); }
   async function pump() {
     if (pumping) return;
     pumping = true;
     while (queue.length) {
       var key = queue.shift(), e = lib[key];
-      if (!e || (e.meta && e.meta.v === 2) || !e.file) continue;
+      if (!e || e.kind === 'image' || (e.meta && e.meta.v === 2) || !e.file) continue;
       try {
         var pcm = await Pcm.get(key);
         await sleep(0);
         e.meta = E.analyze(pcm.ch0, pcm.ch1);
-        e.state = 'ready';
+        e.state = 'ready'; delete e.err;
         Store.put(e);
-      } catch (err) { if (!e.meta) e.state = 'error'; }
+      } catch (err) {
+        if (e.kind === 'video') {
+          // a video with no sound track: keep it as a picture-only clip
+          try {
+            var idx = await videoIndex(key);
+            e.meta = { v: 2, duration: idx.duration, peak: 0, lufs: -70, head: 0, tail: idx.duration, bins: new Array(240).fill(0), silent: true };
+            e.state = 'ready'; delete e.err;
+            Store.put(e);
+          } catch (err2) { if (!e.meta) { e.state = 'error'; e.err = errText(err2, 'the browser could not open it'); } }
+        } else if (!e.meta) { e.state = 'error'; e.err = errText(err, 'the browser could not decode it'); }
+      }
       changed();
       await sleep(0);
     }
@@ -2707,7 +3130,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var renamed = false, counted = 0, freshSet = {};
     (fresh || []).forEach(function (k) { freshSet[k] = 1; });
     libOrder.forEach(function (k) {
-      var e = lib[k]; if (!e || e.sample) return;
+      var e = lib[k]; if (!e || e.sample || e.kind === 'image') return;
       var r = lm(k);
       if (!r.orig) r.orig = e.name;
       if (r.notHymn || (r.hymn && r.hymn.manual)) { if (nameFromHymn(k)) renamed = true; return; }
@@ -2749,8 +3172,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // Add files into the open folder. Subfolders of a picked folder come
   // along, and adding a folder again moves known recordings to match it.
   function addFiles(files, dest) {
-    var list = Array.prototype.filter.call(files, function (f) { return AUDIO_EXT.test(f.name) || /^audio\//.test(f.type); });
-    if (!list.length) { ui.libMsg = { text: 'No audio files in that selection. MP3 and WAV both work.' }; renderLibrary(); return; }
+    var list = Array.prototype.filter.call(files, isMediaFile);
+    if (!list.length) { ui.libMsg = { text: 'No audio, video or picture files in that selection.' }; renderLibrary(); return; }
     dropSamples();
     var inMix = {}, seen = {}, roots = {}, added = 0, moved = 0;
     mix.items.concat(mix.spoken).forEach(function (it) { inMix[it.key] = 1; });
@@ -2765,16 +3188,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (e) {
         if (!e.file) { e.file = f; Store.put(e); }
         if (lm(key).folder !== folder) { lm(key).folder = folder; moved++; }
-        if (!e.meta || e.meta.v !== 2) enqueue(key, !!inMix[key]);
+        if (e.kind !== 'image' && (!e.meta || e.meta.v !== 2)) enqueue(key, !!inMix[key]);
         return;
       }
-      var cm = metaCache[key];
-      lib[key] = { key: key, name: f.name.replace(/\.[^.]+$/, ''), file: f, meta: cm || null, state: cm ? 'ready' : 'queued' };
+      var cm = metaCache[key], kind = kindOfFile(f);
+      lib[key] = kind === 'image'
+        ? { key: key, name: f.name.replace(/\.[^.]+$/, ''), file: f, kind: kind, meta: null, state: 'ready' }
+        : { key: key, name: f.name.replace(/\.[^.]+$/, ''), file: f, kind: kind, meta: cm || null, state: cm ? 'ready' : 'queued' };
       lm(key).folder = folder;
       libOrder.push(key);
       added++;
       if (!cm) Store.put(lib[key]);
-      if (!cm || cm.v !== 2) enqueue(key, !!inMix[key]);
+      if (kind !== 'image' && (!cm || cm.v !== 2)) enqueue(key, !!inMix[key]);
     });
     var numbered = numberHymns(list.map(function (f) { return f.name + '|' + f.size; }));
     sortLib();
@@ -2832,7 +3257,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function forget(keys) {
     if (Player.tag) Player.stop();
-    keys.forEach(function (key) { delete lib[key]; Pcm.drop(key); Store.del(key); });
+    keys.forEach(function (key) { delete lib[key]; Pcm.drop(key); PicCache.drop(key); delete vidIndex[key]; delete vidErr[key]; delete vidSize[key]; Store.del(key); });
     libOrder = libOrder.filter(function (k) { return lib[k]; });
     if (!libOrder.length) { addSamples(); if (!mix.items.length && !mix.spoken.length) { mix = sampleMix(); historyBarrier = true; } }
     saveLM();
@@ -3101,6 +3526,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (ui.sel && !findItem(ui.sel.lane, ui.sel.id)) ui.sel = null;
     ui.checked = TextPick.prune(ui.checked, mix.texts); ui.expanded = TextPick.prune(ui.expanded, mix.texts);
     if (ui.cursor >= plan.total) ui.cursor = 0;
+    closeIdleClipPlayers(ui.screenT || 0);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250);
     render();
@@ -3116,25 +3542,60 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       return null;
     }
+    if (sel.lane === 'pictures') {
+      for (var p = 0; p < mix.pictures.length; p++) {
+        var pi = mix.pictures[p];
+        if (pi.id === sel.id) return { c: { id: pi.id, start: pi.start, len: pi.dur, key: pi.key }, i: p, p: pi };
+      }
+      return null;
+    }
     var list = sel.lane === 'items' ? plan.music : plan.spoken;
     for (var i = 0; i < list.length; i++) if (list[i].id === sel.id) return { c: list[i], i: i };
     return null;
   }
   function addToOrder(key, at) {
-    var it = { id: nid(), key: key, name: lib[key].name };
+    var e = lib[key];
+    if (!e || e.kind === 'image' || (e.meta && e.meta.silent)) return;
+    var it = { id: nid(), key: key, name: e.name };
     if (at == null || at > mix.items.length) mix.items.push(it); else mix.items.splice(at, 0, it);
     changed();
   }
   function addSpoken(key) {
+    var e = lib[key];
+    if (!e || e.kind === 'image') return;
     var at = ui.cursor > 0 ? ui.cursor : Math.min(30, Math.max(0, plan.total - 30));
     var last = plan.spoken[plan.spoken.length - 1];
     if (ui.cursor <= 0 && last) at = last.start + last.len + 15;
-    var it = { id: nid(), key: key, name: lib[key].name, at: Math.round(at) };
+    var it = { id: nid(), key: key, name: e.name, at: Math.round(at) };
+    if (e.kind === 'video') {
+      it.pic = PictureBox.defaults('video');
+      if (e.meta && e.meta.silent) it.mute = true;
+    }
     mix.spoken.push(it);
     if (!LM[key] || !LM[key].info || !LM[key].info.kind) { lm(key).info.kind = 'talk'; saveLM(); }
     ui.sel = { lane: 'spoken', id: it.id };
     changed();
     if (lib[key].meta && lib[key].meta.duration > 45) openTrim('spoken', it.id);
+  }
+  function addPicture(key) {
+    var e = lib[key];
+    if (!e || e.kind !== 'image') return;
+    var d = PictureBox.defaults('image'), at = mixPlaying() ? Player.now() : ui.cursor;
+    var it = PictureBox.cleanItem({ id: nid(), key: key, name: e.name, start: PictureBox.placeAt(pictureSpans(), at, d.fadeIn), dur: 8, motion: 'zoomIn', strength: 'subtle', pic: d });
+    mix.pictures.push(it);
+    PicCache.want(key);
+    ui.sel = { lane: 'pictures', id: it.id };
+    changed();
+    revealPicEditor();
+  }
+  function removePicture(id) {
+    mix.pictures = mix.pictures.filter(function (it) { return it.id !== id; });
+    if (ui.sel && ui.sel.lane === 'pictures' && ui.sel.id === id) ui.sel = null;
+    changed();
+  }
+  function setShowPicture(it, on) {
+    if (!it.pic) it.pic = PictureBox.defaults('video');
+    it.pic.show = !!on;
   }
   function moveItem(id, toIndex) {
     var from = mix.items.findIndex(function (x) { return x.id === id; });
@@ -3157,6 +3618,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (sel.lane === 'spoken') {
       var sp = findItem('spoken', sel.id);
       sp.at = Math.max(0, Math.round((base + delta) * 10) / 10);
+      return true;
+    }
+    if (sel.lane === 'pictures') {
+      hit.p.start = Math.max(0, Math.round((base + delta) * 10) / 10);
       return true;
     }
     if (hit.i === 0) return false;
@@ -3229,6 +3694,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     plan.music.forEach(function (c) { e.push(c.start, c.start + c.len); });
     plan.spoken.forEach(function (c) { if (!TextPick.has(except, c.id)) e.push(c.start, c.start + c.len); });
     mix.texts.forEach(function (tx) { if (!TextPick.has(except, tx.id)) { var sp = txSpan(tx); e.push(sp.start, sp.start + sp.dur); } });
+    mix.pictures.forEach(function (it) { if (!TextPick.has(except, it.id)) e.push(it.start, it.start + it.dur); });
     return e;
   }
   function snapTo(times, edges, thr) {
@@ -3267,7 +3733,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       do {
         renderAgain = false;
         renderHead(); renderTimeline(); renderSel(); renderLibrary(); renderOrder(); renderSpoken();
-        renderScreenOpts(); renderCues(); renderTexts(); renderCollection(); drawScreen(); renderSettings(); renderExportNote(); syncPlay(); renderSections();
+        renderScreenOpts(); renderCues(); renderTexts(); renderPictures(); renderCollection(); drawScreen(); renderSettings(); renderExportNote(); syncPlay(); renderSections();
       } while (renderAgain);
     } finally { rendering = false; }
   }
@@ -3288,7 +3754,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
   var TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
   function renderTimeline() {
-    var span = Math.max(mix.target, plan.total, 60) * 1.04;
+    var picEnd = 0;
+    mix.pictures.forEach(function (it) { picEnd = Math.max(picEnd, it.start + it.dur); });
+    var span = Math.max(mix.target, plan.total, picEnd, 60) * 1.04;
     ui.span = span;
     var tl = $('tl');
     tl.style.width = (ui.zoom * 100) + '%';
@@ -3304,10 +3772,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (major && t > 0 && t < span * 0.985 && Math.abs(t - mix.target) * pps > 40) axis += '<span class="ticklabel" style="left:' + pct(t) + '">' + (label < 1 ? fmt1(t) : fmt(t)) + '</span>';
     }
     h = '<div class="axis">' + axis + '</div>' + h;
-    // rows: two for music, one for spoken clips, then one per piece of text
+    // rows: two for music, one for spoken clips, then rows of pictures, then one per piece of text
     var rows = TextGroup.rowOrder(mix.texts, mix.groups);
-    tl.style.height = Math.max(134, 100 + rows.length * 22 + 4) + 'px';
+    var pr = PictureBox.rows(pictureSpans()), picTop = 100, textTop = 100 + pr.count * 22;
+    tl.style.height = Math.max(134, textTop + rows.length * 22 + 4) + 'px';
     plan.spoken.forEach(function (c) {
+      if (c.mute) return;
       h += '<i class="duck" style="left:' + pct(Math.max(0, c.start - plan.ramp)) + ';width:' + pct(c.len + 2 * plan.ramp) + '"></i>';
     });
     var sel = ui.sel || {};
@@ -3317,14 +3787,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         ';clip-path:polygon(' + fi + '% 0,' + fo + '% 0,100% 100%,0 100%)"><canvas data-k="' + esc(c.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas><span class="lbl">' + (i + 1) + ' · ' + esc(nameOf(c)) + '</span></div>';
     });
     plan.spoken.forEach(function (c) {
-      h += '<div class="clip voice' + (sel.lane === 'spoken' && sel.id === c.id ? ' sel' : '') + '" data-lane="spoken" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:74px;left:' + pct(c.start) + ';width:' + pct(c.len) + '"><span class="lbl">' + esc(nameOf(c)) + '</span></div>';
+      var prefix = showsPicture(findItem('spoken', c.id)) ? 'Video · ' : '';
+      h += '<div class="clip voice' + (sel.lane === 'spoken' && sel.id === c.id ? ' sel' : '') + '" data-lane="spoken" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:74px;left:' + pct(c.start) + ';width:' + pct(c.len) + '"><span class="lbl">' + esc(prefix + nameOf(c)) + '</span></div>';
+    });
+    mix.pictures.forEach(function (it) {
+      var pname = lib[it.key] ? lib[it.key].name : it.name;
+      h += '<div class="clip picc' + (sel.lane === 'pictures' && sel.id === it.id ? ' sel' : '') + '" data-lane="pictures" data-id="' + it.id + '" title="' + esc(pname) + '" style="top:' + (picTop + pr.rowOf[it.id] * 22) + 'px;left:' + pct(it.start) + ';width:' + pct(it.dur) + '"><span class="lbl">' + esc(pname) + '</span><i class="grip" data-grip="1" title="Drag to change how long it shows"></i></div>';
     });
     rows.forEach(function (rw, row) {
       if (rw.kind === 'group') {
         var g = TextGroup.find(mix.groups, rw.id), ids = TextGroup.memberIds(mix.texts, rw.id), gs = groupSpan(ids);
         var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show';
-        h += '<i class="grpbox" style="top:' + (100 + row * 22 - 2) + 'px;height:' + ((1 + ids.length) * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
-        h += '<div class="grp' + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, click to select it" style="top:' + (100 + row * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"><span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span></div>';
+        h += '<i class="grpbox" style="top:' + (textTop + row * 22 - 2) + 'px;height:' + ((1 + ids.length) * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
+        h += '<div class="grp' + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, click to select it" style="top:' + (textTop + row * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"><span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span></div>';
         return;
       }
       var tx = findItem('texts', rw.id);
@@ -3332,13 +3807,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
       var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '') + (TextPick.has(ui.checked, tx.id) ? ' checked' : '') + (tx.hidden ? ' hid' : '');
       var fixedEnd = tx.whole || during || tx.untilNext || tx.toEnd || tx.locked;
-      h += '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '" title="' + esc(plainText(tx)) + '" style="top:' + (100 + row * 22) + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
+      h += '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '" title="' + esc(plainText(tx)) + '" style="top:' + (textTop + row * 22) + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
     });
     if (ui.snapT != null) h += '<i class="snapline" style="left:' + pct(ui.snapT) + '"></i>';
     if (ui.fillWin) h += '<i class="fillwin" style="left:' + pct(ui.fillWin.start) + ';width:' + pct(ui.fillWin.end - ui.fillWin.start) + '"><span>Scriptures go here</span></i>';
     h += '<div class="mark" style="left:' + pct(mix.target) + '"><b>' + fmt(mix.target) + '</b></div>';
     h += '<i class="head" hidden></i>';
-    if (!plan.music.length && !plan.spoken.length && !mix.texts.length) h += '<div class="empty">Add recordings from the library and the mix is drawn here to scale.</div>';
+    if (!plan.music.length && !plan.spoken.length && !mix.texts.length && !mix.pictures.length) h += '<div class="empty">Add recordings from the library and the mix is drawn here to scale.</div>';
     setHTML(tl, h);
     if (Player.tag && isMixTag(Player.tag)) placeHead(Player.now()); else syncHead();
     var visible = $('tlwrap').clientWidth / pps;
@@ -3416,6 +3891,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var c = hit.c, name = c.key ? esc(nameOf(c)) : '';
     if (ui.sel.lane === 'texts') {
       h = '<span class="what">Text: ' + esc(plainText(hit.t).split('\n')[0] || 'empty') + '</span><span class="num">shows from ' + fmt1(c.start) + ' to ' + fmt1(c.start + c.len) + '</span>' + (linkSummary(hit.t) ? '<span class="note">' + esc(linkSummary(hit.t)) + '</span>' : '');
+    } else if (ui.sel.lane === 'pictures') {
+      h = '<span class="what">Picture: ' + (name || esc(hit.p.name)) + '</span><span class="num">shows from ' + fmt1(c.start) + ' to ' + fmt1(c.start + c.len) + '</span>';
     } else if (ui.sel.lane === 'items') {
       var rel = hit.i === 0 ? 'starts the mix' : (function () { var x = plan.music[hit.i - 1].xf; return x > 0.01 ? 'overlaps the one before by ' + secs(x) : x < -0.01 ? 'comes in ' + secs(-x) + ' after the one before ends' : 'comes in right as the one before ends'; })();
       h = '<span class="what">' + (hit.i + 1) + ' · ' + name + '</span><span class="num">starts at ' + fmt1(c.start) + ', ' + rel + '</span>';
@@ -3426,8 +3903,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     h += nudgeButtons(fixed) +
       '<button class="btn small" data-selact="play">' + ICON.play + ' Play from just before</button>' +
       (ui.sel.lane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' :
+      ui.sel.lane === 'pictures' ? '<button class="btn small" data-selact="editpic">Edit picture</button><button class="btn small quiet" data-selact="rmpic">Remove</button>' :
       '<button class="btn small" data-selact="info">On-screen details</button>' +
-      '<button class="btn small" data-selact="trim">Trim</button>') +
+      '<button class="btn small" data-selact="trim">Trim</button>' +
+      (ui.sel.lane === 'spoken' && isVideoKey(c.key) ? '<button class="btn small" data-selact="editpic">Picture</button>' : '')) +
       '<button class="btn small quiet" data-selact="clear">Done</button>' +
       '<span class="note">' + esc(selFlash || (fixed ? 'The first recording always starts at 0:00.' : 'Arrow keys move it by 0.5 s. Hold Shift for 5 s, or Alt for 0.1 s.')) + '</span>';
     setHTML(bar, h);
@@ -3498,18 +3977,30 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var files = libFiles(), today = ymd(new Date());
     files.forEach(function (key) {
       var e = lib[key], ok = !!e.meta, u = lastUsed(key), r = lm(key);
-      var len = e.state === 'error' && !e.meta ? 'Could not read this file' : e.meta ? fmt(e.meta.duration) : 'Reading…';
+      var isImg = e.kind === 'image', isVid = e.kind === 'video', silent = !!(e.meta && e.meta.silent), pc = isImg ? PicCache.peek(key) : null;
+      var len = isImg ? (PicCache.err[key] ? 'This picture could not be read: ' + PicCache.err[key] : 'Picture' + (pc ? ' · ' + pc.w + ' × ' + pc.h : ''))
+        : e.state === 'error' && !e.meta ? 'Could not read this file' + (e.err ? ': ' + e.err : '') : e.meta ? fmt(e.meta.duration) : 'Reading…';
+      var ktag = isVid ? '<span class="tag">Video</span>' + (silent ? '<span class="tag">No sound</span>' : '') : '';
       var usedCls = !u ? 'fresh' : (u <= today && (parseYmd(today) - parseYmd(u)) / 864e5 < 42) || u > today ? 'recent' : '';
       var hy = r.hymn, htag = hy ? '<span class="htag' + (hy.v ? '' : ' q') + '">' + (hy.v === 1 ? 'Vocals' : hy.v === 2 ? 'Accompaniment' : 'Version?') + '</span>' : '';
       var usage = e.sample ? '<span class="tag">Sample</span>' : '<span class="' + usedCls + '" title="' + esc(r.used.map(shortDate).join(', ')) + '">' + (u ? usedText(u) : 'Never used') + '</span>';
-      h += '<li class="librow" draggable="true" data-key="' + esc(key) + '"><button class="playbtn" data-act="audition" data-key="' + esc(key) + '" data-play="lib:' + esc(key) + '" aria-label="Play ' + esc(e.name) + '"' + (ok ? '' : ' disabled') + '></button>' +
-        '<div><div class="name">' + esc(e.name) + '</div><div class="meta num"><span>' + len + '</span>' + htag + usage + (r.source ? '<span>Has a link</span>' : '') + (q && r.folder !== ui.folder ? '<span>in ' + esc(r.folder || 'Library') + '</span>' : '') + '</div></div>' +
-        '<div class="acts"><button class="btn small" data-act="add" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled') + '>Add</button>' +
-        '<button class="btn small" data-act="addSpoken" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled') + ' title="Lay this over the music as a spoken clip">Spoken</button>' +
+      if (isImg) usage = '';
+      h += '<li class="librow" draggable="true" data-key="' + esc(key) + '">' + (isImg ? '<span class="playbtn" aria-hidden="true" style="visibility:hidden"></span>' : '<button class="playbtn" data-act="audition" data-key="' + esc(key) + '" data-play="lib:' + esc(key) + '" aria-label="Play ' + esc(e.name) + '"' + (ok && !silent ? '' : ' disabled') + '></button>') +
+        '<div><div class="name">' + esc(e.name) + '</div><div class="meta num"><span>' + esc(len) + '</span>' + ktag + htag + usage + (r.source ? '<span>Has a link</span>' : '') + (q && r.folder !== ui.folder ? '<span>in ' + esc(r.folder || 'Library') + '</span>' : '') + '</div></div>' +
+        '<div class="acts">' + (isImg ? '<button class="btn small" data-act="addPicture" data-key="' + esc(key) + '" title="Show this picture on screen at the playhead">Add</button>' :
+        '<button class="btn small" data-act="add" data-key="' + esc(key) + '"' + (ok && !silent ? '' : ' disabled') + '>Add</button>' +
+        '<button class="btn small" data-act="addSpoken" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled') + (isVid ? ' title="Lay this over the music as a video clip with its picture">Clip' : ' title="Lay this over the music as a spoken clip">Spoken') + '</button>') +
         '<button class="btn small quiet" data-act="more" data-key="' + esc(key) + '" aria-expanded="' + (ui.open === key) + '" aria-label="More for ' + esc(e.name) + '">⋯</button></div>';
       if (ui.open === key) {
-        h += '<div class="libmore"><span class="note">On screen: ' + esc(infoLine(key)) + '</span><button class="btn small" data-act="info" data-key="' + esc(key) + '">Edit on-screen details</button>';
-        if (!e.sample) {
+        h += '<div class="libmore">' + (isImg ? '' : '<span class="note">On screen: ' + esc(infoLine(key)) + '</span><button class="btn small" data-act="info" data-key="' + esc(key) + '">Edit on-screen details</button>');
+        if (!e.sample && isImg) {
+          var plink = LibSource.linkFor(r, null);
+          h += '<label class="note srcfield">Source link <input type="url" data-source="' + esc(key) + '" value="' + esc(r.source || '') + '" placeholder="Where to download it again"></label>' +
+            (plink ? '<a class="btn small" href="' + esc(plink) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '') +
+            (Link.handle ? '<span class="note">In ' + esc((r.folder || '').split('/').join(' / ')) + '. Move files on your computer or in Google Drive, then press Rescan.</span>' : '<label class="note">Move to <select data-move="' + esc(key) + '"><option value="">Library (top level)</option>' +
+            all.map(function (p) { return '<option value="' + esc(p) + '"' + (p === r.folder ? ' selected' : '') + '>' + esc(p.split('/').join(' / ')) + '</option>'; }).join('') + '</select></label>') +
+            (Link.handle ? '' : '<button class="btn small quiet" data-act="forget" data-key="' + esc(key) + '">Remove from the library</button>');
+        } else if (!e.sample) {
           var link = LibSource.linkFor(r, infoOf(key));
           h += '<label class="note srcfield">Source link <input type="url" data-source="' + esc(key) + '" value="' + esc(r.source || '') + '" placeholder="Where to download it again"></label>' +
             (link ? '<a class="btn small" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Open' + (r.source ? '' : ' talk link') + '</a>' : '');
@@ -3584,11 +4075,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // file names, so they're easy to find and add back.
   function renderMissing() {
     var seen = {}, rows = [];
-    mix.items.map(function (it) { return [it, 'song']; }).concat(mix.spoken.map(function (it) { return [it, 'talk clip']; })).forEach(function (x) {
+    mix.items.map(function (it) { return [it, 'song']; }).concat(mix.spoken.map(function (it) { return [it, 'talk clip']; }), mix.pictures.map(function (it) { return [it, 'picture']; })).forEach(function (x) {
       var it = x[0];
       if (lib[it.key] || seen[it.key]) return;
       seen[it.key] = 1;
-      rows.push({ file: it.key.split('|')[0], what: x[1], at: x[1] === 'song' ? 'song ' + (mix.items.indexOf(it) + 1) : 'spoken clip', link: LibSource.linkFor(LM[it.key], infoOf(it.key)) });
+      rows.push({ file: it.key.split('|')[0], what: x[1], at: x[1] === 'song' ? 'song ' + (mix.items.indexOf(it) + 1) : x[1] === 'picture' ? 'picture' : 'spoken clip', link: LibSource.linkFor(LM[it.key], infoOf(it.key)) });
     });
     var h = '';
     if (rows.length) {
@@ -3645,12 +4136,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var c = byId[it.id], name = lib[it.key] ? lib[it.key].name : it.name;
       h += '<li>';
       if (c) {
+        var isVid = isVideoKey(it.key);
+        var vidLine = isVid ? '<div class="facts"><label><input type="checkbox" data-showpic="' + it.id + '"' + (showsPicture(it) ? ' checked' : '') + '> Show the picture</label>' +
+          (c.mute ? '<span>' + (lib[it.key].meta.silent ? 'This video has no sound' : 'Picture only, its sound is off') + '</span>' : '') +
+          (vidErr[it.key] ? '<span class="err">' + esc(vidErr[it.key]) + '</span>' : '') + '</div>' : '';
         h += '<div class="row' + (sel.lane === 'spoken' && sel.id === it.id ? ' picked' : '') + '" data-id="' + it.id + '"><div class="n" aria-hidden="true"><i class="vmark"></i></div>' +
           '<div><div class="name" data-pick="spoken:' + it.id + '">' + esc(name) + '</div><div class="facts num"><label>Comes in at <input type="text" inputmode="decimal" style="width:76px;padding:3px 6px" id="at-' + it.id + '" data-at="' + it.id + '" value="' + fmt1(c.start) + '"></label>' +
-          '<span><b>' + fmt(c.len) + '</b> long</span><span>ends at ' + fmt(c.start + c.len) + '</span><span>uses ' + fmt1(c.in) + '–' + fmt1(c.in + c.len) + ' of the recording</span></div>' + usedNote(it.key, c.in, c.in + c.len) +
+          '<span><b>' + fmt(c.len) + '</b> long</span><span>ends at ' + fmt(c.start + c.len) + '</span><span>uses ' + fmt1(c.in) + '–' + fmt1(c.in + c.len) + ' of the recording</span></div>' + vidLine + usedNote(it.key, c.in, c.in + c.len) +
           onscreenLine(it.key, 'spoken') +
           '<canvas data-wave="' + esc(it.key) + '" data-in="' + c.in + '" data-len="' + c.len + '" data-voice="1"></canvas></div>' +
           '<div class="acts">' + volInput('spoken', it) +
+          (isVid ? '<button class="btn small" data-act="editpic" data-id="' + it.id + '">Picture</button>' : '') +
           '<button class="btn small" data-act="voice" data-id="' + it.id + '" data-play="voice:' + it.id + '" data-label="Preview"></button>' +
           '<button class="btn small" data-act="trim" data-lane="spoken" data-id="' + it.id + '">Trim</button>' +
           '<button class="btn small quiet" data-act="remove" data-lane="spoken" data-id="' + it.id + '">Remove</button></div></div>';
@@ -3865,14 +4361,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (boxes) boxes.push({ kind: 'text', id: tx.id, x: bx, y: by, w: bw, h: bh });
     }
     if (boxes && selected && !tx.locked) {
-      var hs = 7 * W / 960;
-      g.save();
-      g.setLineDash([6, 5]); g.strokeStyle = '#F2C14E'; g.lineWidth = 1;
-      g.strokeRect(frame.x, frame.y, frame.w, frame.h);
-      g.setLineDash([]); g.fillStyle = '#F2C14E';
-      [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]].forEach(function (k) { g.fillRect(frame.x + k[0] * frame.w - hs / 2, frame.y + k[1] * frame.h - hs / 2, hs, hs); });
-      g.restore();
-      boxes.push({ kind: 'frame', id: tx.id, x: frame.x, y: frame.y, w: frame.w, h: frame.h });
+      paintHandles(g, W, frame);
+      boxes.push({ kind: 'frame', lane: 'texts', id: tx.id, x: frame.x, y: frame.y, w: frame.w, h: frame.h });
     }
   }
   function plainText(tx) { return tx.passage ? tx.passage.verses.map(function (v) { return v.text; }).join(' ') : String(tx.text || ''); }
@@ -3909,8 +4399,88 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var spans = caps.map(capSpanOf);
     return mix.texts.filter(function (tx) { return !tx.hidden && TextOverlap.anyOverlap(spans, textSpanOf(tx)); }).map(frameRect);
   }
-  function paintScreen(g, W, H, t, opts, frame, boxes) {
+  /* pictures and video clips: drawn over the background, under titles and text */
+  function isVideoKey(key) { return !!(lib[key] && lib[key].kind === 'video'); }
+  function showsPicture(it) { return !!(it && it.pic && it.pic.show !== false && isVideoKey(it.key)); }
+  function pictureLayers() {
+    var list = [];
+    mix.pictures.forEach(function (it) {
+      if (!lib[it.key] || lib[it.key].kind !== 'image') return;
+      list.push({ lane: 'pictures', id: it.id, key: it.key, start: it.start, dur: it.dur, pic: PictureBox.clean(it.pic, 'image'), motion: it.motion, strength: it.strength, srcIn: 0, kind: 'image' });
+    });
+    plan.spoken.forEach(function (c) {
+      var it = findItem('spoken', c.id);
+      if (!showsPicture(it)) return;
+      list.push({ lane: 'spoken', id: c.id, key: c.key, start: c.start, dur: c.len, pic: PictureBox.clean(it.pic, 'video'), motion: 'none', strength: 'subtle', srcIn: c.in, kind: 'video' });
+    });
+    return PictureBox.order(list);
+  }
+  function pictureSpans() { return mix.pictures.map(function (it) { return { id: it.id, start: it.start, end: it.start + it.dur }; }); }
+  function picOf(lane, id) { var it = findItem(lane, id); return it && it.pic ? it.pic : null; }
+  function roundPath(g, r, rad) {
+    g.beginPath();
+    if (rad > 0 && g.roundRect) g.roundRect(r.x, r.y, r.w, r.h, rad); else g.rect(r.x, r.y, r.w, r.h);
+  }
+  function paintHandles(g, W, f) {
+    var hs = 7 * W / 960;
+    g.save();
+    g.setLineDash([6, 5]); g.strokeStyle = '#F2C14E'; g.lineWidth = 1;
+    g.strokeRect(f.x, f.y, f.w, f.h);
+    g.setLineDash([]); g.fillStyle = '#F2C14E';
+    [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]].forEach(function (k) { g.fillRect(f.x + k[0] * f.w - hs / 2, f.y + k[1] * f.h - hs / 2, hs, hs); });
+    g.restore();
+  }
+  // `source(layer, t)` gives { img, w, h } to draw, or null while it is still loading.
+  function paintPictures(g, W, H, t, source, boxes) {
+    var layers = pictureLayers();
+    if (!layers.length) return;
+    var alphas = PictureBox.alphas(layers.map(function (l) { return { id: l.id, start: l.start, dur: l.dur, fadeIn: l.pic.fadeIn, fadeOut: l.pic.fadeOut, frame: l.pic.frame }; }), t);
+    var selId = boxes && ui.sel && (ui.sel.lane === 'pictures' || ui.sel.lane === 'spoken') ? ui.sel.id : null;
+    layers.forEach(function (l) {
+      var a = alphas[l.id] || 0, selected = l.id === selId, f = l.pic.frame;
+      if (a <= 0 && !selected) return;
+      var box = { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H };
+      var src = a > 0 ? source(l, t) : null;
+      if (src) {
+        var r = PictureBox.fitRect(box, src.w, src.h, l.pic.fit);
+        var rect = l.pic.fit === 'contain' ? { x: r.dx, y: r.dy, w: r.dw, h: r.dh } : box;
+        var rad = l.pic.round ? 0.035 * Math.min(rect.w, rect.h) : 0;
+        var m = l.kind === 'image' ? PictureMotion.transform(l.motion, l.strength, (t - l.start) / l.dur, rect.w, rect.h) : { scale: 1, dx: 0, dy: 0, rot: 0 };
+        g.save();
+        g.globalAlpha = a;
+        if (l.pic.shadow) {
+          g.save();
+          g.shadowColor = 'rgba(0,0,0,0.55)'; g.shadowBlur = 28 * H / 1080; g.shadowOffsetY = 6 * H / 1080; g.fillStyle = '#000';
+          roundPath(g, rect, rad); g.fill();
+          g.restore();
+        }
+        roundPath(g, rect, rad); g.clip();
+        g.translate(rect.x + rect.w / 2 + m.dx * rect.w, rect.y + rect.h / 2 + m.dy * rect.h);
+        g.rotate(m.rot); g.scale(m.scale, m.scale);
+        g.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+        g.restore();
+      } else if (boxes && a > 0) {
+        g.save(); g.setLineDash([4, 4]); g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.4)';
+        g.strokeRect(box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1);
+        g.restore();
+      }
+      if (!boxes) return;
+      if (a > 0) boxes.push({ kind: 'picture', lane: l.lane, id: l.id, x: box.x, y: box.y, w: box.w, h: box.h });
+      if (selected) {
+        paintHandles(g, W, box);
+        boxes.push({ kind: 'frame', lane: l.lane, id: l.id, x: box.x, y: box.y, w: box.w, h: box.h });
+      }
+    });
+  }
+  function selPictureLayer() {
+    if (!ui.sel) return null;
+    var list = pictureLayers();
+    for (var i = 0; i < list.length; i++) if (list[i].lane === ui.sel.lane && list[i].id === ui.sel.id) return list[i];
+    return null;
+  }
+  function paintScreen(g, W, H, t, opts, frame, boxes, source) {
     paintBackground(g, W, H, opts, frame);
+    if (source) paintPictures(g, W, H, t, source, boxes);
     var hit = E.captionAt(caps, t), capBox = [];
     if (hit) paintCaption(g, W, H, hit.cap.kind, infoOf(hit.cap.key, hit.cap.lane), hit.alpha, opts, capBox);
     if (boxes) capBox.forEach(function (b) { boxes.push(b); });
@@ -3954,12 +4524,74 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       bgBusy = false;
     })();
   }
+  // Video clips in the preview: one index per file, one player per clip,
+  // following the same ask-then-redraw loop as the motion background.
+  var vidIndex = {}, vidErr = {}, vidSize = {}, clipPlayers = {}, lastIdleCheck = 0;
+  function videoIndex(key) {
+    if (!vidIndex[key]) {
+      var e = lib[key];
+      vidIndex[key] = e && e.file ? Media.indexVideo(e.file) : Promise.reject(new Error('that video is not in the library'));
+      vidIndex[key].then(function (idx) { vidSize[key] = { w: idx.width, h: idx.height }; renderPictures(); }, function (err) {
+        vidErr[key] = 'This video’s picture can’t be shown: ' + errText(err, 'it could not be read');
+        renderSpoken(); renderPictures();
+      });
+    }
+    return vidIndex[key];
+  }
+  function requestClipFrame(layer, srcT) {
+    var cp = clipPlayers[layer.id];
+    if (!cp) cp = clipPlayers[layer.id] = { player: null, want: null, busy: false };
+    cp.want = srcT;
+    if (cp.busy) return;
+    cp.busy = true;
+    (async function () {
+      try {
+        var idx = await videoIndex(layer.key);
+        while (cp.want != null && clipPlayers[layer.id] === cp) {
+          if (!cp.player) cp.player = new Media.ClipPlayer(idx);
+          var w = cp.want; cp.want = null;
+          await cp.player.frameAt(w);
+          if (!mixPlaying()) drawScreen(ui.screenT, true);
+        }
+      } catch (err) {
+        if (clipPlayers[layer.id] === cp && !vidErr[layer.key]) {
+          vidErr[layer.key] = 'This video’s picture can’t be shown: ' + errText(err, 'the browser could not decode it');
+          renderSpoken(); renderPictures();
+        }
+      }
+      cp.busy = false;
+    })();
+  }
+  function previewSource(layer, t, fetch) {
+    if (layer.kind === 'image') {
+      var e = PicCache.peek(layer.key);
+      if (!e) { if (fetch) PicCache.want(layer.key); return null; }
+      return { img: e.bmp, w: e.bmp.width, h: e.bmp.height };
+    }
+    if (vidErr[layer.key]) return null;
+    if (fetch) requestClipFrame(layer, layer.srcIn + (t - layer.start));
+    var cp = clipPlayers[layer.id], f = cp && cp.player && cp.player.cur;
+    return f ? { img: f, w: f.displayWidth, h: f.displayHeight } : null;
+  }
+  // Free decoders for clips far from the time shown. Not part of Player.stop().
+  function closeIdleClipPlayers(t) {
+    var near = {};
+    pictureLayers().forEach(function (l) { if (l.kind === 'video' && t >= l.start - 2 && t <= l.start + l.dur + 2) near[l.id] = 1; });
+    Object.keys(clipPlayers).forEach(function (id) {
+      var cp = clipPlayers[id];
+      if (near[id] || cp.busy) return;
+      if (cp.player) cp.player.close();
+      delete clipPlayers[id];
+    });
+  }
   function screenTime() {
     if (Player.tag && isMixTag(Player.tag)) return Player.now();
     if (ui.holdT != null) return ui.holdT;
     var hit = clipOf(ui.sel);
     if (hit && hit.t && hit.t.passage && hit.t.passage.mode !== 'together') return hit.c.start + Math.min(TextTiming.sizingTime(passageSchedule(hit.t), hit.t.passage.verses, hit.t.passage.mode), hit.c.len - 0.1);
     if (hit && hit.t) return hit.c.start + Math.min((hit.t.fadeIn || 0) + 0.3, hit.c.len / 2);
+    var pl = selPictureLayer();
+    if (pl) return pl.start + Math.min(pl.pic.fadeIn + 0.3, pl.dur / 2);
     if (hit) {
       for (var i = 0; i < caps.length; i++) if (caps[i].id === hit.c.id) return caps[i].start + Math.max(1.5, (caps[i].fadeIn || 0) + 0.3);
       return hit.c.start + 1;
@@ -3974,8 +4606,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (cv.width !== W) { cv.width = W; cv.height = H; }
     if (t == null) t = screenTime();
     ui.screenBoxes = []; ui.screenT = t;
-    var cap = paintScreen(cv.getContext('2d'), W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes);
+    var cap = paintScreen(cv.getContext('2d'), W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes, function (l, at) { return previewSource(l, at, !fromBg); });
     if (!fromBg) requestBg(t * (mix.opts.motionSpeed || 1));
+    if (Date.now() - lastIdleCheck > 1000) { lastIdleCheck = Date.now(); closeIdleClipPlayers(t); }
     $('screenAt').textContent = 'At ' + fmt(t);
     $('screenWhat').textContent = cap || ui.screenBoxes.length ? '' : 'Nothing on screen at this point';
   }
@@ -4665,8 +5298,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (slot) { if (textEdEl.parentNode !== slot) slot.appendChild(textEdEl); }
     else if (textEdEl.parentNode !== home) home.insertBefore(textEdEl, list.nextSibling);
   }
-  function keepEditorSteady(run) {
-    var ed = textEdEl, active = document.activeElement, inside = ed.contains(active);
+  function keepEditorSteady(run, editor) {
+    var ed = editor || textEdEl, active = document.activeElement, inside = ed.contains(active);
     var caret = inside && /^(text|search|textarea)$/.test(active.type) ? [active.selectionStart, active.selectionEnd] : null;
     var top = ed.getBoundingClientRect().top;
     run();
@@ -5105,6 +5738,139 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function persistMix() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250); checkpointSoon(); }
 
+  /* ---------- pictures and video clips on screen ---------- */
+  var picEdEl = $('picEd');
+  var BOX_LABELS = [['x', 'Left'], ['y', 'Top'], ['w', 'Width'], ['h', 'Height']];
+  function selPicture() {
+    if (!ui.sel) return null;
+    if (ui.sel.lane === 'pictures') { var it = findItem('pictures', ui.sel.id); return it ? { lane: 'pictures', id: it.id, item: it, key: it.key, kind: 'image' } : null; }
+    if (ui.sel.lane === 'spoken') { var sp = findItem('spoken', ui.sel.id); return sp && isVideoKey(sp.key) ? { lane: 'spoken', id: sp.id, item: sp, key: sp.key, kind: 'video' } : null; }
+    return null;
+  }
+  function pictureSize(sp) {
+    if (sp.kind === 'image') { var e = PicCache.peek(sp.key); if (!e) PicCache.want(sp.key); return e ? { w: e.w, h: e.h } : null; }
+    if (!vidSize[sp.key] && !vidErr[sp.key]) videoIndex(sp.key);
+    return vidSize[sp.key] || null;
+  }
+  function motionLabel(id) { var m = PictureMotion.PRESETS.filter(function (p) { return p.id === id; })[0]; return m ? m.label : 'None'; }
+  function picRows() {
+    var rows = pictureLayers();
+    mix.pictures.forEach(function (it) { if (!lib[it.key] || lib[it.key].kind !== 'image') rows.push({ lane: 'pictures', id: it.id, key: it.key, start: it.start, dur: it.dur, motion: it.motion, kind: 'image', missing: true }); });
+    plan.spoken.forEach(function (c) {
+      var it = findItem('spoken', c.id);
+      if (it && it.pic && it.pic.show === false && isVideoKey(it.key)) rows.push({ lane: 'spoken', id: c.id, key: c.key, start: c.start, dur: c.len, kind: 'video', off: true });
+    });
+    return rows;
+  }
+  function picRowError(l) {
+    if (l.missing) return 'This picture is not in the library. Add the file again to show it.';
+    if (l.kind === 'image') return PicCache.err[l.key] ? 'This picture could not be read: ' + PicCache.err[l.key] : '';
+    return vidErr[l.key] || '';
+  }
+  function renderPictures() {
+    var sel = ui.sel || {}, h = '';
+    picRows().forEach(function (l) {
+      var picked = sel.lane === l.lane && sel.id === l.id, item = findItem(l.lane, l.id), name = lib[l.key] ? lib[l.key].name : item ? item.name : '';
+      var what = l.kind === 'image' ? motionLabel(l.motion) : l.off ? 'Video clip, picture off' : 'Video clip', err = picRowError(l);
+      h += '<li class="picrow' + (picked ? ' picked' : '') + (l.off ? ' off' : '') + '" data-plane="' + l.lane + '" data-pid="' + l.id + '"><span class="t">' + fmt1(l.start) + '–' + fmt1(l.start + l.dur) + '</span>' +
+        '<span class="txt">' + esc(name) + (err ? '<span class="err">' + esc(err) + '</span>' : '') + '</span><span class="note">' + esc(what) + '</span></li>';
+      if (picked) h += '<li class="edslot" data-slot="1"></li>';
+    });
+    if (!h) h = '<li class="blank">No pictures yet. Press Add beside a picture in the library.</li>';
+    keepEditorSteady(function () {
+      var list = $('pictures'), home = list.parentNode;
+      if (list._html !== h && list.contains(picEdEl)) home.insertBefore(picEdEl, list.nextSibling);
+      setHTML(list, h);
+      var slot = list.querySelector('[data-slot]');
+      if (slot) { if (picEdEl.parentNode !== slot) slot.appendChild(picEdEl); }
+      else if (picEdEl.parentNode !== home) home.insertBefore(picEdEl, list.nextSibling);
+    }, picEdEl);
+    renderPicEditor();
+  }
+  function picEditorHtml(sp) {
+    var name = lib[sp.key] ? lib[sp.key].name : sp.item.name, image = sp.kind === 'image', silent = !!(lib[sp.key] && lib[sp.key].meta && lib[sp.key].meta.silent);
+    var h = '<div class="btnrow"><span class="note">' + (image ? 'Picture' : 'Video clip') + ': ' + esc(name) + '</span><button class="btn small primary" data-pact="done" style="margin-left:auto">Done</button></div>';
+    if (!image) {
+      h += '<div class="links"><label><input type="checkbox" data-pf="show"> Show the picture</label><label><input type="checkbox" data-pf="sound"> Play its sound</label></div>' +
+        (silent ? '<p class="note">This video has no sound.</p>' : '') + '<p class="note">Volume and trim are in Spoken clips over the music.</p>';
+      if (!sp.item.pic) return h;
+    }
+    h += '<h4 class="edhead">Where</h4><div class="btnrow presets">' + Object.keys(PictureBox.PRESETS).map(function (k) { return '<button class="btn small" data-preset="' + k + '">' + esc(PictureBox.PRESET_LABELS[k]) + '</button>'; }).join('') + '</div>' +
+      '<div class="grid">' + BOX_LABELS.map(function (b) { return '<label>' + b[1] + ' <span><input type="number" data-box="' + b[0] + '" min="0" max="100" step="0.5"> %</span></label>'; }).join('') + '</div>' +
+      '<div class="btnrow"><button class="btn small" data-pact="shape">Match the picture’s shape</button><span class="note" data-pnote="shape"></span></div>' +
+      '<h4 class="edhead">Look</h4><div class="grid look"><label>Fit <select data-pf="fit"><option value="cover">Fill the box (edges may be cut off)</option><option value="contain">Show the whole picture</option></select></label>' +
+      '<label><input type="checkbox" data-pf="round"> Rounded corners</label><label><input type="checkbox" data-pf="shadow"> Soft shadow</label></div>' +
+      '<h4 class="edhead">Timing</h4><div class="grid timing">' +
+      (image ? '<label>Starts at <input type="text" data-pf="start" inputmode="decimal"></label><label>Shows for <span><input type="number" data-pf="dur" min="0.5" max="3600" step="0.5"> s</span></label>' : '') +
+      '<label>Fade in <span><input type="number" data-pf="fadeIn" min="0" max="10" step="0.5"> s</span></label><label>Fade out <span><input type="number" data-pf="fadeOut" min="0" max="10" step="0.5"> s</span></label></div>';
+    if (image) {
+      h += '<h4 class="edhead">Motion</h4><div class="grid"><label>Motion <select data-pf="motion">' + PictureMotion.PRESETS.map(function (p) { return '<option value="' + p.id + '">' + esc(p.label) + '</option>'; }).join('') + '</select></label>' +
+        '<span class="btnrow" role="radiogroup" aria-label="Strength"><label><input type="radio" name="picStrength" value="subtle" data-pf="strength"> Subtle</label><label><input type="radio" name="picStrength" value="medium" data-pf="strength"> Medium</label></span></div>' +
+        '<div class="btnrow"><button class="btn small quiet" data-pact="remove">Remove this picture</button></div>';
+    }
+    return h;
+  }
+  function renderPicEditor() {
+    var sp = selPicture(), ed = picEdEl;
+    ed.hidden = !sp;
+    if (!sp) { ed._for = null; return; }
+    var silent = !!(lib[sp.key] && lib[sp.key].meta && lib[sp.key].meta.silent);
+    var shape = [sp.lane, sp.id, !!sp.item.pic, silent].join('|'), fresh = ed._for !== shape;
+    if (fresh) { ed.innerHTML = picEditorHtml(sp); ed._for = shape; }
+    syncPicEditor(sp, fresh);
+  }
+  function syncPicEditor(sp, fresh) {
+    var ed = picEdEl, it = sp.item, pic = it.pic;
+    function field(sel) { return ed.querySelector(sel); }
+    function setVal(sel, v) { var el = field(sel); if (el && (fresh || document.activeElement !== el)) el.value = v; }
+    function setTick(sel, on, off) { var el = field(sel); if (!el) return; el.checked = !!on; if (off != null) el.disabled = off; }
+    if (sp.kind === 'video') {
+      var silent = !!(lib[sp.key].meta && lib[sp.key].meta.silent);
+      setTick('[data-pf="show"]', showsPicture(it));
+      setTick('[data-pf="sound"]', !it.mute && !silent, silent);
+    }
+    if (!pic) return;
+    var f = pic.frame;
+    BOX_LABELS.forEach(function (b) { setVal('[data-box="' + b[0] + '"]', pct(f[b[0]])); });
+    ed.querySelectorAll('[data-preset]').forEach(function (b) {
+      var p = PictureBox.PRESETS[b.getAttribute('data-preset')];
+      b.classList.toggle('on', Math.abs(p.x - f.x) < 0.002 && Math.abs(p.y - f.y) < 0.002 && Math.abs(p.w - f.w) < 0.002 && Math.abs(p.h - f.h) < 0.002);
+    });
+    var size = pictureSize(sp), shapeBtn = field('[data-pact="shape"]');
+    shapeBtn.disabled = !size;
+    field('[data-pnote="shape"]').textContent = size ? '' : 'Waiting for the picture’s size…';
+    setVal('[data-pf="fit"]', pic.fit);
+    setTick('[data-pf="round"]', pic.round); setTick('[data-pf="shadow"]', pic.shadow);
+    setVal('[data-pf="fadeIn"]', pic.fadeIn); setVal('[data-pf="fadeOut"]', pic.fadeOut);
+    if (sp.kind === 'image') {
+      setVal('[data-pf="start"]', fmt1(it.start)); setVal('[data-pf="dur"]', it.dur); setVal('[data-pf="motion"]', it.motion);
+      ed.querySelectorAll('input[name="picStrength"]').forEach(function (r) { r.checked = r.value === it.strength; });
+    }
+  }
+  function syncPicBoxFields() {
+    var sp = selPicture();
+    if (!sp || !sp.item.pic) return;
+    BOX_LABELS.forEach(function (b) { var el = picEdEl.querySelector('[data-box="' + b[0] + '"]'); if (el) el.value = pct(sp.item.pic.frame[b[0]]); });
+  }
+  function revealPicEditor() {
+    if (collapsed.screen || collapsed.pictures) { collapsed.screen = false; collapsed.pictures = false; lsSet('hp.collapsed', collapsed); renderSections(); }
+    if (!picEdEl.hidden) picEdEl.scrollIntoView({ block: 'nearest' });
+  }
+  function applyPicField(sp, el, final) {
+    var it = sp.item, pic = it.pic, box = el.getAttribute('data-box'), f = el.getAttribute('data-pf'), v = parseFloat(el.value);
+    if (f === 'show') { setShowPicture(it, el.checked); return; }
+    if (f === 'sound') { if (el.checked) delete it.mute; else it.mute = true; if (Player.tag) Player.stop(); return; }
+    if (!pic) return;
+    if (box) { if (isFinite(v)) pic.frame = TextLayout.setFrameField(pic.frame, box, v / 100); }
+    else if (f === 'fit') pic.fit = el.value === 'contain' ? 'contain' : 'cover';
+    else if (f === 'round' || f === 'shadow') pic[f] = el.checked;
+    else if (f === 'fadeIn' || f === 'fadeOut') { if (isFinite(v)) pic[f] = clamp(v, 0, 10); }
+    else if (f === 'dur') { if (isFinite(v)) it.dur = clamp(Math.round(v * 10) / 10, 0.5, 3600); }
+    else if (f === 'start') { if (final) { var st = parseTime(el.value); if (st != null) it.start = Math.max(0, Math.round(st * 10) / 10); } }
+    else if (f === 'motion') it.motion = PictureMotion.isPreset(el.value) ? el.value : 'none';
+    else if (f === 'strength') it.strength = el.value === 'medium' ? 'medium' : 'subtle';
+  }
+
   /* ---------- export ---------- */
   var downloadsReady = window.claude && window.claude.use ? window.claude.use('downloads').catch(function () { return null; }) : null;
   var canWebm = typeof AudioEncoder !== 'undefined' && typeof WebMMuxer !== 'undefined';
@@ -5114,6 +5880,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function contentEnd() {
     var end = plan.total;
     mix.texts.forEach(function (tx) { if (!tx.whole) { var sp = tspan[tx.id] || tx; end = Math.max(end, sp.start + sp.dur); } });
+    mix.pictures.forEach(function (it) { end = Math.max(end, it.start + it.dur); });
     return end;
   }
   // "Exactly the length to cover" cuts a longer mix there (with a fade) and
@@ -5121,9 +5888,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function exportLen() { return ui.expLen === 'full' ? mix.target : contentEnd(); }
   function videoShape() {
     var motion = mix.opts.bg === 'motion' && ui.motion;
-    var H = ui.vidSize === 1080 ? 1080 : 720, W = H === 1080 ? 1920 : 1280, fps = motion ? 30 : 10;
-    var bitrate = motion ? (H === 1080 ? 5e6 : 3e6) : (H === 1080 ? 1.5e6 : 1e6);
-    return { W: W, H: H, fps: fps, bitrate: bitrate, motion: !!motion };
+    var smooth = !!motion || pictureLayers().some(function (l) { return l.kind === 'video' || (l.motion && l.motion !== 'none'); });
+    var H = ui.vidSize === 1080 ? 1080 : 720, W = H === 1080 ? 1920 : 1280, fps = smooth ? 30 : 10;
+    var bitrate = smooth ? (H === 1080 ? 5e6 : 3e6) : (H === 1080 ? 1.5e6 : 1e6);
+    return { W: W, H: H, fps: fps, bitrate: bitrate, motion: !!motion, smooth: smooth };
   }
   function renderExportNote() {
     var mp3ok = typeof lamejs !== 'undefined';
@@ -5146,8 +5914,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!mp3ok) extra += ' MP3 needs an internet connection when the page loads.';
     if (!canVideo) extra += ' Video export needs Chrome or Edge.';
     if (ui.format === 'video') {
-      extra += v.motion
-        ? ' With a motion background the video is built at 30 frames a second, which can take 10 minutes or more for a full mix. Keep this tab open and in front while it works.'
+      extra += v.smooth
+        ? ' With ' + (v.motion ? 'a motion background' : 'moving pictures or video clips') + ' the video is built at 30 frames a second, which can take 10 minutes or more for a full mix. Keep this tab open and in front while it works.'
         : ' Building it takes a few minutes for a full mix.';
       if (mix.opts.bg === 'motion' && !ui.motion) extra += ' Choose the motion background first, or it will use plain dark.';
     }
@@ -5215,9 +5983,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           audio: { codec: how.amux, sampleRate: SR, numberOfChannels: 2 } });
     var ae = new AudioEncoder({ output: function (c, m) { muxer.addAudioChunk(c, m); }, error: function (e) { err = e; } });
     ae.configure({ codec: how.acodec, sampleRate: SR, numberOfChannels: 2, bitrate: 160000 });
-    var ve = null, cv = null, g = null;
+    var ve = null, cv = null, g = null, clips = {}, clipFrames = {};
+    function exportSource(layer) {
+      if (layer.kind === 'image') {
+        var e = PicCache.peek(layer.key);
+        if (!e) throw new Error('the picture “' + (lib[layer.key] ? lib[layer.key].name : layer.key) + '” was not ready');
+        return { img: e.bmp, w: e.bmp.width, h: e.bmp.height };
+      }
+      var fr = clipFrames[layer.id];
+      return fr ? { img: fr, w: fr.displayWidth, h: fr.displayHeight } : null;
+    }
     try {
       if (withVideo) {
+        var layers = pictureLayers(), imageKeys = [];
+        layers.forEach(function (l) { if (l.kind === 'image' && imageKeys.indexOf(l.key) < 0) imageKeys.push(l.key); });
+        if (imageKeys.length) { say('Reading the pictures…'); await PicCache.ensure(imageKeys); }
+        for (var li = 0; li < layers.length; li++) {
+          var l = layers[li];
+          if (l.kind !== 'video') continue;
+          var idx;
+          try { idx = await videoIndex(l.key); }
+          catch (e) { throw new Error('the video “' + (lib[l.key] ? lib[l.key].name : l.key) + '” could not be read (' + errText(e, 'unknown problem') + ')'); }
+          clips[l.id] = { layer: l, player: new Media.ClipPlayer(idx) };
+        }
         if (document.fonts) { try { await Promise.all(['italic 50px "Libre Caslon Text"', '54px "Libre Caslon Text"', '600 36px Figtree', '28px Figtree'].map(function (f) { return document.fonts.load(f); })); } catch (e) { /* fallback fonts */ } }
         var vcfg = { codec: how.vcodec, width: v.W, height: v.H, bitrate: v.bitrate, framerate: v.fps };
         if (how.vmux === 'avc') vcfg.avc = { format: 'avc' };
@@ -5238,8 +6026,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (withVideo) {
           var until = Math.min(frames, Math.ceil((s + n) / SR * v.fps));
           for (; f < until; f++) {
-            var frame = bgp ? await bgp.frameAt(f / v.fps * (mix.opts.motionSpeed || 1)) : null;
-            paintScreen(g, v.W, v.H, f / v.fps, mix.opts, frame);
+            var frame = bgp ? await bgp.frameAt(f / v.fps * (mix.opts.motionSpeed || 1)) : null, T = f / v.fps;
+            for (var cid in clips) {
+              var ck = clips[cid], cl = ck.layer;
+              if (T >= cl.start && T <= cl.start + cl.dur) clipFrames[cid] = await ck.player.frameAt(cl.srcIn + (T - cl.start));
+              else if (T > cl.start + cl.dur) { ck.player.close(); delete clips[cid]; delete clipFrames[cid]; }
+            }
+            paintScreen(g, v.W, v.H, T, mix.opts, frame, undefined, exportSource);
             var vf = new VideoFrame(cv, { timestamp: Math.round(f * 1e6 / v.fps), duration: Math.round(1e6 / v.fps) });
             ve.encode(vf, { keyFrame: f % key === 0 });
             vf.close();
@@ -5259,6 +6052,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       muxer.finalize();
     } finally {
       if (bgp) bgp.close();
+      Object.keys(clips).forEach(function (id) { clips[id].player.close(); });
+      PicCache.pinned = [];
       try { if (ve && ve.state !== 'closed') ve.close(); } catch (e) { /* fine */ }
       try { if (ae.state !== 'closed') ae.close(); } catch (e) { /* fine */ }
     }
@@ -5538,7 +6333,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       drag = { x: ev.clientX, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: !!(ev.target.closest && ev.target.closest('[data-grip]')) };
       if (drag.sel) {
         drag.base = null;
-        if (!ui.sel || ui.sel.id !== drag.sel.id) { ui.sel = drag.sel; renderTimeline(); renderSel(); renderTexts(); }
+        if (!ui.sel || ui.sel.id !== drag.sel.id) { ui.sel = drag.sel; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
         drag.base = drag.resize ? clipOf(drag.sel).c.len : selBase(drag.sel);
         drag.start0 = clipOf(drag.sel).c.start;
         if (drag.sel.lane === 'texts' && !drag.resize && TextPick.has(ui.checked, drag.sel.id) && TextPick.count(ui.checked, mix.texts) > 1) {
@@ -5583,7 +6378,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         else sn = snapTo([drag.base + dt, drag.base + dt + hit2.c.len], edges, thr);
         if (sn) { dt += sn.d; ui.snapT = sn.at; }
       }
-      if (drag.resize) { if (hit2 && !hit2.t.locked) { hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); } }
+      if (drag.resize) {
+        if (drag.sel.lane === 'pictures') { if (hit2) hit2.p.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
+        else if (hit2 && hit2.t && !hit2.t.locked) { hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
+      }
       else if (!shiftClip(drag.sel, drag.base, dt)) { drag.sel = null; ui.snapT = null; return; }
       live(); renderTextEditor();
     });
@@ -5615,6 +6413,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (d.sel) {
         if (d.moved) changed(); else render();
         if (d.sel.lane === 'texts' && !d.moved) revealTextEditor();
+        if (d.sel.lane === 'pictures' && !d.moved) revealPicEditor();
         return;
       }
       if (ev.type === 'pointercancel' || Math.abs(ev.clientX - d.x) > 4) return;
@@ -5661,6 +6460,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       else if (act === 'info') openInfo(hit.c.key, ui.sel.lane);
       else if (act === 'trim') openTrim(ui.sel.lane, ui.sel.id);
       else if (act === 'edittext') { revealTextEditor(); $('textBody').focus(); }
+      else if (act === 'editpic') { renderPictures(); revealPicEditor(); }
+      else if (act === 'rmpic') removePicture(ui.sel.id);
       else if (act === 'clear') { ui.sel = null; render(); }
     });
 
@@ -5695,6 +6496,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       else if (act === 'dropGone') { forget(ui.libMsg.gone); ui.libMsg = null; changed(); }
       else if (act === 'sameFile') reconnectByName(ui.libMsg.pairs);
       else if (!e) return;
+      else if (act === 'addPicture') addPicture(key);
+      else if (act === 'audition' && (e.kind === 'image' || !e.meta)) return;
       else if (act === 'audition') toggle('lib:' + key, function () { Player.play(E.singlePlan(key, 0, e.meta.duration), 0, e.meta.duration, 'lib:' + key); });
       else if (act === 'add') addToOrder(key);
       else if (act === 'addSpoken') addSpoken(key);
@@ -5786,6 +6589,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'remove') { if (Player.tag) Player.stop(); mix[lane] = mix[lane].filter(function (x) { return x.id !== id; }); changed(); }
       else if (act === 'trim') openTrim(lane, id);
       else if (act === 'info') openInfo(b.getAttribute('data-key'), lane);
+      else if (act === 'editpic') { select({ lane: 'spoken', id: id }); revealPicEditor(); }
       else if (act === 'up' || act === 'down') { i = mix.items.findIndex(function (x) { return x.id === id; }); if (Player.tag) Player.stop(); moveItem(id, i + (act === 'up' ? -1 : 1)); }
       else if (act === 'seam') {
         toggle('seam:' + id, function () {
@@ -5820,6 +6624,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       } else if (final && el.hasAttribute('data-vol')) {
         var p = el.getAttribute('data-vol').split(':'), target = findItem(p[0], p[1]);
         if (target) { target.gainDb = clamp(parseFloat(el.value) || 0, -24, 12); if (Player.tag) Player.stop(); changed(); }
+      } else if (final && el.hasAttribute('data-showpic')) {
+        var vit = findItem('spoken', el.getAttribute('data-showpic'));
+        if (vit) { setShowPicture(vit, el.checked); changed(); }
       } else if (final && el.hasAttribute('data-at')) {
         var sp = findItem('spoken', el.getAttribute('data-at')), t = parseTime(el.value);
         if (sp && t != null) { sp.at = Math.max(0, t); if (Player.tag) Player.stop(); }
@@ -6021,7 +6828,38 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ['lenMix', 'lenFull'].forEach(function (id) { $(id).onchange = function () { ui.expLen = this.value; lsSet('hp.expLen', ui.expLen); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); }; });
     $('textRemove').onclick = function () { var tx = selText(); if (tx) removeTexts([tx.id]); };
 
-    // drag titles and text around in the preview
+    // pictures and video clips on screen
+    $('pictures').addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-slot]')) return;
+      var row = ev.target.closest('[data-pid]'); if (!row) return;
+      select({ lane: row.getAttribute('data-plane'), id: row.getAttribute('data-pid') });
+      revealPicEditor();
+    });
+    picEdEl.addEventListener('click', function (ev) {
+      var sp = selPicture(); if (!sp) return;
+      var pre = ev.target.closest('[data-preset]');
+      if (pre && sp.item.pic) { sp.item.pic = PictureBox.applyPreset(sp.item.pic, pre.getAttribute('data-preset')); changed(); return; }
+      var b = ev.target.closest('[data-pact]'); if (!b) return;
+      var act = b.getAttribute('data-pact');
+      if (act === 'done') { ui.sel = null; render(); }
+      else if (act === 'remove') removePicture(sp.id);
+      else if (act === 'shape') {
+        var size = pictureSize(sp);
+        if (size && sp.item.pic) { sp.item.pic.frame = PictureBox.shapeFrame(sp.item.pic.frame, size.w, size.h); changed(); }
+      }
+    });
+    picEdEl.addEventListener('input', function (ev) {
+      var sp = selPicture(); if (!sp || ev.target.type !== 'number') return;
+      applyPicField(sp, ev.target, false);
+      persistMix(); live();
+    });
+    picEdEl.addEventListener('change', function (ev) {
+      var sp = selPicture(); if (!sp || !(ev.target.hasAttribute('data-pf') || ev.target.hasAttribute('data-box'))) return;
+      applyPicField(sp, ev.target, true);
+      changed();
+    });
+
+    // drag titles, text and pictures around in the preview
     var scr = $('screen'), sd = null;
     function scrPoint(ev) { var r = scr.getBoundingClientRect(); return { x: (ev.clientX - r.left) * 960 / r.width, y: (ev.clientY - r.top) * 540 / r.height }; }
     var CURSORS = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize', move: 'move' };
@@ -6033,7 +6871,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     function frameAt(p) {
       var b = (ui.screenBoxes || []).filter(function (x) { return x.kind === 'frame'; })[0];
       var handle = b ? TextLayout.handleAt(b, p.x, p.y, 8) : null;
-      return handle ? { id: b.id, handle: handle } : null;
+      return handle ? { id: b.id, lane: b.lane, handle: handle } : null;
+    }
+    // Pull a moved box onto the center line and the text place lines (Shift turns it off).
+    function snapGuides(nf, handle, shiftKey) {
+      ui.guides = { v: false, h: 0 };
+      if (handle !== 'move' || shiftKey) return;
+      var cy = nf.y + nf.h / 2;
+      if (Math.abs(nf.x + nf.w / 2 - 0.5) < 0.012) { nf.x = 0.5 - nf.w / 2; ui.guides.v = true; }
+      [0.12, 0.3, 0.5, 0.72].forEach(function (g) { if (Math.abs(cy - g) < 0.012) { nf.y = g - nf.h / 2; ui.guides.h = g; } });
+      nf.x = Math.round(clamp(nf.x, 0, 1 - nf.w) * 1e4) / 1e4; nf.y = Math.round(clamp(nf.y, 0, 1 - nf.h) * 1e4) / 1e4;
     }
     scr.addEventListener('pointerdown', function (ev) {
       var p = scrPoint(ev), fr = frameAt(p), b = fr ? null : boxAt(p);
@@ -6042,7 +6889,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var t = ui.screenT;
       if (Player.tag) { Player.stop(); }
       ui.holdT = t;
-      if (fr || b.kind === 'text') {
+      if ((fr && fr.lane && fr.lane !== 'texts') || (!fr && b.kind === 'picture')) {
+        var plane = fr ? fr.lane : b.lane, pid = fr ? fr.id : b.id, pic = picOf(plane, pid);
+        if (!pic) { ui.holdT = null; return; }
+        if (!ui.sel || ui.sel.id !== pid) { ui.sel = { lane: plane, id: pid }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
+        sd = { p: p, kind: 'pic', lane: plane, id: pid, handle: fr ? fr.handle : 'move', f0: clone(pic.frame) };
+      } else if (fr || b.kind === 'text') {
         var tx = findItem('texts', fr ? fr.id : b.id);
         if (!tx) { ui.holdT = null; return; }
         if (!ui.sel || ui.sel.id !== tx.id) { ui.sel = { lane: 'texts', id: tx.id }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); }
@@ -6060,25 +6912,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var p = scrPoint(ev);
       if (!sd) { var fh = frameAt(p); scr.style.cursor = fh ? CURSORS[fh.handle] : boxAt(p) ? 'move' : ''; return; }
       var dx = (p.x - sd.p.x) / 960, dy = (p.y - sd.p.y) / 540;
-      if (sd.kind === 'frame') {
+      if (sd.kind === 'frame' || sd.kind === 'pic') {
         var nf = TextLayout.resizeFrame(sd.f0, sd.handle, dx, dy);
-        ui.guides = { v: false, h: 0 };
-        if (sd.handle === 'move' && !ev.shiftKey) {
-          var cy = nf.y + nf.h / 2;
-          if (Math.abs(nf.x + nf.w / 2 - 0.5) < 0.012) { nf.x = 0.5 - nf.w / 2; ui.guides.v = true; }
-          [0.12, 0.3, 0.5, 0.72].forEach(function (g) { if (Math.abs(cy - g) < 0.012) { nf.y = g - nf.h / 2; ui.guides.h = g; } });
-          nf.x = Math.round(clamp(nf.x, 0, 1 - nf.w) * 1e4) / 1e4; nf.y = Math.round(clamp(nf.y, 0, 1 - nf.h) * 1e4) / 1e4;
-        }
-        sd.tx.frame = nf;
+        snapGuides(nf, sd.handle, ev.shiftKey);
+        if (sd.kind === 'frame') sd.tx.frame = nf;
+        else { var pic = picOf(sd.lane, sd.id); if (pic) pic.frame = nf; }
       }
       else { mix.opts.capPos = 'custom'; mix.opts.capX = clamp(sd.x0 + dx, 0, 1); mix.opts.capY = clamp(sd.y0 + dy, 0, 1); }
       drawScreen(ui.holdT);
       if (sd.kind === 'frame') { showTextFit(sd.tx.id); syncBoxFields(sd.tx, true); }
+      if (sd.kind === 'pic') syncPicBoxFields();
     });
     function endScr() {
       if (!sd) return;
       sd = null; ui.guides = null; ui.outlines = null;
-      persistMix(); renderScreenOpts(); renderSel(); drawScreen(ui.holdT);
+      persistMix(); renderScreenOpts(); renderSel(); renderPictures(); drawScreen(ui.holdT);
       ui.holdT = null;
     }
     scr.addEventListener('pointerup', endScr);
@@ -6425,6 +7273,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var hid = mix.texts.filter(function (tx) { return tx.hidden; }).length;
       return mix.texts.length ? mix.texts.length + ' on screen' + (hid ? ', ' + hid + ' hidden' : '') : 'none yet';
     }
+    if (id === 'pictures') { var np = mix.pictures.length + mix.spoken.filter(showsPicture).length; return np ? np + ' on screen' : 'none yet'; }
     if (id === 'titles') return caps.length + (caps.length === 1 ? ' title' : ' titles');
     if (id === 'scriptures') return scrColl.items.length + (scrColl.items.length === 1 ? ' reference' : ' references');
     if (id === 'talkref') { var n = talksInMix().length; return n ? n + (n === 1 ? ' talk' : ' talks') : 'no talks in this mix'; }
@@ -6568,7 +7417,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       for await (var entry of dir.values()) {
         if (entry.name.charAt(0) === '.' || entry.name === DATA_FILE) continue;
         if (entry.kind === 'directory') { ensureFolder(path + '/' + entry.name); await walk(entry, path + '/' + entry.name); }
-        else if (AUDIO_EXT.test(entry.name)) {
+        else if (PictureBox.isMedia(entry.name)) {
           try { var f = await entry.getFile(); f.relPath = path + '/' + entry.name; found.push(f); } catch (e) { /* skip unreadable */ }
         }
       }
@@ -6606,8 +7455,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed();
   }
   async function copyIntoFolder(files, libFolder) {
-    var list = files.filter(function (f) { return AUDIO_EXT.test(f.name) || /^audio\//.test(f.type); });
-    if (!list.length) { ui.libMsg = { text: 'No audio files in that selection.' }; renderLibrary(); return; }
+    var list = files.filter(isMediaFile);
+    if (!list.length) { ui.libMsg = { text: 'No audio, video or picture files in that selection.' }; renderLibrary(); return; }
     var where = diskPath(libFolder), n = 0;
     ui.libMsg = { text: 'Copying ' + list.length + (list.length === 1 ? ' file' : ' files') + ' into your music folder…' }; renderLibrary();
     try {
@@ -6667,7 +7516,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('fileName').value = 'sacrament-' + nextSunday();
     addSamples();
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
+    if (work && work.items && work.spoken && (work.items.length || work.spoken.length || (work.pictures && work.pictures.length))) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
     else mix = sampleMix();
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
@@ -6695,9 +7544,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         dropSamples();
         recs.forEach(function (r) {
           if (lib[r.key]) return;
-          lib[r.key] = { key: r.key, name: r.name, file: r.blob, meta: r.meta || null, state: r.meta ? 'ready' : 'queued' };
+          var kind = PictureBox.fileKind(LibSource.keyName(r.key)) || 'audio';
+          lib[r.key] = kind === 'image'
+            ? { key: r.key, name: r.name, file: r.blob, kind: kind, meta: null, state: 'ready' }
+            : { key: r.key, name: r.name, file: r.blob, kind: kind, meta: r.meta || null, state: r.meta ? 'ready' : 'queued' };
           libOrder.push(r.key);
-          if (!r.meta || r.meta.v !== 2) enqueue(r.key);
+          if (kind !== 'image' && (!r.meta || r.meta.v !== 2)) enqueue(r.key);
         });
         numberHymns(libOrder.slice());
         sortLib();

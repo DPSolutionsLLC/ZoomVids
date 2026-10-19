@@ -141,6 +141,28 @@ test('describe joins two parts with "and" and three with a comma and "and"', () 
   assert.equal(UndoStack.describe(json(before), json(three)), 'change to the tap queue, mix settings and the playlist name');
 });
 
+test('describe counts changed pictures', () => {
+  const pics = [{ id: 'p1', key: 'a.jpg|1', start: 0, dur: 8 }, { id: 'p2', key: 'b.jpg|2', start: 6.5, dur: 8 }];
+  const before = playlist({ pictures: pics });
+  const one = playlist({ pictures: [{ ...pics[0], dur: 10 }, pics[1]] });
+  assert.equal(UndoStack.describe(json(before), json(one)), 'change to 1 picture');
+  const two = playlist({ pictures: pics.map((p) => ({ ...p, motion: 'turn' })) });
+  assert.equal(UndoStack.describe(json(before), json(two)), 'change to 2 pictures');
+});
+
+test('describe names a text and a picture together', () => {
+  const before = playlist({ pictures: [{ id: 'p1', key: 'a.jpg|1', start: 0, dur: 8 }] });
+  const after = playlist({
+    texts: before.texts.map((tx, i) => (i === 0 ? { ...tx, text: 'Uno' } : tx)),
+    pictures: [{ id: 'p1', key: 'a.jpg|1', start: 3, dur: 8 }]
+  });
+  assert.equal(UndoStack.describe(json(before), json(after)), 'change to 1 text item and 1 picture');
+});
+
+test('describe counts an added picture when the old playlist had none', () => {
+  assert.equal(UndoStack.describe(json(playlist()), json(playlist({ pictures: [{ id: 'p1', key: 'a.jpg|1' }] }))), 'change to 1 picture');
+});
+
 test('describe returns "change" when nothing differs', () => {
   assert.equal(UndoStack.describe(json(playlist()), json(playlist())), 'change');
 });

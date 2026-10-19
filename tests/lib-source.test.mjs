@@ -179,6 +179,18 @@ test('rekeyMix does not change its input', () => {
   assert.equal(JSON.stringify(m), before);
 });
 
+test('rekeyMix renames matching pictures too', () => {
+  const m = { ...mixWith(), pictures: [{ id: 'p1', key: 'Talk.mp4|100', name: 'Talk', start: 2 }, { id: 'p2', key: 'Photo.jpg|9', name: 'Photo', start: 9 }] };
+  const out = LibSource.rekeyMix(m, 'Talk.mp4|100', 'Talk.mp4|200', 'Talk new');
+  assert.deepEqual(out.pictures[0], { id: 'p1', key: 'Talk.mp4|200', name: 'Talk new', start: 2 });
+  assert.deepEqual(out.pictures[1], { id: 'p2', key: 'Photo.jpg|9', name: 'Photo', start: 9 });
+});
+
+test('rekeyMix works on a mix with no pictures and does not add them', () => {
+  const out = LibSource.rekeyMix(mixWith(), 'Talk.mp4|100', 'Talk.mp4|200', 'Talk new');
+  assert.equal('pictures' in out, false);
+});
+
 test('missing skips records with no link when info is a song', () => {
   assert.deepEqual(LibSource.missing({ 'A.mp3|1': { folder: '' } }, {}, songInfo), []);
   assert.deepEqual(LibSource.missing({ 'A.mp3|1': { folder: '' } }, {}, noInfo), []);
