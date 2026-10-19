@@ -33,6 +33,10 @@ The motion background and still graphic are still kept in the browser. Keep the 
 
 Every text item sits in a box. Select a text, then drag inside its box in the preview to move it, or drag an edge or corner to resize it. Lines wrap at the box edges. **Line up** sets left, centered or right, and **Up and down** sets top, middle or bottom. Text shrinks to fit the box, down to a smallest readable size; **Largest size** is as big as it gets. The editor shows the size it's actually showing at, for example "Showing at 58 px", so you can match items by number. Tick **Fixed size** to keep the text at exactly the size you set: it still wraps at the box edges but never shrinks. If the text is then too long for its box, it runs past the box and both the editor and the item's row in the list say **Doesn't fit**. The **Top**, **Upper third**, **Center** and **Lower third** buttons move the box without resizing it.
 
+**Behind the text** sets what's drawn behind the letters: **Nothing**, a **Soft shadow**, a **Soft outline** (an even glow around every letter that keeps light text readable on a bright background; set its color, opacity, width and softness) or a **Dark box** (set its color and opacity). New text starts with the look of the last text you edited.
+
+While you drag or resize a box, faint blue outlines show every other text, scripture and song or talk title that will be on screen at any point during that item's time, so you can keep them apart. Dragging the song and talk title position shows the outlines of the texts that overlap any title. The outlines go away when you let go and never show in the video.
+
 ### The text list
 
 Each row in **Your text on screen** shows one line. The arrow on the right shows the whole text, and **Collapse all** closes every row you opened. Clicking a row opens its settings right under it, with **Done** at the top and the bottom.
