@@ -155,6 +155,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .librow .acts { display: flex; gap: 4px; }
 .libmore { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0 2px; }
 .libmore select { max-width: 100%; }
+.srcfield input { width: min(320px, 100%); padding: 3px 6px; }
+.libmissing { margin-top: 10px; font-size: 13px; }
+.libmissing ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; }
+.libmissing li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; opacity: .75; }
 .newfolder { display: flex; gap: 6px; padding: 8px 2px; }
 .newfolder input { flex: 1; }
 .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--brass); background: var(--brass-soft); border-radius: 3px; padding: 1px 5px; }
@@ -411,6 +415,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       </div>
       <div id="libMsg"></div>
       <ul class="list liblist" id="lib"></ul>
+      <div id="libMissing"></div>
       <p class="note" id="libNote"></p>
     </aside>
 
@@ -1972,6 +1977,90 @@ var UndoStack = (function () {
   return { create: create, record: record, settle: settle, undo: undo, redo: redo, canUndo: canUndo, canRedo: canRedo, describe: describe };
 })();
 
+/* Source links for library items, the missing-files list, and reconnecting by name. Pure functions; inputs are never changed. */
+var LibSource = (function () {
+  var NOT_A_LINK = 'That doesn’t look like a web link. Paste the address from the browser’s address bar.';
+  function clean(text) {
+    var t = String(text == null ? '' : text).trim();
+    if (!t) return { url: null };
+    if (!/^[a-z]+:\/\//i.test(t)) t = 'https://' + t;
+    var parsed;
+    try { parsed = new URL(t); } catch (e) { return { error: NOT_A_LINK }; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { error: NOT_A_LINK };
+    if (parsed.hostname.indexOf('.') < 0) return { error: NOT_A_LINK };
+    return { url: parsed.href };
+  }
+  function linkFor(record, info) {
+    if (record && record.source) return record.source;
+    if (info && info.kind === 'talk' && info.url) {
+      var c = clean(info.url);
+      return c.url || null;
+    }
+    return null;
+  }
+  function keyName(key) { return key.split('|')[0]; }
+  function keySize(key) { return Number(key.slice(key.lastIndexOf('|') + 1)); }
+  function byName(a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }); }
+  function missing(records, presentKeys, infoFor) {
+    var out = [];
+    Object.keys(records || {}).forEach(function (key) {
+      var r = records[key];
+      if (presentKeys[key] || key.indexOf('sample:') === 0 || !r || r.unlisted) return;
+      var link = linkFor(r, infoFor(key));
+      if (!link) return;
+      out.push({ key: key, name: keyName(key).replace(/\.[^.]+$/, ''), folder: r.folder || '', link: link });
+    });
+    return out.sort(byName);
+  }
+  function nameMatches(newKeys, missingList) {
+    var fresh = {}, gone = {}, pairs = [];
+    newKeys.forEach(function (k) { var n = keyName(k); (fresh[n] = fresh[n] || []).push(k); });
+    missingList.forEach(function (m) { var n = keyName(m.key); (gone[n] = gone[n] || []).push(m); });
+    Object.keys(fresh).forEach(function (n) {
+      if (!gone[n] || fresh[n].length !== 1 || gone[n].length !== 1) return;
+      var to = fresh[n][0], from = gone[n][0];
+      if (to === from.key || keySize(to) === keySize(from.key)) return;
+      pairs.push({ from: from.key, to: to, name: from.name });
+    });
+    return pairs;
+  }
+  function moveRecord(records, from, to) {
+    var out = Object.assign({}, records);
+    if (!records[from]) return out;
+    var moved = JSON.parse(JSON.stringify(records[from]));
+    if (records[to]) moved.folder = records[to].folder;
+    delete moved.unlisted;
+    out[to] = moved;
+    delete out[from];
+    return out;
+  }
+  function rekeyMix(mix, from, to, newName) {
+    var out = JSON.parse(JSON.stringify(mix));
+    ['items', 'spoken'].forEach(function (lane) {
+      (out[lane] || []).forEach(function (it) { if (it.key === from) { it.key = to; it.name = newName; } });
+    });
+    return out;
+  }
+  return { clean: clean, linkFor: linkFor, keyName: keyName, keySize: keySize, missing: missing, nameMatches: nameMatches, moveRecord: moveRecord, rekeyMix: rekeyMix };
+})();
+
+/* When to recheck the linked music folder on returning to the tab. Pure functions. */
+var FolderCheck = (function () {
+  var MIN_GAP_MS = 10000;
+  function shouldCheck(s) {
+    return !!(s.visible && s.linked && !s.needsPermission && !s.scanning && !s.exporting && s.now - (s.lastCheckAt || 0) >= MIN_GAP_MS);
+  }
+  function summary(counts) {
+    var added = counts.added || 0, removed = counts.removed || 0, moved = counts.moved || 0, sameName = counts.sameName || 0, parts = [];
+    if (added) parts.push(added === 1 ? '1 new recording.' : added + ' new recordings.');
+    if (removed) parts.push(removed === 1 ? '1 recording is no longer in the folder.' : removed + ' recordings are no longer in the folder.');
+    if (moved) parts.push(moved === 1 ? '1 moved to another folder.' : moved + ' moved to other folders.');
+    if (sameName) parts.push(sameName === 1 ? '1 new file has the same name as a missing one. Is it the same recording?' : sameName + ' new files have the same names as missing ones. Are they the same recordings?');
+    return parts.length ? parts.join(' ') : null;
+  }
+  return { MIN_GAP_MS: MIN_GAP_MS, shouldCheck: shouldCheck, summary: summary };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -2058,7 +2147,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var plan = E.layout(mix, {});
   var caps = [];
   var ui = {
-    folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null,
+    folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
     format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
@@ -2457,6 +2546,23 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     for (i = 0; i < entries.length; i++) await walk(entries[i]);
     return out;
+  }
+  // A re-download with the same name but a different size: move the old
+  // recording's details to the new file and point every playlist at it.
+  function reconnectByName(pairs) {
+    var saved = lsGet('hp.saved') || {};
+    pairs.forEach(function (p) {
+      LM = LibSource.moveRecord(LM, p.from, p.to);
+      var newName = lib[p.to] ? lib[p.to].name : p.name;
+      mix = LibSource.rekeyMix(mix, p.from, p.to, newName);
+      Object.keys(saved).forEach(function (n) { saved[n] = LibSource.rekeyMix(saved[n], p.from, p.to, newName); });
+      Pcm.drop(p.from);
+    });
+    var savedOk = lsSet('hp.saved', saved);
+    historyBarrier = true;
+    saveLM(); sortLib();
+    ui.libMsg = { text: (pairs.length === 1 ? 'Reconnected. Its link, details and used dates are back.' : 'Reconnected ' + pairs.length + ' recordings. Their links, details and used dates are back.') + (savedOk ? '' : ' Your saved playlists could not be updated, so they may still list the old file.') };
+    changed();
   }
   function forget(keys) {
     if (Player.tag) Player.stop();
@@ -3130,13 +3236,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var hy = r.hymn, htag = hy ? '<span class="htag' + (hy.v ? '' : ' q') + '">' + (hy.v === 1 ? 'Vocals' : hy.v === 2 ? 'Accompaniment' : 'Version?') + '</span>' : '';
       var usage = e.sample ? '<span class="tag">Sample</span>' : '<span class="' + usedCls + '" title="' + esc(r.used.map(shortDate).join(', ')) + '">' + (u ? usedText(u) : 'Never used') + '</span>';
       h += '<li class="librow" draggable="true" data-key="' + esc(key) + '"><button class="playbtn" data-act="audition" data-key="' + esc(key) + '" data-play="lib:' + esc(key) + '" aria-label="Play ' + esc(e.name) + '"' + (ok ? '' : ' disabled') + '></button>' +
-        '<div><div class="name">' + esc(e.name) + '</div><div class="meta num"><span>' + len + '</span>' + htag + usage + (q && r.folder !== ui.folder ? '<span>in ' + esc(r.folder || 'Library') + '</span>' : '') + '</div></div>' +
+        '<div><div class="name">' + esc(e.name) + '</div><div class="meta num"><span>' + len + '</span>' + htag + usage + (r.source ? '<span>Has a link</span>' : '') + (q && r.folder !== ui.folder ? '<span>in ' + esc(r.folder || 'Library') + '</span>' : '') + '</div></div>' +
         '<div class="acts"><button class="btn small" data-act="add" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled') + '>Add</button>' +
         '<button class="btn small" data-act="addSpoken" data-key="' + esc(key) + '"' + (ok ? '' : ' disabled') + ' title="Lay this over the music as a spoken clip">Spoken</button>' +
         '<button class="btn small quiet" data-act="more" data-key="' + esc(key) + '" aria-expanded="' + (ui.open === key) + '" aria-label="More for ' + esc(e.name) + '">⋯</button></div>';
       if (ui.open === key) {
         h += '<div class="libmore"><span class="note">On screen: ' + esc(infoLine(key)) + '</span><button class="btn small" data-act="info" data-key="' + esc(key) + '">Edit on-screen details</button>';
         if (!e.sample) {
+          var link = LibSource.linkFor(r, infoOf(key));
+          h += '<label class="note srcfield">Source link <input type="url" data-source="' + esc(key) + '" value="' + esc(r.source || '') + '" placeholder="Where to download it again"></label>' +
+            (link ? '<a class="btn small" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Open' + (r.source ? '' : ' talk link') + '</a>' : '');
           h += (Link.handle ? '<span class="note">In ' + esc((r.folder || '').split('/').join(' / ')) + '. Move files on your computer or in Google Drive, then press Rescan.</span>' : '<label class="note">Move to <select data-move="' + esc(key) + '"><option value="">Library (top level)</option>' +
             all.map(function (p) { return '<option value="' + esc(p) + '"' + (p === r.folder ? ' selected' : '') + '>' + esc(p.split('/').join(' / ')) + '</option>'; }).join('') + '</select></label>') +
             (r.clips && r.clips.length ? '<span class="note">Parts used: ' + esc(r.clips.map(function (x) { return shortDate(x.date) + ' ' + fmt1(x.a) + '–' + fmt1(x.b); }).join('; ')) + '</span>' : '') +
@@ -3157,9 +3266,27 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var nf = $('newFolderName'); if (nf && document.activeElement !== nf) nf.focus();
     var ri = $('renameInput'); if (ri && document.activeElement !== ri) { ri.focus(); ri.select(); }
     var m = ui.libMsg;
-    setHTML($('libMsg'), m ? '<div class="libmsg"><span>' + esc(m.text) + '</span>' + (m.relink ? '<button class="btn small primary" data-act="relink">Reconnect</button>' : '') + (m.link ? '<button class="btn small primary" data-act="linkNow">Choose music folder</button>' : '') + (m.hymns ? '<button class="btn small" data-act="hymns">Open the hymn checklist</button>' : '') + (m.gone && m.gone.length ? '<button class="btn small" data-act="dropGone">Remove ' + (m.gone.length === 1 ? 'it' : 'those ' + m.gone.length) + ' from the library</button>' : '') + '<button class="btn small quiet" data-act="dismiss">OK</button></div>' : '');
+    var pairs = m && m.pairs && m.pairs.length ? m.pairs : null;
+    setHTML($('libMsg'), m ? '<div class="libmsg"><span>' + esc(m.text + (pairs ? ' (' + pairs.map(function (p) { return p.name; }).join(', ') + ')' : '')) + '</span>' + (m.relink ? '<button class="btn small primary" data-act="relink">Reconnect</button>' : '') + (m.link ? '<button class="btn small primary" data-act="linkNow">Choose music folder</button>' : '') + (m.hymns ? '<button class="btn small" data-act="hymns">Open the hymn checklist</button>' : '') + (m.gone && m.gone.length ? '<button class="btn small" data-act="dropGone">Remove ' + (m.gone.length === 1 ? 'it' : 'those ' + m.gone.length) + ' from the library</button>' : '') + (pairs ? '<button class="btn small primary" data-act="sameFile">' + (pairs.length === 1 ? 'Yes, same recording' : 'Yes, same recordings') + '</button>' : '') + '<button class="btn small quiet" data-act="dismiss">OK</button></div>' : '');
     $('showUsed').value = ui.show; $('sortBy').value = ui.sort;
     renderLibNote();
+    renderLibMissing();
+  }
+  // Recordings whose file is gone but which have a link to fetch them again.
+  function renderLibMissing() {
+    var present = {}; libOrder.forEach(function (k) { present[k] = true; });
+    var list = ui.filter.trim() ? [] : LibSource.missing(LM, present, function (k) { return infoOf(k); });
+    var h = '';
+    if (list.length) {
+      h = '<details class="libmissing"' + (ui.missingOpen ? ' open' : '') + '><summary>Missing files (' + list.length + ')</summary>' +
+        '<span class="note">These files are gone from your folder, but their links and details are kept. Download one again into its folder and it comes back as it was.</span><ul>' +
+        list.map(function (x) {
+          return '<li><b>' + esc(x.name) + '</b><span class="note">was in ' + esc(x.folder ? x.folder.split('/').join(' / ') : 'Library') + '</span>' +
+            '<a class="btn small" href="' + esc(x.link) + '" target="_blank" rel="noopener noreferrer">Open link</a>' +
+            '<button class="btn small quiet" data-act="unlist" data-key="' + esc(x.key) + '">Don’t list</button></li>';
+        }).join('') + '</ul></details>';
+    }
+    setHTML($('libMissing'), h);
   }
 
   function infoLine(key, lane) {
@@ -3194,13 +3321,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var it = x[0];
       if (lib[it.key] || seen[it.key]) return;
       seen[it.key] = 1;
-      rows.push({ file: it.key.split('|')[0], what: x[1], at: x[1] === 'song' ? 'song ' + (mix.items.indexOf(it) + 1) : 'spoken clip' });
+      rows.push({ file: it.key.split('|')[0], what: x[1], at: x[1] === 'song' ? 'song ' + (mix.items.indexOf(it) + 1) : 'spoken clip', link: LibSource.linkFor(LM[it.key], infoOf(it.key)) });
     });
     var h = '';
     if (rows.length) {
       h = '<div class="missing"><b>' + (rows.length === 1 ? 'One recording this mix uses is' : rows.length + ' recordings this mix uses are') + ' not in the library</b>' +
         '<span class="note">Add these files back with Add files or Add folder, and they drop into place with your trims, crossfades and timing as before.</span><ul>' +
-        rows.map(function (r) { return '<li><b>' + esc(r.file) + '</b> <span class="note">(' + r.at + ')</span></li>'; }).join('') +
+        rows.map(function (r) { return '<li><b>' + esc(r.file) + '</b> <span class="note">(' + r.at + ')</span>' + (r.link ? ' <a href="' + esc(r.link) + '" target="_blank" rel="noopener noreferrer">Open link</a>' : '') + '</li>'; }).join('') +
         '</ul><div><button class="btn small" data-act="copyMissing">Copy the file names</button> <span class="note" id="missingNote"></span></div></div>';
     }
     setHTML($('missing'), h);
@@ -4896,6 +5023,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       else if (act === 'linkNow') pickMusicFolder();
       else if (act === 'hymns') openHymns();
       else if (act === 'dropGone') { forget(ui.libMsg.gone); ui.libMsg = null; changed(); }
+      else if (act === 'sameFile') reconnectByName(ui.libMsg.pairs);
       else if (!e) return;
       else if (act === 'audition') toggle('lib:' + key, function () { Player.play(E.singlePlan(key, 0, e.meta.duration), 0, e.meta.duration, 'lib:' + key); });
       else if (act === 'add') addToOrder(key);
@@ -4908,6 +5036,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     $('lib').addEventListener('click', libClick);
     $('libMsg').addEventListener('click', libClick);
+    $('libMissing').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-act="unlist"]'); if (!b) return;
+      lm(b.getAttribute('data-key')).unlisted = true; saveLM(); renderLibrary();
+    });
+    $('libMissing').addEventListener('toggle', function (ev) { if (ev.target.classList.contains('libmissing')) ui.missingOpen = ev.target.open; }, true);
     $('lib').addEventListener('keydown', function (ev) {
       if (ev.key !== 'Enter' && ev.key !== 'Escape') return;
       if (ev.target.id === 'newFolderName') { ev.preventDefault(); ui.newFolder = ev.key === 'Enter' ? ui.newFolder : false; if (ev.key === 'Enter') $('lib').querySelector('[data-act="mkdir"]').click(); else renderLibrary(); }
@@ -4925,6 +5058,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         saveLM(); sortLib(); changed();
       }
       if (hv && LM[hv] && LM[hv].hymn) { setHymn(hv, { n: LM[hv].hymn.n, v: +ev.target.value }, 'version'); saveLM(); sortLib(); changed(); }
+      var sk = ev.target.getAttribute('data-source');
+      if (sk) {
+        var src = LibSource.clean(ev.target.value);
+        if (src.error) { ui.libMsg = { text: src.error }; renderLibrary(); return; }
+        if (src.url) { lm(sk).source = src.url; delete lm(sk).unlisted; } else delete lm(sk).source;
+        saveLM(); renderLibrary();
+      }
     });
     // drag a recording onto a folder to move it, or into the running order
     $('lib').addEventListener('dragstart', function (ev) {
@@ -5643,6 +5783,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // Drive folder, and keeps playlists and settings in a small file inside it.
   var DATA_FILE = 'hymn-playlist-data.json';
   var metaCache = {};
+  var scanning = false;
   var Link = {
     handle: null, need: false, savedAt: 0, err: '', timer: null,
     supported: typeof window.showDirectoryPicker === 'function' && window.isSecureContext !== false && window.self === window.top
@@ -5723,6 +5864,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     recs.forEach(function (r) { if (r.meta) metaCache[r.key] = r.meta; if (r.blob) Store.putRaw('files', { key: r.key, name: r.name, blob: null, meta: r.meta }); });
     $('rescan').hidden = false; $('addFolder').textContent = 'Change music folder';
     await scanLinked(false);
+    lastFolderCheck = Date.now();
   }
   function diskPath(libFolder) {
     // library folders start with the linked folder's own name
@@ -5735,11 +5877,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     for (var i = 0; i < parts.length; i++) d = await d.getDirectoryHandle(parts[i], { create: !!create });
     return d;
   }
-  async function scanLinked(byHand) {
+  // quiet: the check on returning to the tab, which only speaks up when something changed
+  async function scanLinked(byHand, quiet) {
     if (!Link.handle) return;
+    if (scanning) return;
+    scanning = true;
+    try { await readLinked(byHand, quiet); } finally { scanning = false; }
+  }
+  async function readLinked(byHand, quiet) {
     if (byHand) { var st = await linkPerm(Link.handle, true).catch(function () { return 'denied'; }); if (st !== 'granted') { Link.need = true; reconnectFolder(); return; } }
     var root = Link.handle.name, found = [];
-    ui.libMsg = { text: 'Reading your music folder…' }; renderLibrary();
+    if (!quiet) { ui.libMsg = { text: 'Reading your music folder…' }; renderLibrary(); }
     async function walk(dir, path) {
       for await (var entry of dir.values()) {
         if (entry.name.charAt(0) === '.' || entry.name === DATA_FILE) continue;
@@ -5750,21 +5898,35 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
     }
     try { await walk(Link.handle, root); }
-    catch (e) { Link.need = true; ui.libMsg = { text: 'Your music folder could not be read. ' + (e && e.message ? e.message : ''), relink: true }; renderLibrary(); return; }
+    catch (e) {
+      Link.need = true;
+      if (!quiet) ui.libMsg = { text: 'Your music folder could not be read. ' + (e && e.message ? e.message : ''), relink: true };
+      renderLibrary(); return;
+    }
     ensureFolder(root);
-    var seen = {}, before = {};
+    var seen = {}, before = {}, folderBefore = {}, removed = 0;
     libOrder.forEach(function (k) { before[k] = 1; });
-    found.forEach(function (f) { seen[f.name + '|' + f.size] = 1; });
+    found.forEach(function (f) { var k = f.name + '|' + f.size; seen[k] = 1; if (before[k] && !isSample(k)) folderBefore[k] = lm(k).folder; });
     // the library mirrors the folder: what isn't there any more leaves
     // (its dates, numbers and on-screen details stay, in case it comes back)
     dropSamples();
-    libOrder = libOrder.filter(function (k) { if (seen[k]) return true; delete lib[k]; Pcm.drop(k); return false; });
+    libOrder = libOrder.filter(function (k) { if (seen[k]) return true; delete lib[k]; Pcm.drop(k); removed++; return false; });
+    var keptMsg = ui.libMsg;
     if (found.length) addFiles(found, '');
-    var added = found.filter(function (f) { return !before[f.name + '|' + f.size]; }).length;
+    var newKeys = found.map(function (f) { return f.name + '|' + f.size; }).filter(function (k) { return !before[k]; });
+    var added = newKeys.length;
+    var moved = Object.keys(folderBefore).filter(function (k) { return lm(k).folder !== folderBefore[k]; }).length;
+    var present = {}; libOrder.forEach(function (k) { present[k] = true; });
+    var sameName = LibSource.nameMatches(newKeys, LibSource.missing(LM, present, function (k) { return infoOf(k); }));
     if (!libOrder.length) { addSamples(); }
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = root;
     var unsure = libOrder.filter(function (k) { return LM[k] && LM[k].hymn && !LM[k].hymn.v; }).length;
-    ui.libMsg = byHand || added ? { text: (found.length ? found.length + ' recordings in “' + root + '”.' : 'No audio files in “' + root + '” yet.') + (added && Object.keys(before).length ? ' ' + added + ' new.' : '') + (unsure ? ' ' + unsure + (unsure === 1 ? ' hymn needs' : ' hymns need') + ' you to say which version it is.' : ''), hymns: !!unsure } : null;
+    if (quiet) {
+      var text = FolderCheck.summary({ added: added, removed: removed, moved: moved, sameName: sameName.length });
+      ui.libMsg = text === null ? keptMsg : { text: text, pairs: sameName, hymns: !!unsure };
+    } else {
+      ui.libMsg = byHand || added ? { text: (found.length ? found.length + ' recordings in “' + root + '”.' : 'No audio files in “' + root + '” yet.') + (added && Object.keys(before).length ? ' ' + added + ' new.' : '') + (unsure ? ' ' + unsure + (unsure === 1 ? ' hymn needs' : ' hymns need') + ' you to say which version it is.' : '') + (sameName.length ? ' ' + FolderCheck.summary({ sameName: sameName.length }) : ''), hymns: !!unsure, pairs: sameName } : null;
+    }
     changed();
   }
   async function copyIntoFolder(files, libFolder) {
@@ -5799,6 +5961,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   window.addEventListener('pagehide', function () { if (Link.timer) writeData(); });
   document.addEventListener('visibilitychange', function () { if (document.hidden && Link.timer) writeData(); });
+  // Coming back to the app (from File Explorer, another tab or window)
+  // rereads the linked folder so added, moved and removed files show up.
+  var lastFolderCheck = 0;
+  async function checkFolderOnReturn() {
+    var now = Date.now();
+    if (!FolderCheck.shouldCheck({ visible: !document.hidden, linked: !!Link.handle, needsPermission: Link.need, scanning: scanning, exporting: ui.exporting, now: now, lastCheckAt: lastFolderCheck })) return;
+    lastFolderCheck = now;
+    var st = 'denied';
+    try { st = await linkPerm(Link.handle, false); } catch (e) { st = 'denied'; }
+    if (st !== 'granted') return;
+    if (pointerHeld) { await new Promise(function (r) { document.addEventListener('pointerup', r, { once: true, capture: true }); }); }
+    await scanLinked(false, true);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkFolderOnReturn(); });
+  window.addEventListener('focus', checkFolderOnReturn);
 
   /* ---------- start ---------- */
   function start() {

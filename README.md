@@ -25,9 +25,15 @@ Firebase prints the site link: `https://zoommedia-e2d78.web.app`. Bookmark it on
 
 When you come back, Chrome may ask you to allow the folder again: press **Reconnect** in the Library. Choosing "Allow on every visit" stops the question.
 
-New downloads: drag them onto the page (they're copied into the folder you have open in the Library), or put them in the folder yourself and press **Rescan**. Move or rename files on your computer or in Drive, then press **Rescan**.
+New downloads: drag them onto the page (they're copied into the folder you have open in the Library), or put them in the folder yourself and press **Rescan**. When you switch back to the app, it checks your music folder again on its own, so files you added, moved or removed show up without pressing anything. **Rescan** still does the same by hand.
 
 The motion background and still graphic are still kept in the browser. Keep the original files in your Drive so you can pick them again if needed.
+
+### Source links and missing files
+
+Every recording in the library can keep the web link it came from. Press ⋯ on its row, paste the address into **Source link**, and **Open** takes you back there. A talk with an on-screen **Link** uses that link when it has no source link of its own.
+
+This lets you delete large files, such as Conference videos, to save space. A recording whose file is gone but has a link is listed under **Missing files** at the bottom of the library, with the folder it was in and **Open link**. Download it again into the same folder and it comes back with its link, on-screen details, used dates and trims. If the new download's size is a little different, the app asks "Is this the same recording?" Press **Yes, same recording** to reconnect it, then check its trim. **Don't list** takes a recording off the Missing files list without losing its details.
 
 ### Placing text
 
@@ -67,7 +73,7 @@ In the same panel, press **Add to the tap queue** instead of **Put on the timeli
 
 ### Undo and redo
 
-Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
+Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
 
 ### Reading time
 
