@@ -340,3 +340,39 @@ describe('place', () => {
     assert.equal(short.ref.lines[0].y, long.ref.lines[0].y);
   });
 });
+
+describe('setFrameField', () => {
+  const frame = { x: 0.1, y: 0.1, w: 0.8, h: 0.36 };
+
+  test('sets Top and leaves the rest alone', () => {
+    // 0.5 + 0.36 = 0.86, which fits on screen
+    assert.deepEqual(TextLayout.setFrameField(frame, 'y', 0.5), { x: 0.1, y: 0.5, w: 0.8, h: 0.36 });
+  });
+  test('keeps the box on screen when Top is too low', () => {
+    // 1 - 0.36 = 0.64
+    assert.deepEqual(TextLayout.setFrameField(frame, 'y', 0.9), { x: 0.1, y: 0.64, w: 0.8, h: 0.36 });
+  });
+  test('a wider box moves left only as far as it must', () => {
+    // 0.6 + 0.5 = 1.1 runs off screen, so x = 1 - 0.5 = 0.5
+    assert.deepEqual(TextLayout.setFrameField({ x: 0.6, y: 0, w: 0.3, h: 0.2 }, 'w', 0.5), { x: 0.5, y: 0, w: 0.5, h: 0.2 });
+  });
+  test('Width never goes below the smallest box', () => {
+    assert.equal(TextLayout.setFrameField(frame, 'w', 0.01).w, TextLayout.MIN_W);
+  });
+  test('Height never goes above the screen', () => {
+    const out = TextLayout.setFrameField(frame, 'h', 2);
+    assert.equal(out.h, 1);
+    assert.equal(out.y, 0);
+  });
+  test('a value that is not a number gives back an unchanged copy', () => {
+    const out = TextLayout.setFrameField(frame, 'x', NaN);
+    assert.deepEqual(out, frame);
+    assert.notEqual(out, frame);
+  });
+  test('the input frame is never changed', () => {
+    const before = Object.assign({}, frame);
+    TextLayout.setFrameField(frame, 'w', 0.2);
+    TextLayout.setFrameField(frame, 'x', 0.5);
+    assert.deepEqual(frame, before);
+  });
+});

@@ -271,6 +271,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .texted input:disabled, .texted select:disabled { opacity: 0.5; cursor: not-allowed; }
 .texted input[type="text"] { width: 84px; }
 .texted input[type="number"] { width: 70px; }
+.texted .mixtag { margin-left: 6px; }
+.texted.bulk [data-single], .texted:not(.bulk) [data-bulk] { display: none !important; }
 .texted input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
 #screen { touch-action: none; }
 .talkshare { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; }
@@ -510,21 +512,24 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             <button class="btn small" id="textRmChecked" disabled>Remove selected</button>
             <button class="btn small" id="textHideChecked" disabled>Hide selected</button>
             <button class="btn small" id="textGroupChecked" disabled>Group selected</button>
+            <button class="btn small" id="textEditChecked" disabled>Edit selected</button>
             <button class="btn small quiet" id="textCollapseAll" disabled>Collapse all</button>
           </div>
+          <div class="btnrow" id="textQuick" hidden><span class="note">Tick:</span><button class="btn small quiet" data-quick="scripture">All scriptures</button><button class="btn small quiet" data-quick="own">All my own text</button><button class="btn small quiet" data-quick="hidden">Hidden</button><button class="btn small quiet" data-quick="showing">Showing</button><button class="btn small quiet" data-quick="look">Same look as the open one</button></div>
           <ul class="list" id="texts"></ul>
           <div class="texted" id="textEd" hidden>
             <div class="btnrow"><button class="btn small primary" id="textDoneTop" style="margin-left:auto">Done</button></div>
-            <div id="textBodyRow">
+            <p class="note" id="textBulkHead" data-bulk hidden></p>
+            <div id="textBodyRow" data-single>
               <label for="textBody" class="minor" style="font-size:14px">Text <span class="note" style="font-weight:400">Press Enter for a new line.</span></label>
               <textarea id="textBody" rows="3"></textarea>
             </div>
-            <div id="textRefRow" hidden>
+            <div id="textRefRow" data-single hidden>
               <label for="textRef" class="minor" style="font-size:14px">Reference line</label>
               <input type="text" id="textRef" style="width:100%">
             </div>
             <div id="textPassageRow" hidden>
-              <p class="note">Verse text comes from the scriptures and can’t be edited here.</p>
+              <p class="note" data-single>Verse text comes from the scriptures and can’t be edited here.</p>
               <div class="btnrow" role="radiogroup" aria-label="How the passage shows">
                 <label><input type="radio" name="textMode" value="together"> All at once</label>
                 <label><input type="radio" name="textMode" value="each"> One verse at a time</label>
@@ -534,23 +539,25 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
                 <label><input type="radio" name="textRefPos" value="top"> Reference at the top</label>
                 <label><input type="radio" name="textRefPos" value="bottom"> Reference at the bottom</label>
               </div>
+              <p class="note" id="textBulkKindNote" data-bulk hidden>Some settings are off because your selection mixes scriptures and plain text.</p>
             </div>
             <h4 class="edhead">Look</h4>
             <div class="grid look">
               <div class="sizefield">
-                <label><span id="textSizeLabel">Largest size</span> <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output></span></label>
-                <span class="btnrow"><label><input type="checkbox" id="textFixed"> Fixed size</label> <span id="textSizeNow"></span></span>
+                <label><span id="textSizeLabel">Largest size</span> <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
+                <span class="btnrow"><label><input type="checkbox" id="textFixed"> Fixed size</label> <span id="textSizeNow" data-single></span></span>
               </div>
               <label>Font <select id="textFont"><option value="sans">Clean</option><option value="bold">Clean, bold</option><option value="serif">Classic</option><option value="italic">Classic italic</option></select></label>
               <label>Line up <select id="textAlign"><option value="center">Centered</option><option value="left">Left</option><option value="right">Right</option></select></label>
               <label>Up and down <select id="textValign"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label>
-              <label>Color <input type="color" id="textColor"></label>
-              <label>Line spacing <span class="btnrow"><input type="range" id="textLh" min="0.9" max="2" step="0.05"><output id="textLhOut" class="num"></output></span></label>
+              <label>Color <input type="color" id="textColor"><span class="tag mixtag" hidden>Mixed</span></label>
+              <label>Line spacing <span class="btnrow"><input type="range" id="textLh" min="0.9" max="2" step="0.05"><output id="textLhOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
               <label>Behind the text <select id="textLook"><option value="none">Nothing</option><option value="shadow">Soft shadow</option><option value="outline">Soft outline</option><option value="box">Dark box</option></select></label>
-              <label id="textLookColorRow"><span id="textLookColorLabel">Outline color</span> <input type="color" id="textLookColor"></label>
-              <label id="textLookOpacityRow">Opacity <span class="btnrow"><input type="range" id="textLookOpacity" min="0" max="100" step="5"><output id="textLookOpacityOut" class="num"></output></span></label>
-              <label id="textGlowWidthRow">Width <span class="btnrow"><input type="range" id="textGlowWidth" min="0" max="40" step="1"><output id="textGlowWidthOut" class="num"></output></span></label>
-              <label id="textGlowSoftRow">Softness <span class="btnrow"><input type="range" id="textGlowSoft" min="0" max="60" step="1"><output id="textGlowSoftOut" class="num"></output></span></label>
+              <label id="textLookColorRow"><span id="textLookColorLabel">Outline color</span> <input type="color" id="textLookColor"><span class="tag mixtag" hidden>Mixed</span></label>
+              <label id="textLookOpacityRow">Opacity <span class="btnrow"><input type="range" id="textLookOpacity" min="0" max="100" step="5"><output id="textLookOpacityOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
+              <label id="textGlowWidthRow">Width <span class="btnrow"><input type="range" id="textGlowWidth" min="0" max="40" step="1"><output id="textGlowWidthOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
+              <label id="textGlowSoftRow">Softness <span class="btnrow"><input type="range" id="textGlowSoft" min="0" max="60" step="1"><output id="textGlowSoftOut" class="num"></output><span class="tag mixtag" hidden>Mixed</span></span></label>
+              <p class="note" id="textBulkLookNote" data-bulk hidden>Pick one “Behind the text” choice for all of them to set its color.</p>
             </div>
             <p class="note fitwarn" id="textFitWarn" hidden></p>
             <p class="note">Drag the box’s edges in the preview to set where lines wrap. Text shrinks to fit the box unless Fixed size is ticked.</p>
@@ -562,9 +569,15 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <button class="btn small" data-place="0.72">Lower third</button>
               <label><input type="checkbox" id="textAvoid"> Step aside for song and talk titles</label>
             </div>
+            <div class="grid">
+              <label>Left <span><input type="number" id="textBoxX" min="0" max="100" step="0.5"> %</span></label>
+              <label>Top <span><input type="number" id="textBoxY" min="0" max="100" step="0.5"> %</span></label>
+              <label>Width <span><input type="number" id="textBoxW" min="0" max="100" step="0.5"> %</span></label>
+              <label>Height <span><input type="number" id="textBoxH" min="0" max="100" step="0.5"> %</span></label>
+            </div>
             <h4 class="edhead">Timing</h4>
             <div class="grid timing">
-              <label>Starts at <input type="text" id="textStart" inputmode="decimal"></label>
+              <label data-single>Starts at <input type="text" id="textStart" inputmode="decimal"></label>
               <label>Shows for <span class="btnrow" style="gap:4px"><input type="number" id="textDurMin" min="0" step="1" placeholder="0" style="width:56px" aria-label="Minutes"> min <input type="number" id="textDurSec" min="0" max="59.9" step="0.5" style="width:62px" aria-label="Seconds"> s</span></label>
               <label>Fade in <span><input type="number" id="textFadeIn" min="0" max="10" step="0.1"> s</span></label>
               <label>Fade out <span><input type="number" id="textFadeOut" min="0" max="10" step="0.1"> s</span></label>
@@ -577,18 +590,19 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <label class="sub"><input type="checkbox" id="textXfOut"> Crossfade into the next</label>
               <label><input type="checkbox" id="textFromStart"> Start at the very beginning (0:00)</label>
               <label><input type="checkbox" id="textToEnd"> Keep showing to the end of the length to cover</label>
-              <label class="wide">Show during <select id="textDuring"></select></label>
+              <label class="wide" data-single>Show during <select id="textDuring"></select></label>
               <label class="wide"><input type="checkbox" id="textWhole"> Show for the whole video</label>
               <label class="wide"><input type="checkbox" id="textLock"> Lock it in place, so it can’t be dragged by accident</label>
             </div>
-            <p class="note" id="textLinkNote"></p>
+            <p class="note" id="textBulkNote" data-bulk hidden></p>
+            <p class="note" id="textLinkNote" data-single></p>
             <div class="btnrow">
-              <button class="btn small" id="textPlay">Play from just before</button>
-              <button class="btn small" id="textDup">Duplicate</button>
-              <button class="btn small quiet" id="textRemove">Remove this text</button>
+              <button class="btn small" id="textPlay" data-single>Play from just before</button>
+              <button class="btn small" id="textDup" data-single>Duplicate</button>
+              <button class="btn small quiet" id="textRemove" data-single>Remove this text</button>
               <button class="btn small primary" id="textDone" style="margin-left:auto">Done</button>
             </div>
-            <p class="note" id="textGroupRow" hidden>In the group <b id="textGroupName"></b>. <button class="btn small quiet" id="textUngroupOne">Take it out of the group</button></p>
+            <p class="note" id="textGroupRow" data-single hidden>In the group <b id="textGroupName"></b>. <button class="btn small quiet" id="textUngroupOne">Take it out of the group</button></p>
           </div>
         </div>
         <div class="stack sec" id="sec-titles">
@@ -1688,6 +1702,16 @@ var TextLayout = (function () {
     if (handle.indexOf('e') >= 0) right = clamp(right + dx, left + MIN_W, 1);
     return { x: round4(left), y: round4(top), w: round4(right - left), h: round4(bottom - top) };
   }
+  function setFrameField(f, key, value) {
+    var out = { x: f.x, y: f.y, w: f.w, h: f.h };
+    if (typeof value !== 'number' || !isFinite(value)) return out;
+    if (key === 'x') out.x = clamp(value, 0, 1 - f.w);
+    else if (key === 'y') out.y = clamp(value, 0, 1 - f.h);
+    else if (key === 'w') { out.w = clamp(value, MIN_W, 1); out.x = Math.min(f.x, 1 - out.w); }
+    else if (key === 'h') { out.h = clamp(value, MIN_H, 1); out.y = Math.min(f.y, 1 - out.h); }
+    else return out;
+    return { x: round4(out.x), y: round4(out.y), w: round4(out.w), h: round4(out.h) };
+  }
   function handleAt(r, px, py, tol) {
     var nearN = Math.abs(py - r.y) <= tol, nearS = Math.abs(py - (r.y + r.h)) <= tol;
     var nearW = Math.abs(px - r.x) <= tol, nearE = Math.abs(px - (r.x + r.w)) <= tol;
@@ -1763,7 +1787,7 @@ var TextLayout = (function () {
     return { px: px, numPx: Math.round(px * NUM_SCALE), refPx: m.refPx, lh: lh, lines: lines, ref: ref, textH: m.textH, refH: m.refH,
       content: { x: startX(m.maxW), y: top, w: m.maxW, h: blockH } };
   }
-  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fits: fits, fitSize: fitSize, place: place };
+  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, setFrameField: setFrameField, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fits: fits, fitSize: fitSize, place: place };
 })();
 
 /* What is drawn behind on-screen text: nothing, a soft shadow, a soft outline or a dark box. Pure functions. */
@@ -1825,6 +1849,81 @@ var TextOverlap = (function () {
   }
   function anyOverlap(spans, item) { return spans.some(function (sp) { return overlaps(sp, item); }); }
   return { overlaps: overlaps, others: others, anyOverlap: anyOverlap };
+})();
+
+/* Editing several texts at once. Pure functions; inputs are never changed. */
+var TextBulk = (function () {
+  var KINDS = ['locked', 'whole', 'tied', 'clash'];
+  var LABELS = { locked: 'locked', whole: 'shows for the whole video', tied: 'tied to a recording', clash: 'another setting decides it' };
+  var TIMING = ['dur', 'fadeIn', 'fadeOut', 'readTime', 'afterPrev', 'xfIn', 'untilNext', 'xfOut', 'fromStart', 'toEnd'];
+  function norm(v) {
+    if (typeof v === 'string') return v.toLowerCase();
+    if (typeof v === 'number') return v;
+    return !!v;
+  }
+  function common(values) {
+    if (!values.length) return { mixed: false, value: null };
+    var first = norm(values[0]);
+    return { mixed: values.some(function (v) { return norm(v) !== first; }), value: values[0] };
+  }
+  function hold(tx) {
+    if (tx.locked) return 'locked';
+    if (tx.whole) return 'whole';
+    if (tx.during) return 'tied';
+    return '';
+  }
+  function clash(tx, field, value) {
+    var endOwned = !!(tx.whole || tx.during || tx.untilNext || tx.toEnd);
+    if (field === 'dur') return endOwned || !!tx.readTime;
+    if (field === 'readTime') return value === true && !tx.readTime && endOwned;
+    if (field === 'afterPrev') return !!tx.fromStart;
+    if (field === 'untilNext') return !!(tx.toEnd || tx.readTime);
+    if (field === 'fromStart') return !!tx.afterPrev;
+    if (field === 'toEnd') return !!(tx.untilNext || tx.readTime);
+    if (field === 'xfIn') return !tx.afterPrev;
+    if (field === 'xfOut') return !tx.untilNext;
+    return false;
+  }
+  function targets(texts, field, value) {
+    var ids = [], held = [];
+    var timing = TIMING.indexOf(field) >= 0;
+    texts.forEach(function (tx) {
+      if (!timing) { ids.push(tx.id); return; }
+      var kind = hold(tx) || (clash(tx, field, value) ? 'clash' : '');
+      if (kind) held.push(kind); else ids.push(tx.id);
+    });
+    return { ids: ids, held: held };
+  }
+  function heldNote(changed, held) {
+    if (!held.length) return '';
+    var parts = [];
+    KINDS.forEach(function (kind) {
+      var n = held.filter(function (k) { return k === kind; }).length;
+      if (n) parts.push(n + ' ' + LABELS[kind]);
+    });
+    if (changed === 0) return 'Nothing changed: ' + parts.join(', ') + '.';
+    return 'Changed ' + changed + '. ' + held.length + (held.length === 1 ? ' stayed as it was: ' : ' stayed as they were: ') + parts.join(', ') + '.';
+  }
+  function kindOf(tx) { return tx.passage ? 'scripture' : 'own'; }
+  function mixedKinds(texts) {
+    var kinds = texts.map(kindOf);
+    return kinds.indexOf('scripture') >= 0 && kinds.indexOf('own') >= 0;
+  }
+  function quick(texts, which) {
+    return texts.filter(function (tx) {
+      if (which === 'scripture' || which === 'own') return kindOf(tx) === which;
+      if (which === 'hidden') return !!tx.hidden;
+      if (which === 'showing') return !tx.hidden;
+      return false;
+    }).map(function (tx) { return tx.id; });
+  }
+  function upper(v) { return String(v || '').toUpperCase(); }
+  function lookKey(tx, lk) {
+    var extra = lk.look === 'outline' ? [upper(lk.glowColor), lk.glowOpacity, lk.glowWidth, lk.glowSoft]
+      : lk.look === 'box' ? [upper(lk.boxColor), lk.boxOpacity] : [];
+    return JSON.stringify([tx.font, Math.round(tx.size), !!tx.fixedSize, String(tx.color || '#FFFFFF').toUpperCase(), lk.look].concat(extra));
+  }
+  return { TIMING: TIMING, common: common, hold: hold, clash: clash, targets: targets, heldNote: heldNote, kindOf: kindOf, mixedKinds: mixedKinds, quick: quick, lookKey: lookKey };
 })();
 
 /* Undo and redo history of the open playlist. Entries are JSON strings of the mix. Pure functions; inputs are never changed. */
@@ -1960,7 +2059,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, outlines: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -2785,7 +2884,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var w = $('tlwrap'), x = hit.c.start * pxPerSec();
     if (x < w.scrollLeft + 20 || x > w.scrollLeft + w.clientWidth - 40) w.scrollLeft = x - w.clientWidth * 0.3;
   }
-  function select(sel) { ui.sel = sel; render(); revealSel(); }
+  function select(sel) { ui.sel = sel; if (sel && sel.lane === 'texts') ui.bulk = false; render(); revealSel(); }
 
   /* ---------- rendering ---------- */
   var rendering = false, renderAgain = false;
@@ -2930,6 +3029,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (picked) {
       var hideLabel = TextBatch.hideAction(mix.texts, checkedIds()) === 'hide' ? 'Hide ' : 'Show ';
       setHTML(bar, '<span class="what">' + picked + (picked === 1 ? ' text' : ' texts') + ' selected</span>' + nudgeButtons(false) +
+        '<button class="btn small" data-selact="editchecked">Edit ' + picked + '</button>' +
         '<button class="btn small" data-selact="hidechecked">' + hideLabel + picked + '</button>' +
         '<button class="btn small" data-selact="groupchecked">Group ' + picked + '</button>' +
         '<button class="btn small" data-selact="rmchecked">Remove ' + picked + '</button><button class="btn small quiet" data-selact="uncheck">Clear selection</button>' +
@@ -3756,6 +3856,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       '<button class="btn small quiet" data-act="gremove">Remove group and its items</button></span></li>';
   }
   function renderTexts() {
+    if (ui.bulk && !TextPick.count(ui.checked, mix.texts)) ui.bulk = false;
     var h = '', sel = selText();
     if (sel && sel.group && TextPick.has(ui.groupsClosed, sel.group)) ui.groupsClosed = TextPick.set(ui.groupsClosed, sel.group, false);
     TextGroup.listRows(mix.texts, mix.groups, function (tx) { return tx.start; }).forEach(function (rw) {
@@ -3789,7 +3890,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (list._html !== html && list.contains(textEdEl)) home.insertBefore(textEdEl, list.nextSibling);
     setHTML(list, html);
     var slot = list.querySelector('[data-slot]');
-    if (slot) { if (textEdEl.parentNode !== slot) slot.appendChild(textEdEl); }
+    if (bulkOn()) { var quick = $('textQuick'); if (quick.nextSibling !== textEdEl) home.insertBefore(textEdEl, quick.nextSibling); }
+    else if (slot) { if (textEdEl.parentNode !== slot) slot.appendChild(textEdEl); }
     else if (textEdEl.parentNode !== home) home.insertBefore(textEdEl, list.nextSibling);
   }
   function keepEditorSteady(run) {
@@ -3815,9 +3917,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textHideChecked').disabled = !n;
     $('textGroupChecked').textContent = n ? 'Group selected (' + n + ')' : 'Group selected';
     $('textGroupChecked').disabled = !n;
+    $('textEditChecked').textContent = n ? 'Edit selected (' + n + ')' : 'Edit selected';
+    $('textEditChecked').disabled = !n;
+    $('textEditChecked').setAttribute('aria-pressed', String(bulkOn()));
     $('textCollapseAll').disabled = !TextPick.count(ui.expanded, mix.texts);
+    $('textQuick').hidden = !mix.texts.length;
+    var open = selText(), quickBtns = $('textQuick').querySelectorAll('[data-quick]');
+    for (var i = 0; i < quickBtns.length; i++) {
+      var which = quickBtns[i].getAttribute('data-quick');
+      quickBtns[i].disabled = which === 'look' ? !open : !TextBulk.quick(mix.texts, which).length;
+      if (which === 'look') quickBtns[i].title = open ? '' : 'Open a text first, then press this to tick every text that looks like it.';
+    }
   }
-  function closeTextEditor() { ui.sel = null; render(); }
+  function closeTextEditor() { ui.sel = null; ui.bulk = false; render(); }
+  var bulkNote = '';
+  function bulkOn() { return !!ui.bulk && TextPick.count(ui.checked, mix.texts) > 0; }
+  function openBulk() {
+    if (!TextPick.count(ui.checked, mix.texts)) return;
+    ui.bulk = true; ui.sel = null; bulkNote = '';
+    render(); revealTextEditor();
+  }
+  function sameLookIds() {
+    var open = selText(); if (!open) return [];
+    var key = TextBulk.lookKey(open, TextLook.resolve(open));
+    return mix.texts.filter(function (tx) { return TextBulk.lookKey(tx, TextLook.resolve(tx)) === key; }).map(function (tx) { return tx.id; });
+  }
   function revealTextEditor() {
     if (collapsed.screen || collapsed.texts) { collapsed.screen = false; collapsed.texts = false; lsSet('hp.collapsed', collapsed); renderSections(); }
     textEdEl.scrollIntoView({ block: 'nearest' });
@@ -3838,7 +3962,116 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       : 'Doesn’t fit, even at the smallest size (' + TextLayout.MIN_SIZE + ' px): the text runs past its box. Make the box bigger or the text shorter.';
   }
   var edId = null;
+  var TEXT_TICKS = { textRead: 'readTime', textWhole: 'whole', textAfterPrev: 'afterPrev', textXfIn: 'xfIn', textUntilNext: 'untilNext', textXfOut: 'xfOut', textFromStart: 'fromStart', textToEnd: 'toEnd', textLock: 'locked', textAvoid: 'avoid' };
+  var BOX_FIELDS = { textBoxX: 'x', textBoxY: 'y', textBoxW: 'w', textBoxH: 'h' };
+  function pct(v) { return Math.round(v * 1000) / 10; }
+  function syncBoxFields(tx, force) {
+    var fr = TextLayout.upgradeText(tx).frame;
+    Object.keys(BOX_FIELDS).forEach(function (id) { var el = $(id); if (force || document.activeElement !== el) el.value = pct(fr[BOX_FIELDS[id]]); });
+  }
+  function setMode(bulk) {
+    var was = textEdEl.classList.contains('bulk');
+    textEdEl.classList.toggle('bulk', bulk);
+    if (bulk) { edId = null; return; }
+    if (was) clearMixed();
+  }
+  function clearMixed() {
+    textEdEl.querySelectorAll('option[data-mixed]').forEach(function (o) { o.remove(); });
+    textEdEl.querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.indeterminate = false; });
+    textEdEl.querySelectorAll('input[type="number"]').forEach(function (n) { if (n.dataset.ph != null) n.placeholder = n.dataset.ph; });
+    textEdEl.querySelectorAll('.mixtag').forEach(function (t) { t.hidden = true; });
+    textEdEl.querySelectorAll('input[name="textMode"], input[name="textRefPos"]').forEach(function (r) { r.disabled = false; });
+  }
+  function showValue(el, state) {
+    if (document.activeElement === el && !state.mixed) return;
+    var mixed = state.mixed, value = state.value;
+    if (el.tagName === 'SELECT') {
+      var opt = el.querySelector('option[data-mixed]');
+      if (mixed) {
+        if (!opt) { opt = document.createElement('option'); opt.value = ''; opt.disabled = true; opt.setAttribute('data-mixed', ''); opt.textContent = 'Mixed'; el.insertBefore(opt, el.firstChild); }
+        el.value = '';
+      } else { if (opt) opt.remove(); el.value = value; }
+      return;
+    }
+    if (el.type === 'checkbox') { el.indeterminate = mixed; el.checked = !mixed && !!value; return; }
+    if (el.type === 'number') {
+      if (el.dataset.ph == null) el.dataset.ph = el.placeholder || '';
+      el.value = mixed ? '' : value; el.placeholder = mixed ? 'Mixed' : el.dataset.ph;
+      return;
+    }
+    el.value = value;
+    var label = el.closest('label'), tag = label && label.querySelector('.mixtag');
+    if (tag) tag.hidden = !mixed;
+    if (el.type === 'range' && mixed) { var out = label.querySelector('output'); if (out) out.textContent = 'Mixed'; }
+  }
+  function checkedTexts() { return checkedIds().map(function (id) { return findItem('texts', id); }); }
+  function renderBulkEditor() {
+    var list = checkedTexts(), n = list.length;
+    setMode(true);
+    textEdEl.hidden = false;
+    $('textBulkHead').textContent = 'Editing ' + n + ' texts. Only what you change is copied to all of them.';
+    function of(fn) { return TextBulk.common(list.map(fn)); }
+    var size = of(function (tx) { return tx.size; });
+    showValue($('textSize'), size); if (!size.mixed) $('textSizeOut').textContent = Math.round(size.value) + ' px';
+    var fixed = of(function (tx) { return !!tx.fixedSize; });
+    showValue($('textFixed'), fixed);
+    $('textSizeLabel').textContent = !fixed.mixed && fixed.value ? 'Size' : 'Largest size';
+    showValue($('textFont'), of(function (tx) { return tx.font; }));
+    showValue($('textAlign'), of(function (tx) { return tx.align; }));
+    showValue($('textValign'), of(function (tx) { return tx.valign || 'top'; }));
+    showValue($('textColor'), of(function (tx) { return tx.color || '#FFFFFF'; }));
+    var lh = of(function (tx) { return tx.lh || 1.25; });
+    showValue($('textLh'), lh); if (!lh.mixed) $('textLhOut').textContent = lh.value.toFixed(2);
+    var looks = list.map(function (tx) { return TextLook.resolve(tx); });
+    function ofLook(fn) { return TextBulk.common(looks.map(fn)); }
+    var look = ofLook(function (lk) { return lk.look; });
+    showValue($('textLook'), look);
+    var outline = !look.mixed && look.value === 'outline', box = !look.mixed && look.value === 'box';
+    $('textLookColorRow').hidden = $('textLookOpacityRow').hidden = !outline && !box;
+    $('textGlowWidthRow').hidden = $('textGlowSoftRow').hidden = !outline;
+    $('textLookColorLabel').textContent = box ? 'Box color' : 'Outline color';
+    $('textBulkLookNote').hidden = !look.mixed;
+    if (outline || box) {
+      var lookOpacity = ofLook(function (lk) { return box ? lk.boxOpacity : lk.glowOpacity; });
+      showValue($('textLookColor'), ofLook(function (lk) { return box ? lk.boxColor : lk.glowColor; }));
+      showValue($('textLookOpacity'), lookOpacity); if (!lookOpacity.mixed) $('textLookOpacityOut').textContent = Math.round(lookOpacity.value) + '%';
+    }
+    if (outline) {
+      var glowWidth = ofLook(function (lk) { return lk.glowWidth; }), glowSoft = ofLook(function (lk) { return lk.glowSoft; });
+      showValue($('textGlowWidth'), glowWidth); if (!glowWidth.mixed) $('textGlowWidthOut').textContent = Math.round(glowWidth.value);
+      showValue($('textGlowSoft'), glowSoft); if (!glowSoft.mixed) $('textGlowSoftOut').textContent = Math.round(glowSoft.value);
+    }
+    Object.keys(BOX_FIELDS).forEach(function (id) { showValue($(id), of(function (tx) { return pct(TextLayout.upgradeText(tx).frame[BOX_FIELDS[id]]); })); });
+    showValue($('textFadeIn'), of(function (tx) { return tx.fadeIn; }));
+    showValue($('textFadeOut'), of(function (tx) { return tx.fadeOut; }));
+    var dur = of(function (tx) { return Math.round(txSpan(tx).dur * 10) / 10; });
+    if (dur.mixed) { showValue($('textDurMin'), dur); showValue($('textDurSec'), dur); }
+    else {
+      var dm = Math.floor(dur.value / 60), ds = Math.round((dur.value - dm * 60) * 10) / 10;
+      showValue($('textDurMin'), { mixed: false, value: dm ? dm : '' }); showValue($('textDurSec'), { mixed: false, value: ds });
+    }
+    Object.keys(TEXT_TICKS).forEach(function (id) { showValue($(id), of(function (tx) { return !!tx[TEXT_TICKS[id]]; })); });
+    Object.keys(TEXT_TICKS).concat(['textFadeIn', 'textFadeOut']).forEach(function (id) { $(id).disabled = false; });
+    $('textDurMin').disabled = $('textDurSec').disabled = TextBulk.targets(list, 'dur', 1).ids.length === 0;
+    var radios = document.querySelectorAll('input[name="textMode"], input[name="textRefPos"]'), mixedKinds = TextBulk.mixedKinds(list);
+    $('textPassageRow').hidden = !list.some(function (tx) { return tx.passage; });
+    radios.forEach(function (r) { r.disabled = mixedKinds; });
+    $('textBulkKindNote').hidden = !mixedKinds;
+    if (mixedKinds) radios.forEach(function (r) { r.checked = false; });
+    else if (list[0].passage) {
+      var mode = of(function (tx) { return tx.passage.mode; }), refPos = of(function (tx) { return tx.passage.refPos || 'bottom'; });
+      document.querySelectorAll('input[name="textMode"]').forEach(function (r) { r.checked = !mode.mixed && r.value === mode.value; });
+      document.querySelectorAll('input[name="textRefPos"]').forEach(function (r) { r.checked = !refPos.mixed && r.value === refPos.value; });
+    }
+    $('textBulkNote').textContent = bulkNote;
+    $('textBulkNote').hidden = !bulkNote;
+    var bad = list.filter(function (tx) { return textFit(tx).fits === false; }).length, warn = $('textFitWarn');
+    warn.hidden = !bad;
+    warn.textContent = bad === 1 ? '1 of these doesn’t fit its box.' : bad + ' of these don’t fit their boxes.';
+  }
   function renderTextEditor() {
+    if (bulkOn()) { renderBulkEditor(); return; }
+    setMode(false);
     var tx = selText(), ed = textEdEl;
     ed.hidden = !tx;
     if (!tx) { edId = null; return; }
@@ -3864,13 +4097,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var dm = Math.floor(sp.dur / 60), ds = Math.round((sp.dur - dm * 60) * 10) / 10;
     set('textDurMin', dm ? dm : ''); set('textDurSec', ds);
     set('textLh', tx.lh || 1.25); $('textLhOut').textContent = (tx.lh || 1.25).toFixed(2);
+    syncBoxFields(tx, fresh);
     var opts = '<option value="">Nothing in particular</option>' +
       plan.music.map(function (c, i) { return '<option value="items:' + c.id + '">Song ' + (i + 1) + ': ' + esc(infoOf(c.key, 'items').title) + '</option>'; }).join('') +
       plan.spoken.map(function (c) { return '<option value="spoken:' + c.id + '">Talk clip: ' + esc(lib[c.key] ? lib[c.key].name : '') + '</option>'; }).join('');
     if (tx.during && !elementSpan(tx.during)) opts += '<option value="' + esc(tx.during) + '">A recording no longer in the mix</option>';
     setHTML($('textDuring'), opts);
     $('textDuring').value = tx.during || '';
-    ['textRead', 'textWhole', 'textAfterPrev', 'textXfIn', 'textUntilNext', 'textXfOut', 'textFromStart', 'textToEnd', 'textLock', 'textAvoid'].forEach(function (id) { $(id).checked = !!tx[{ textRead: 'readTime', textWhole: 'whole', textAfterPrev: 'afterPrev', textXfIn: 'xfIn', textUntilNext: 'untilNext', textXfOut: 'xfOut', textFromStart: 'fromStart', textToEnd: 'toEnd', textLock: 'locked', textAvoid: 'avoid' }[id]]; });
+    Object.keys(TEXT_TICKS).forEach(function (id) { $(id).checked = !!tx[TEXT_TICKS[id]]; });
     var grp = tx.group && TextGroup.find(mix.groups, tx.group);
     $('textGroupRow').hidden = !grp;
     $('textGroupName').textContent = grp ? grp.name : '';
@@ -3974,8 +4208,76 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function takeOutOfGroup(id) { var tx = findItem('texts', id); if (tx) { delete tx.group; refreshTexts(); } }
   function checksChanged() { renderTimeline(); renderSel(); renderTexts(); }
-  function editText(final) {
+  var BULK = Object.assign({ textSize: 'size', textFixed: 'fixedSize', textFont: 'font', textAlign: 'align', textValign: 'valign', textColor: 'color', textLh: 'lh', textLook: 'look', textLookColor: 'lookColor', textLookOpacity: 'lookOpacity', textGlowWidth: 'glowWidth', textGlowSoft: 'glowSoft', textFadeIn: 'fadeIn', textFadeOut: 'fadeOut', textDurMin: 'dur', textDurSec: 'dur' }, BOX_FIELDS, TEXT_TICKS);
+  var BULK_RADIOS = { textMode: 'mode', textRefPos: 'refPos' };
+  var BULK_LOOK_FIELDS = ['look', 'lookColor', 'lookOpacity', 'glowWidth', 'glowSoft', 'size', 'font', 'color', 'fixedSize'];
+  var BULK_RELINK = ['look', 'readTime', 'afterPrev', 'untilNext', 'fromStart', 'toEnd', 'whole', 'mode'];
+  function bulkValue(el, field) {
+    if (el.type === 'checkbox') return el.checked;
+    if (field === 'dur') {
+      var d = (parseFloat($('textDurMin').value) || 0) * 60 + (parseFloat($('textDurSec').value) || 0);
+      return d >= 0.5 ? d : null;
+    }
+    if (el.type === 'range' || el.type === 'number') {
+      var v = parseFloat(el.value);
+      if (isNaN(v)) return null;
+      if (BOX_FIELDS[el.id]) return v / 100;
+      if ((field === 'fadeIn' || field === 'fadeOut') && v < 0) return null;
+      return v;
+    }
+    if (el.tagName === 'SELECT' && el.value === '') return null;
+    return el.value;
+  }
+  function applyBulkField(tx, field, value) {
+    var was = txSpan(tx), lk = TextLook.resolve(tx).look;
+    if (field === 'fixedSize') { if (value) tx.fixedSize = true; else delete tx.fixedSize; }
+    else if (field === 'lookColor') { if (lk === 'outline') tx.glowColor = value; else if (lk === 'box') tx.boxColor = value; }
+    else if (field === 'lookOpacity') { if (lk === 'outline') tx.glowOpacity = value; else if (lk === 'box') tx.boxOpacity = value; }
+    else if (field === 'glowWidth' || field === 'glowSoft') { if (lk === 'outline') tx[field] = value; }
+    else if (['x', 'y', 'w', 'h'].indexOf(field) >= 0) tx.frame = TextLayout.setFrameField(TextLayout.upgradeText(tx).frame, field, value);
+    else if (field === 'dur') tx.dur = Math.round(value * 10) / 10;
+    else if (field === 'mode' || field === 'refPos') tx.passage[field] = value;
+    else {
+      var before = tx[field];
+      tx[field] = value;
+      // turning a link off leaves the text exactly where it was showing
+      if (before && !value && ['afterPrev', 'untilNext', 'fromStart', 'toEnd'].indexOf(field) >= 0) { tx.start = Math.round(was.start * 10) / 10; tx.dur = Math.round(was.dur * 10) / 10; }
+      else if (before && !value && field === 'readTime') tx.dur = Math.round(was.dur * 10) / 10;
+    }
+  }
+  function editChecked(el, final) {
+    var field = el.type === 'radio' ? BULK_RADIOS[el.name] : BULK[el.id];
+    if (!field) return;
+    var value = el.type === 'radio' ? el.value : bulkValue(el, field);
+    if (value == null) return;
+    var list = checkedTexts();
+    if (field === 'mode' || field === 'refPos') {
+      if (TextBulk.mixedKinds(list)) return;
+      list = list.filter(function (tx) { return tx.passage; });
+    }
+    var t = TextBulk.targets(list, field, value);
+    t.ids.forEach(function (id) { applyBulkField(findItem('texts', id), field, value); });
+    bulkNote = TextBulk.heldNote(t.ids.length, t.held);
+    if (final && BULK_LOOK_FIELDS.indexOf(field) >= 0 && !TextBulk.common(list.map(function (tx) { return TextBulk.lookKey(tx, TextLook.resolve(tx)); })).mixed) lsSet('hp.textLook', TextLook.pick(list[0]));
+    if (final || BULK_RELINK.indexOf(field) >= 0) { changed(); return; }
+    persistMix();
+    resolveTexts();
+    renderTimeline(); renderSel(); drawScreen();
+    list.forEach(function (tx) { var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = FIT_FLAG + textRowLabel(tx); });
+    showTextFit();
+    if (el.type === 'range') {
+      var label = el.closest('label'), tag = label.querySelector('.mixtag'), out = label.querySelector('output');
+      if (tag) tag.hidden = true;
+      if (out) out.textContent = field === 'size' ? Math.round(value) + ' px' : field === 'lh' ? value.toFixed(2) : field === 'lookOpacity' ? Math.round(value) + '%' : String(Math.round(value));
+    }
+    if (el.type === 'color') { var ctag = el.closest('label').querySelector('.mixtag'); if (ctag) ctag.hidden = true; }
+  }
+  function editText(final, target) {
     var tx = selText(); if (!tx) return;
+    if (target && BOX_FIELDS[target.id]) {
+      var bv = parseFloat(target.value);
+      if (!isNaN(bv)) tx.frame = TextLayout.setFrameField(TextLayout.upgradeText(tx).frame, BOX_FIELDS[target.id], bv / 100);
+    }
     var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole, readTime: tx.readTime, mode: tx.passage && tx.passage.mode, look: TextLook.resolve(tx).look };
     if (tx.passage) {
       var pm = document.querySelector('input[name="textMode"]:checked'), pr = document.querySelector('input[name="textRefPos"]:checked');
@@ -4552,6 +4854,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (b.hasAttribute('data-nudge')) { var nv = parseFloat(b.getAttribute('data-nudge')); if (TextPick.count(ui.checked, mix.texts)) nudgeChecked(nv); else nudge(nv); return; }
       var act = b.getAttribute('data-selact');
       if (act === 'rmchecked') { removeTexts(checkedIds()); return; }
+      if (act === 'editchecked') { openBulk(); return; }
       if (act === 'hidechecked') { setHidden(checkedIds(), TextBatch.hideAction(mix.texts, checkedIds()) === 'hide'); return; }
       if (act === 'groupchecked') { groupChecked(); return; }
       if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
@@ -4864,13 +5167,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textAll').addEventListener('change', function () { ui.checked = this.checked ? TextPick.all(mix.texts) : {}; checksChanged(); });
     $('textRmChecked').onclick = function () { removeTexts(checkedIds()); };
     $('textCollapseAll').onclick = function () { ui.expanded = {}; renderTexts(); };
-    $('textEd').addEventListener('input', function (ev) { if (ev.target.id !== 'textStart') editText(false); });
-    $('textEd').addEventListener('change', function () { editText(true); });
+    $('textEditChecked').onclick = openBulk;
+    $('textQuick').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-quick]'); if (!b) return;
+      var which = b.getAttribute('data-quick'), ids = which === 'look' ? sameLookIds() : TextBulk.quick(mix.texts, which);
+      ui.checked = TextPick.all(ids.map(function (id) { return { id: id }; }));
+      checksChanged();
+      if (which === 'look') flashSel('Ticked ' + ids.length + ' with the same look.');
+    });
+    $('textEd').addEventListener('input', function (ev) {
+      if (bulkOn()) { editChecked(ev.target, false); return; }
+      if (ev.target.id !== 'textStart') editText(false, ev.target);
+    });
+    $('textEd').addEventListener('change', function (ev) {
+      if (bulkOn()) { editChecked(ev.target, true); return; }
+      editText(true, ev.target);
+    });
     $('textEd').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-place]'); if (!b) return;
-      var tx = selText(); if (!tx) return;
-      var f = TextLayout.upgradeText(tx).frame, line = parseFloat(b.getAttribute('data-place'));
-      tx.frame = { x: Math.round((1 - f.w) / 2 * 1e4) / 1e4, y: Math.round(clamp(line - f.h / 2, 0, 1 - f.h) * 1e4) / 1e4, w: f.w, h: f.h };
+      var line = parseFloat(b.getAttribute('data-place'));
+      var targets = bulkOn() ? checkedTexts() : [selText()].filter(Boolean);
+      if (!targets.length) return;
+      targets.forEach(function (tx) {
+        var f = TextLayout.upgradeText(tx).frame;
+        tx.frame = { x: Math.round((1 - f.w) / 2 * 1e4) / 1e4, y: Math.round(clamp(line - f.h / 2, 0, 1 - f.h) * 1e4) / 1e4, w: f.w, h: f.h };
+      });
       changed();
     });
     $('textDup').onclick = function () {
@@ -4912,7 +5233,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (fr || b.kind === 'text') {
         var tx = findItem('texts', fr ? fr.id : b.id);
         if (!tx) { ui.holdT = null; return; }
-        if (!ui.sel || ui.sel.id !== tx.id) { ui.sel = { lane: 'texts', id: tx.id }; renderTimeline(); renderSel(); renderTexts(); }
+        if (!ui.sel || ui.sel.id !== tx.id) { ui.sel = { lane: 'texts', id: tx.id }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); }
         if (tx.locked) { flashSel('This text is locked. Uncheck “Lock it in place” to move it.'); ui.holdT = null; return; }
         sd = { p: p, kind: 'frame', tx: tx, handle: fr ? fr.handle : 'move', f0: clone(TextLayout.upgradeText(tx).frame) };
         ui.outlines = outlinesForText(tx);
@@ -4940,7 +5261,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       else { mix.opts.capPos = 'custom'; mix.opts.capX = clamp(sd.x0 + dx, 0, 1); mix.opts.capY = clamp(sd.y0 + dy, 0, 1); }
       drawScreen(ui.holdT);
-      if (sd.kind === 'frame') showTextFit(sd.tx.id);
+      if (sd.kind === 'frame') { showTextFit(sd.tx.id); syncBoxFields(sd.tx, true); }
     });
     function endScr() {
       if (!sd) return;
@@ -4994,7 +5315,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var saved = lsGet('hp.saved') || {}, m = saved[this.value];
       if (!m) return;
       Player.stop();
-      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null;
+      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null;
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
@@ -5014,7 +5335,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
       Player.stop();
       var o = mix.opts, t = mix.target;
-      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
+      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
     };
@@ -5384,7 +5705,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
+    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     resetHistory();
   }
@@ -5493,7 +5814,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('fileName').value = 'sacrament-' + nextSunday();
     addSamples();
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
+    if (work && work.items && work.spoken && (work.items.length || work.spoken.length)) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
     else mix = sampleMix();
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
