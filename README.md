@@ -15,7 +15,7 @@ From this folder:
 
     firebase deploy --only hosting
 
-Firebase prints a link like `https://hymn-playlist.web.app`. Bookmark it on the streaming computer.
+Firebase prints the site link: `https://zoommedia-e2d78.web.app`. Bookmark it on the streaming computer.
 
 ## First use
 
@@ -62,6 +62,10 @@ You can change this later in the text editor. Each verse starts on its own line 
 ### Tap to place
 
 In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button. A scripture passage is one entry in the queue, and one **Enter** places the whole passage.
+
+### Undo and redo
+
+Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
 
 ### Reading time
 
