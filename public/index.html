@@ -228,7 +228,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .list > li.edslot { padding: 0 0 10px; }
 .tapq .list > li { display: flex; gap: 10px; align-items: center; padding: 6px 2px; font-size: 14px; }
 .tapq .list .txt { flex: 1; overflow-wrap: anywhere; }
-#manyMsg { white-space: pre-line; }
+#manyMsg, #collMsg, #collFill .msg { white-space: pre-line; }
 .textrow.picked { background: color-mix(in srgb, var(--sel) 12%, transparent); box-shadow: inset 3px 0 0 var(--sel); }
 .textrow.off .txt, .textrow.off .t { color: var(--muted); }
 .textrow .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
@@ -263,6 +263,23 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .grp.hid { opacity: 0.6; border-style: dashed; }
 .tl .grpbox { position: absolute; border: 1px solid color-mix(in srgb, var(--msg) 35%, transparent); border-radius: 4px; pointer-events: none; z-index: 1; margin: 0 -3px; padding: 0 3px; }
 .tl .clip .lk { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; }
+.tl.picking, .tl.picking .clip, .tl.picking .grp { cursor: crosshair; }
+.tl .fillwin { position: absolute; top: 18px; bottom: 0; z-index: 3; background: color-mix(in srgb, var(--sel) 22%, transparent); border-left: 2px dashed var(--sel); border-right: 2px dashed var(--sel); box-sizing: border-box; pointer-events: none; }
+.tl .fillwin span { position: absolute; top: 2px; left: 4px; font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.collrow { padding: 6px 2px; }
+.collrow .open { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; width: 100%; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.collrow .open b { font-weight: 600; }
+.collrow .open:hover b { color: var(--accent); }
+.collrow.dim { opacity: 0.5; }
+.collrow .collhead { display: flex; gap: 12px; align-items: baseline; }
+.collrow .collhead .open { flex: 1; min-width: 0; }
+.collrow .pickline { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.collrow .detail { margin-top: 8px; }
+.collrow .verses p { margin: 0 0 4px; }
+.collrow .verses sup { font-size: 11px; margin-right: 3px; color: var(--muted); }
+.tagchip { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); line-height: 20px; }
+.tagchip button { border: 0; background: none; padding: 0 0 0 2px; cursor: pointer; color: inherit; font: inherit; }
+.collsuggest { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tl .snapline { position: absolute; top: 18px; bottom: 0; width: 0; border-left: 1px solid var(--sel); z-index: 4; pointer-events: none; }
 .texted textarea { width: 100%; font: 16px/1.4 var(--ui); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; resize: vertical; }
 .texted .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px 20px; }
@@ -367,6 +384,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <div class="clock num"><span id="now">0:00</span> <small>of <span id="total">0:00</span></small></div>
       <button class="pill" id="speedPill" hidden></button>
       <span class="pill" id="status"></span>
+      <span class="note" id="fillHint" role="status" hidden></span>
       <div class="zoom">
         <span class="note num" id="zoomNote"></span>
         <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
@@ -624,6 +642,22 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
         </div>
       </section>
 
+      <section class="stack sec" id="sec-scriptures">
+        <div class="headrow"><h2><button class="sectoggle" data-sec="scriptures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Scripture collection</button></h2>
+          <span class="btnrow"><button class="btn small" id="collPick">Random pick</button><button class="btn small" id="collFillBtn">Choose a stretch</button></span></div>
+        <div class="texted" id="collFill" hidden></div>
+        <label for="collInput" class="visually-hidden">References to add to the collection</label>
+        <textarea id="collInput" rows="2" placeholder="Alma 32:21-23, John 3:16, D&amp;C 4:2"></textarea>
+        <div class="btnrow">
+          <button class="btn small primary" id="collAdd">Add to collection</button>
+          <label>Tag <select id="collTag"></select></label>
+        </div>
+        <p class="msg" id="collMsg" role="status"></p>
+        <div id="collSuggest"></div>
+        <datalist id="collTagList"></datalist>
+        <ul class="list" id="collList"></ul>
+      </section>
+
       <section class="stack sec" id="sec-settings">
         <div class="headrow"><h2><button class="sectoggle" data-sec="settings" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Mix settings</button></h2></div>
         <div class="settings">
@@ -655,7 +689,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             <p class="note" id="lenNote" style="width:100%"></p>
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
-          <label><input type="checkbox" id="markUsed"> Mark these recordings as used on <input type="date" id="usedDate"></label>
+          <label><input type="checkbox" id="markUsed"> Mark these recordings and scriptures as used on <input type="date" id="usedDate"></label>
           <div class="btnrow">
             <label for="fileName" class="visually-hidden">File name</label>
             <input type="text" id="fileName" style="width:240px">
@@ -2061,6 +2095,236 @@ var FolderCheck = (function () {
   return { MIN_GAP_MS: MIN_GAP_MS, shouldCheck: shouldCheck, summary: summary };
 })();
 
+/* Saved scripture references: duplicates, overlaps, tags, usage history and picks. Inputs are never changed. */
+var ScriptureCollection = (function () {
+  var DATE = /^\d{4}-\d{2}-\d{2}$/;
+  var STOP = ['that', 'this', 'with', 'unto', 'them', 'they', 'have', 'shall', 'which', 'were', 'from', 'their', 'there', 'will', 'also', 'upon', 'what', 'when', 'your', 'thou', 'thee', 'thy', 'hath'];
+  var TOPICS = [
+    { tag: 'Faith', words: ['faith', 'believe*', 'belief'] },
+    { tag: 'Prayer', words: ['pray*'] },
+    { tag: 'Repentance', words: ['repent*'] },
+    { tag: 'Jesus Christ', words: ['christ', 'jesus', 'savior', 'saviour', 'redeemer', 'lamb'] },
+    { tag: 'Atonement', words: ['atone*', 'redeem*', 'redemption', 'ransom'] },
+    { tag: 'Love', words: ['love*', 'charity'] },
+    { tag: 'Hope', words: ['hope*'] },
+    { tag: 'Peace', words: ['peace*', 'comfort*'] },
+    { tag: 'Rest', words: ['rest'] },
+    { tag: 'Service', words: ['serve*', 'service'] },
+    { tag: 'Scriptures', words: ['scripture*', 'word of god', 'search'] },
+    { tag: 'Holy Ghost', words: ['holy ghost', 'spirit', 'comforter'] },
+    { tag: 'Gratitude', words: ['thank*', 'grateful', 'gratitude'] },
+    { tag: 'Forgiveness', words: ['forgive*'] },
+    { tag: 'Obedience', words: ['obey*', 'obedien*', 'commandment*'] },
+    { tag: 'Family', words: ['children', 'father*', 'mother*', 'family', 'families'] },
+    { tag: 'Christmas', words: ['bethlehem', 'manger', 'shepherd*', 'wise men', 'born'] },
+    { tag: 'Easter', words: ['risen', 'resurrection', 'sepulchre', 'tomb'] },
+    { tag: 'Creation', words: ['creat*'] },
+    { tag: 'Light', words: ['light'] },
+    { tag: 'Joy', words: ['joy*', 'rejoice*'] },
+    { tag: 'Sacrament', words: ['bread', 'cup', 'remembrance', 'sacrament'] },
+    { tag: 'Temple', words: ['temple*', 'house of the lord'] },
+    { tag: 'Missionary work', words: ['preach*', 'gospel', 'nations'] }
+  ];
+  function whole(n) { return typeof n === 'number' && isFinite(n) && n >= 1 && Math.floor(n) === n; }
+  function validRange(r) { return !!(r && typeof r.book === 'string' && r.book && whole(r.chapter) && whole(r.from) && whole(r.to) && r.to >= r.from); }
+  function rangeOf(r) { return { book: r.book, vol: r.vol, chapter: r.chapter, from: r.from, to: r.to }; }
+  function clean(raw) {
+    var items = raw && !Array.isArray(raw) && Array.isArray(raw.items) ? raw.items : [];
+    return {
+      v: 1,
+      items: items.filter(validRange).map(function (it, index) {
+        var out = rangeOf(it);
+        out.id = it.id ? String(it.id) : 'c' + index;
+        out.tags = Array.isArray(it.tags) ? it.tags.filter(function (t) { return typeof t === 'string' && t.trim(); }) : [];
+        out.added = typeof it.added === 'string' && DATE.test(it.added) ? it.added : null;
+        return out;
+      })
+    };
+  }
+  function cleanUses(raw) {
+    return (Array.isArray(raw) ? raw : []).filter(function (u) { return u && typeof u.date === 'string' && DATE.test(u.date) && validRange(u); }).map(function (u) {
+      return { date: u.date, book: u.book, chapter: u.chapter, from: u.from, to: u.to, playlist: typeof u.playlist === 'string' ? u.playlist : '' };
+    });
+  }
+  function sameRange(a, b) { return a.book === b.book && a.chapter === b.chapter && a.from === b.from && a.to === b.to; }
+  function overlaps(a, b) { return a.book === b.book && a.chapter === b.chapter && a.from <= b.to && b.from <= a.to; }
+  function add(collection, ranges, today, makeId) {
+    var items = collection.items.slice(), added = [], duplicates = [];
+    ranges.forEach(function (r) {
+      if (items.some(function (it) { return sameRange(it, r); })) { duplicates.push(r); return; }
+      var item = rangeOf(r);
+      item.id = makeId(); item.tags = []; item.added = today;
+      items.push(item); added.push(item);
+    });
+    return { collection: { v: 1, items: items }, added: added, duplicates: duplicates };
+  }
+  function remove(collection, id) { return { v: 1, items: collection.items.filter(function (it) { return it.id !== id; }) }; }
+  function cleanTag(s) {
+    var t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return t && t.length <= 30 ? t : null;
+  }
+  function spelling(collection, tag) {
+    var low = tag.toLowerCase();
+    for (var i = 0; i < collection.items.length; i++) {
+      var tags = collection.items[i].tags;
+      for (var j = 0; j < tags.length; j++) if (tags[j].toLowerCase() === low) return tags[j];
+    }
+    return tag;
+  }
+  function mapItem(collection, id, change) {
+    return { v: 1, items: collection.items.map(function (it) { return it.id === id ? Object.assign({}, it, { tags: change(it.tags.slice()) }) : it; }) };
+  }
+  function addTag(collection, id, tag) {
+    var t = cleanTag(tag);
+    if (!t) return collection;
+    t = spelling(collection, t);
+    return mapItem(collection, id, function (tags) {
+      if (!tags.some(function (x) { return x.toLowerCase() === t.toLowerCase(); })) tags.push(t);
+      return tags;
+    });
+  }
+  function removeTag(collection, id, tag) {
+    var low = String(tag).toLowerCase();
+    return mapItem(collection, id, function (tags) { return tags.filter(function (x) { return x.toLowerCase() !== low; }); });
+  }
+  function allTags(collection) {
+    var counts = {}, names = {};
+    collection.items.forEach(function (it) {
+      it.tags.forEach(function (t) { var k = t.toLowerCase(); if (!names[k]) names[k] = t; counts[k] = (counts[k] || 0) + 1; });
+    });
+    return Object.keys(names).sort().map(function (k) { return { tag: names[k], count: counts[k] }; });
+  }
+  function withTag(items, tag) {
+    if (!tag) return items.slice();
+    var low = tag.toLowerCase();
+    return items.filter(function (it) { return it.tags.some(function (t) { return t.toLowerCase() === low; }); });
+  }
+  function sortItems(items, bookOrder) {
+    return items.slice().sort(function (a, b) {
+      return bookOrder.indexOf(a.book) - bookOrder.indexOf(b.book) || a.chapter - b.chapter || a.from - b.from || a.to - b.to;
+    });
+  }
+  function usesOf(uses, range) {
+    return uses.filter(function (u) { return overlaps(u, range); }).sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+  }
+  function lastUse(uses, range) { var list = usesOf(uses, range); return list.length ? list[0].date : null; }
+  function recordUses(uses, ranges, date, playlist) {
+    var out = uses.filter(function (u) { return !(u.date === date && u.playlist === playlist); });
+    var fresh = [];
+    ranges.forEach(function (r) {
+      if (fresh.some(function (f) { return sameRange(f, r); })) return;
+      fresh.push({ date: date, book: r.book, chapter: r.chapter, from: r.from, to: r.to, playlist: playlist });
+    });
+    return out.concat(fresh).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }
+  function overlapsWith(range, others) { return others.filter(function (o) { return overlaps(range, o.range); }); }
+  function shuffle(list, rng) {
+    var a = list.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function pickOrder(items, uses, rng) {
+    var fresh = [], byDate = {};
+    items.forEach(function (it) {
+      var last = lastUse(uses, it);
+      if (!last) fresh.push(it); else (byDate[last] = byDate[last] || []).push(it);
+    });
+    var out = shuffle(fresh, rng);
+    Object.keys(byDate).sort().forEach(function (d) { out = out.concat(shuffle(byDate[d], rng)); });
+    return out;
+  }
+  function randomPick(items, uses, avoid, rng) {
+    var order = pickOrder(items, uses, rng);
+    for (var i = 0; i < order.length; i++) {
+      if (!overlapsWith(order[i], avoid).length) return { item: order[i], last: lastUse(uses, order[i]) };
+    }
+    return null;
+  }
+  function words(text) {
+    var seen = {};
+    (String(text || '').toLowerCase().match(/[a-z]+/g) || []).forEach(function (w) { if (w.length >= 4 && STOP.indexOf(w) < 0) seen[w] = true; });
+    return seen;
+  }
+  function similarity(a, b) {
+    var wa = words(a), wb = words(b), both = 0, all = {};
+    Object.keys(wa).forEach(function (w) { all[w] = true; if (wb[w]) both++; });
+    Object.keys(wb).forEach(function (w) { all[w] = true; });
+    var n = Object.keys(all).length;
+    return n ? both / n : 0;
+  }
+  function matchesWord(text, word) {
+    var prefix = word.charAt(word.length - 1) === '*', w = prefix ? word.slice(0, -1) : word;
+    var re = new RegExp('\\b' + w.replace(/ /g, '\\s+') + (prefix ? '' : '\\b'), 'i');
+    return re.test(text);
+  }
+  function suggestTags(range, text, others, topics) {
+    var out = [];
+    function push(tag) { if (!out.some(function (t) { return t.toLowerCase() === tag.toLowerCase(); })) out.push(tag); }
+    others.forEach(function (o) { if (overlaps(range, o.range) || (o.range.book === range.book && o.range.chapter === range.chapter)) o.tags.forEach(push); });
+    others.forEach(function (o) { if (similarity(text, o.text) >= 0.3) o.tags.forEach(push); });
+    (topics || []).forEach(function (tp) { if (tp.words.some(function (w) { return matchesWord(text, w); })) push(tp.tag); });
+    return out.slice(0, 6);
+  }
+  return {
+    TOPICS: TOPICS, clean: clean, cleanUses: cleanUses, sameRange: sameRange, overlaps: overlaps, add: add, remove: remove, cleanTag: cleanTag,
+    addTag: addTag, removeTag: removeTag, allTags: allTags, withTag: withTag, sortItems: sortItems, usesOf: usesOf, lastUse: lastUse,
+    recordUses: recordUses, overlapsWith: overlapsWith, pickOrder: pickOrder, randomPick: randomPick, similarity: similarity, suggestTags: suggestTags
+  };
+})();
+
+/* Filling a stretch of the timeline: gaps, fit check and even spacing. Times are seconds. */
+var ScriptureFill = (function () {
+  var MIN_GAP = 2, MIN_WINDOW = 3;
+  function round1(x) { return Math.round(x * 10) / 10; }
+  function gapAt(spans, t, end) {
+    var lo = 0, hi = end;
+    for (var i = 0; i < spans.length; i++) {
+      var a = spans[i].start, b = spans[i].start + spans[i].dur;
+      if (t > a && t < b) return null;
+      if (b <= t && b > lo) lo = b;
+      if (a >= t && a < hi) hi = a;
+    }
+    return hi - lo >= MIN_WINDOW ? { start: round1(lo), end: round1(hi) } : null;
+  }
+  function fromDrag(a, b, end) {
+    var s = round1(Math.max(0, Math.min(a, b, end))), e = round1(Math.min(end, Math.max(a, b, 0)));
+    return e - s >= MIN_WINDOW ? { start: s, end: e } : null;
+  }
+  function spansInside(spans, win) {
+    var out = [];
+    spans.forEach(function (sp, i) { if (sp.start < win.end && sp.start + sp.dur > win.start) out.push(i); });
+    return out;
+  }
+  function used(lengths) { return lengths.reduce(function (s, x) { return s + x; }, 0) + MIN_GAP * Math.max(0, lengths.length - 1); }
+  function fits(lengths, winLen) { return used(lengths) <= winLen + 1e-6; }
+  function left(lengths, winLen) { return Math.max(0, winLen - used(lengths)); }
+  function canAdd(lengths, len, winLen) { return fits(lengths.concat([len]), winLen); }
+  function spaceEvenly(lengths, start, end) {
+    var n = lengths.length;
+    if (!n) return [];
+    if (!fits(lengths, end - start)) return null;
+    if (n === 1) return [round1(start + (end - start - lengths[0]) / 2)];
+    var sum = lengths.reduce(function (s, x) { return s + x; }, 0), gap = (end - start - sum) / (n - 1), out = [], t = start;
+    lengths.forEach(function (len, i) {
+      out.push(i === n - 1 ? Math.floor((end - len) * 10 + 1e-6) / 10 : round1(t));
+      t += len + gap;
+    });
+    return out;
+  }
+  function randomFill(order, lengthOf, picked, winLen, blocked) {
+    var chosen = picked.slice(), lengths = picked.map(lengthOf);
+    order.forEach(function (item) {
+      if (chosen.indexOf(item) >= 0) return;
+      var len = lengthOf(item);
+      if (len == null || blocked(item, chosen)) return;
+      if (!canAdd(lengths, len, winLen)) return;
+      chosen.push(item); lengths.push(len);
+    });
+    return chosen;
+  }
+  return { MIN_GAP: MIN_GAP, MIN_WINDOW: MIN_WINDOW, gapAt: gapAt, fromDrag: fromDrag, spansInside: spansInside, used: used, fits: fits, left: left, canAdd: canAdd, spaceEvenly: spaceEvenly, randomFill: randomFill };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -2143,12 +2407,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var lib = {}, libOrder = [];
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
   var folders = lsGet('hp.folders') || [];     // folders made by hand, kept even when empty
+  var scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));          // saved scripture references
+  var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
   var mix = blankMix();
   var plan = E.layout(mix, {});
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -2769,7 +3035,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var before = JSON.parse(r.before), after = JSON.parse(r.after);
     var audioChanged = JSON.stringify([before.items, before.spoken, before.opts, before.target]) !== JSON.stringify([after.items, after.spoken, after.opts, after.target]);
     if (audioChanged && Player.tag) Player.stop();
-    mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null;
+    mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, JSON.stringify(mix));
     changed();
     $('undoNote').textContent = verb + ': ' + UndoStack.describe(r.before, r.after);
@@ -3001,7 +3267,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       do {
         renderAgain = false;
         renderHead(); renderTimeline(); renderSel(); renderLibrary(); renderOrder(); renderSpoken();
-        renderScreenOpts(); renderCues(); renderTexts(); drawScreen(); renderSettings(); renderExportNote(); syncPlay(); renderSections();
+        renderScreenOpts(); renderCues(); renderTexts(); renderCollection(); drawScreen(); renderSettings(); renderExportNote(); syncPlay(); renderSections();
       } while (renderAgain);
     } finally { rendering = false; }
   }
@@ -3069,6 +3335,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       h += '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '" title="' + esc(plainText(tx)) + '" style="top:' + (100 + row * 22) + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
     });
     if (ui.snapT != null) h += '<i class="snapline" style="left:' + pct(ui.snapT) + '"></i>';
+    if (ui.fillWin) h += '<i class="fillwin" style="left:' + pct(ui.fillWin.start) + ';width:' + pct(ui.fillWin.end - ui.fillWin.start) + '"><span>Scriptures go here</span></i>';
     h += '<div class="mark" style="left:' + pct(mix.target) + '"><b>' + fmt(mix.target) + '</b></div>';
     h += '<i class="head" hidden></i>';
     if (!plan.music.length && !plan.spoken.length && !mix.texts.length) h += '<div class="empty">Add recordings from the library and the mix is drawn here to scale.</div>';
@@ -3827,14 +4094,35 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       catch (e) { out.errors.push({ input: Scripture.format(r), error: e.message }); continue; }
       var found = Scripture.lookup(r, data);
       if (!found.ok) { out.errors.push({ input: found.input, error: found.error }); continue; }
-      out.items.push(Scripture.toPassage(found));
+      var p = Scripture.toPassage(found);
+      p.src = verseRange(r);
+      out.items.push(p);
     }
     return out;
   }
+  function verseRange(r) { return { book: r.book, vol: r.vol, chapter: r.chapter, from: r.from, to: r.to }; }
   function withLastLook(tx) { return TextLook.apply(tx, lsGet('hp.textLook')); }
   function newScriptureItem(p, mode) {
-    return withLastLook({ id: nid(), ref: p.ref, passage: { verses: p.verses, mode: mode, refPos: 'bottom' }, readTime: true, start: 0, dur: 8, fadeIn: 2, fadeOut: 2,
+    var passage = { verses: p.verses, mode: mode, refPos: 'bottom' };
+    if (p.src) passage.src = p.src;
+    return withLastLook({ id: nid(), ref: p.ref, passage: passage, readTime: true, start: 0, dur: 8, fadeIn: 2, fadeOut: 2,
       frame: { x: 0.1, y: 0.1, w: 0.8, h: 0.74 }, valign: 'top', size: 56, font: 'serif', align: 'center', color: '#FFFFFF', lh: 1.3 });
+  }
+  // Which verses a passage shows. Older playlists only have the reference line.
+  function passageRange(tx) {
+    if (!tx.passage) return null;
+    if (tx.passage.src) return tx.passage.src;
+    var r = Scripture.parse(tx.ref);
+    return r.ok ? verseRange(r) : null;
+  }
+  function videoRanges() {
+    var out = [];
+    mix.texts.forEach(function (tx) {
+      if (tx.hidden) return;
+      var range = passageRange(tx);
+      if (range) out.push({ range: range, label: tx.ref || Scripture.format(range) });
+    });
+    return out;
   }
   function newQueuedTextItem(line) {
     return withLastLook({ id: nid(), text: line, readTime: true, start: 0, dur: 8, fadeIn: 3, fadeOut: 3, frame: { x: 0.1, y: 0.12, w: 0.8, h: 0.36 }, valign: 'top', size: 72, font: 'sans', align: 'center', color: '#FFFFFF' });
@@ -3895,6 +4183,362 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     mix.queue = mix.queue.concat(items);
     changed();
     return items.length + ' added to the queue.';
+  }
+
+  /* ---------- scripture collection ---------- */
+  // cui.texts maps a collection item's id to its verses, or to { error }.
+  // cui.fillTicks lists ticked ids in the order they were ticked.
+  var cui = { tag: '', open: null, suggest: [], msg: null, texts: {}, loading: false, fillTicks: [], fillMode: 'each', fillMsg: null };
+  var BOOK_ORDER = Scripture.BOOKS.map(function (b) { return b.name; });
+  var textsRun = null;
+  function collSay(text, isErr) { cui.msg = text ? { text: text, err: !!isErr } : null; renderCollection(); }
+  function fillSay(text, isErr) { cui.fillMsg = text ? { text: text, err: !!isErr } : null; renderCollection(); }
+  function saveColl() { if (!lsSet('hp.scriptures', scrColl)) collSay('The collection could not be saved in this browser.', true); }
+  function saveUses() { if (!lsSet('hp.scriptureUses', scrUses)) collSay('Where scriptures were used could not be saved in this browser.', true); }
+  function collItem(id) { for (var i = 0; i < scrColl.items.length; i++) if (scrColl.items[i].id === id) return scrColl.items[i]; return null; }
+  function verseText(verses) { return verses.map(function (v) { return v.text; }).join(' '); }
+  function loadedText(item) { var v = cui.texts[item.id]; return v && !v.error ? v : null; }
+  function ensureTexts() {
+    if (textsRun) return textsRun;
+    var need = scrColl.items.filter(function (it) { return !cui.texts[it.id] || cui.texts[it.id].retry; });
+    if (!need.length) return Promise.resolve();
+    cui.loading = true;
+    textsRun = (async function () {
+      for (var i = 0; i < need.length; i++) {
+        var it = need[i], vol = it.vol || (Scripture.findBook(it.book) || {}).vol;
+        try {
+          var found = Scripture.lookup(it, vol ? await loadVolume(vol) : null);
+          cui.texts[it.id] = found.ok ? found.verses : { error: found.error };
+        } catch (e) {
+          cui.texts[it.id] = { error: e && e.message ? e.message : 'The text could not be loaded.', retry: true };
+        }
+      }
+    })().finally(function () { textsRun = null; cui.loading = false; renderCollection(); });
+    return textsRun;
+  }
+  function passageFor(item) {
+    var v = loadedText(item);
+    if (!v) return null;
+    var p = Scripture.toPassage({ ref: item, verses: v });
+    p.src = verseRange(item);
+    if (!p.src.vol) p.src.vol = (Scripture.findBook(item.book) || {}).vol;
+    return p;
+  }
+  function fillLen(item) { var v = item && loadedText(item); return v ? TextTiming.passageSchedule(v, cui.fillMode, mix.opts.wpm, 2, 2).total : null; }
+  function visibleTexts() { return mix.texts.filter(function (tx) { return !tx.hidden && !tx.whole; }); }
+  function insideIds(win) { var list = visibleTexts(); return ScriptureFill.spansInside(list.map(txSpan), win).map(function (i) { return list[i].id; }); }
+  function overlapLines(item, others) {
+    return ScriptureCollection.overlapsWith(item, others).map(function (h) {
+      var where = h.ticked ? 'also ticked' : 'already in this video';
+      return Scripture.format(item) + (ScriptureCollection.sameRange(item, h.range) ? ' is ' + where : ' overlaps ' + h.label + ', ' + where);
+    });
+  }
+  function tickedRanges(exceptId) {
+    return cui.fillTicks.filter(function (id) { return id !== exceptId; }).map(collItem).filter(Boolean).map(function (it) { return { range: it, label: Scripture.format(it), ticked: true }; });
+  }
+  function fillState() {
+    var win = ui.fillWin;
+    if (!win) return null;
+    cui.fillTicks = cui.fillTicks.filter(function (id) { return collItem(id); });
+    var lengths = cui.fillTicks.map(function (id) { return fillLen(collItem(id)); }).filter(function (x) { return x != null; });
+    return { win: win, winLen: win.end - win.start, busy: insideIds(win).length, ticks: cui.fillTicks.slice(), lengths: lengths };
+  }
+  function openCollSection() {
+    if (!collapsed.scriptures) return;
+    collapsed.scriptures = false; lsSet('hp.collapsed', collapsed); renderSections();
+  }
+
+  function renderCollection() {
+    var tags = ScriptureCollection.allTags(scrColl);
+    if (cui.tag && !tags.some(function (t) { return t.tag === cui.tag; })) cui.tag = '';
+    cui.suggest = cui.suggest.filter(function (s) { return collItem(s.id) && s.tags.length; });
+    setHTML($('collTag'), '<option value="">All tags</option>' + tags.map(function (t) { return '<option value="' + esc(t.tag) + '">' + esc(t.tag) + ' (' + t.count + ')</option>'; }).join(''));
+    $('collTag').value = cui.tag;
+    setHTML($('collTagList'), tags.map(function (t) { return '<option value="' + esc(t.tag) + '">'; }).join(''));
+    var m = $('collMsg');
+    m.textContent = cui.msg ? cui.msg.text : '';
+    m.className = 'msg' + (cui.msg && cui.msg.err ? ' err' : '');
+    $('collFillBtn').textContent = ui.fillPick ? 'Picking a stretch…' : 'Choose a stretch';
+    setHTML($('collSuggest'), cui.suggest.map(function (s) {
+      return '<div class="collsuggest"><span class="note">Suggested tags for ' + esc(Scripture.format(collItem(s.id))) + ':</span>' +
+        s.tags.map(function (t) { return '<button class="btn small" data-act="accept" data-id="' + esc(s.id) + '" data-tag="' + esc(t) + '">+ ' + esc(t) + '</button>'; }).join('') +
+        '<button class="btn small quiet" data-act="dismiss" data-id="' + esc(s.id) + '">No thanks</button></div>';
+    }).join(''));
+    var f = fillState();
+    renderFill(f);
+    var items = ScriptureCollection.sortItems(ScriptureCollection.withTag(scrColl.items, cui.tag), BOOK_ORDER), vr = f ? videoRanges() : null;
+    var html = items.map(function (it) { return collRowHtml(it, f, vr); }).join('');
+    if (!scrColl.items.length) html = '<li class="collrow note">Your collection is empty. Add references you’d like to use again, such as Alma 32:21-23.</li>';
+    setHTML($('collList'), html);
+  }
+  function collRowHtml(it, f, vr) {
+    var id = esc(it.id), label = Scripture.format(it), last = ScriptureCollection.lastUse(scrUses, it), open = cui.open === it.id;
+    var chips = it.tags.map(function (t) { return '<span class="tagchip">' + esc(t) + '</span>'; }).join(' ');
+    var cls = 'collrow', pick = '', warnHtml = '';
+    if (f && !f.busy) {
+      var ticked = f.ticks.indexOf(it.id) >= 0, len = fillLen(it), ok = ticked || (len != null && ScriptureFill.canAdd(f.lengths, len, f.winLen));
+      if (!ok) cls += ' dim';
+      var lenText = len == null ? (cui.loading ? 'loading…' : 'text not available') : fmt(len) + (ok ? '' : ', doesn’t fit');
+      var warn = overlapLines(it, vr.concat(tickedRanges(it.id)));
+      pick = '<label class="pickline"><input type="checkbox" data-act="filltick" data-id="' + id + '"' + (ticked ? ' checked' : '') + (ok ? '' : ' disabled') + ' aria-label="Place ' + esc(label) + ' here"> <span class="note num">' + esc(lenText) + '</span></label>';
+      if (warn.length) warnHtml = '<div class="usednote overlap">' + esc(warn.join('; ')) + '</div>';
+    }
+    var h = '<li class="' + cls + '" data-id="' + id + '"><div class="collhead">' + pick +
+      '<button class="open" data-act="open" data-id="' + id + '" aria-expanded="' + open + '"><b>' + esc(label) + '</b>' + (chips ? ' ' + chips : '') +
+      ' <span class="note">' + esc(last ? usedText(last) : 'Never used') + '</span></button></div>' + warnHtml;
+    if (open) h += collDetailHtml(it);
+    return h + '</li>';
+  }
+  function collDetailHtml(it) {
+    var id = esc(it.id), v = cui.texts[it.id], verses;
+    if (!v) verses = '<p class="note">Loading the verses…</p>';
+    else if (v.error) verses = '<p class="msg err">Text not available: ' + esc(v.error) + '</p>';
+    else verses = v.map(function (x) { return '<p>' + (v.length > 1 ? '<sup>' + x.n + '</sup>' : '') + esc(x.text) + '</p>'; }).join('');
+    var tags = it.tags.map(function (t) {
+      return '<span class="tagchip">' + esc(t) + '<button data-act="untag" data-id="' + id + '" data-tag="' + esc(t) + '" aria-label="Remove the tag ' + esc(t) + '">×</button></span>';
+    }).join(' ');
+    var uses = ScriptureCollection.usesOf(scrUses, it).map(function (u) {
+      return '<li>' + esc(longDate(u.date) + ' · ' + (u.playlist || 'Unnamed playlist') + ' · ' + usedText(u.date)) + (ScriptureCollection.sameRange(u, it) ? '' : ' (as ' + esc(Scripture.format(u)) + ')') + '</li>';
+    }).join('');
+    return '<div class="detail texted">' +
+      '<div class="verses">' + verses + '</div>' +
+      '<div class="btnrow">' + (tags || '<span class="note">No tags yet.</span>') + '</div>' +
+      '<div class="btnrow"><input type="text" list="collTagList" maxlength="30" data-tagfor="' + id + '" placeholder="New tag" aria-label="Add a tag to ' + esc(Scripture.format(it)) + '">' +
+      '<button class="btn small" data-act="tag" data-id="' + id + '">Add tag</button></div>' +
+      '<div><h4 class="edhead">Used in</h4>' + (uses ? '<ul class="note">' + uses + '</ul>' : '<p class="note">Not used in a video yet.</p>') + '</div>' +
+      '<div class="btnrow"><button class="btn small primary" data-act="place" data-id="' + id + '">Put on the timeline</button>' +
+      '<button class="btn small quiet" data-act="remove" data-id="' + id + '">Remove from collection</button></div></div>';
+  }
+  function renderFill(f) {
+    var box = $('collFill');
+    box.hidden = !f;
+    if (!f) { setHTML(box, ''); return; }
+    var head = '<h4 class="edhead">Filling ' + fmt(f.win.start) + '–' + fmt(f.win.end) + ' (' + fmt(f.winLen) + ')</h4>';
+    var msg = cui.fillMsg ? '<p class="msg' + (cui.fillMsg.err ? ' err' : '') + '" role="status">' + esc(cui.fillMsg.text) + '</p>' : '';
+    if (f.busy) {
+      setHTML(box, head + '<p class="note">This stretch already has ' + (f.busy === 1 ? '1 text' : f.busy + ' texts') + '. Space ' + (f.busy === 1 ? 'it' : 'them') + ' evenly, or drag across an empty stretch to add scriptures.</p>' + msg +
+        '<div class="btnrow"><button class="btn small primary" data-act="space">Space evenly</button><button class="btn small quiet" data-act="fillcancel">Cancel</button></div>');
+      return;
+    }
+    var modes = [['each', 'One verse at a time'], ['build', 'Build up verse by verse'], ['together', 'All at once']].map(function (m) {
+      return '<label><input type="radio" name="fillMode" value="' + m[0] + '"' + (cui.fillMode === m[0] ? ' checked' : '') + '> ' + m[1] + '</label>';
+    }).join('');
+    var note = 'Time left: ' + fmt(ScriptureFill.left(f.lengths, f.winLen)) + '. Tick the passages to place here.';
+    if (!scrColl.items.length) note = 'Add references to your collection first, then tick the ones to place here.';
+    else if (!f.ticks.length && !cui.loading) {
+      var lens = ScriptureCollection.withTag(scrColl.items, cui.tag).map(fillLen).filter(function (x) { return x != null; });
+      if (lens.length && !lens.some(function (x) { return x <= f.winLen + 1e-6; })) note = 'Nothing in your collection fits in ' + fmt(f.winLen) + '. The shortest passage needs ' + fmt(Math.min.apply(null, lens)) + '.';
+    }
+    var n = f.ticks.length;
+    setHTML(box, head + '<div class="btnrow" role="radiogroup" aria-label="How the passages show">' + modes + '</div><p class="note">' + esc(note) + '</p>' + msg +
+      '<div class="btnrow"><button class="btn small" data-act="fillrandom">Random fill</button>' +
+      '<button class="btn small primary" data-act="fillplace"' + (n ? '' : ' disabled') + '>Place ' + (n === 1 ? '1 passage' : n + ' passages') + '</button>' +
+      '<button class="btn small quiet" data-act="fillcancel">Cancel</button></div>');
+  }
+
+  async function addToCollection() {
+    $('collAdd').disabled = true;
+    collSay('Looking up…', false);
+    try {
+      var found = await resolveRefs($('collInput').value);
+      var res = ScriptureCollection.add(scrColl, found.items.map(function (p) { return p.src; }), ymd(new Date()), nid);
+      res.added.forEach(function (item) {
+        found.items.forEach(function (p) { if (ScriptureCollection.sameRange(p.src, item)) cui.texts[item.id] = p.verses; });
+      });
+      if (res.added.length) { scrColl = res.collection; saveColl(); renderSections(); }
+      var lines = [];
+      if (res.added.length) lines.push('Added ' + res.added.length + '.');
+      res.duplicates.forEach(function (r) { lines.push(Scripture.format(r) + ' is already in your collection.'); });
+      found.errors.forEach(function (e) { lines.push(e.input + ': ' + e.error); });
+      if (!lines.length) lines.push('Type a reference, for example John 3:16.');
+      $('collInput').value = found.errors.map(function (e) { return e.input; }).join('\n');
+      if (res.added.length) {
+        await ensureTexts();
+        res.added.forEach(function (item) {
+          var own = loadedText(item);
+          if (!own) return;
+          var others = scrColl.items.filter(function (o) { return o.id !== item.id && loadedText(o); }).map(function (o) { return { range: o, text: verseText(loadedText(o)), tags: o.tags }; });
+          var tags = ScriptureCollection.suggestTags(item, verseText(own), others, ScriptureCollection.TOPICS);
+          if (tags.length) cui.suggest.push({ id: item.id, tags: tags });
+        });
+      }
+      collSay(lines.join('\n'), !res.added.length || res.duplicates.length > 0 || found.errors.length > 0);
+    } catch (err) {
+      collSay('That could not be added. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
+    } finally {
+      $('collAdd').disabled = false;
+    }
+  }
+  function acceptTag(id, tag) {
+    scrColl = ScriptureCollection.addTag(scrColl, id, tag); saveColl();
+    cui.suggest.forEach(function (s) { if (s.id === id) s.tags = s.tags.filter(function (t) { return t !== tag; }); });
+    renderCollection();
+  }
+  function tagFromInput(id) {
+    var input = $('collList').querySelector('input[data-tagfor="' + id + '"]');
+    if (!input) return;
+    var t = ScriptureCollection.cleanTag(input.value);
+    if (!t) { collSay(input.value.trim() ? 'Tags can be up to 30 characters.' : 'Type a tag first.', true); return; }
+    scrColl = ScriptureCollection.addTag(scrColl, id, t); saveColl();
+    collSay('', false);
+    var again = $('collList').querySelector('input[data-tagfor="' + id + '"]');
+    if (again) again.focus();
+  }
+  function removeFromCollection(id) {
+    var item = collItem(id);
+    if (!item || !confirm('Remove ' + Scripture.format(item) + ' from your collection? Where it was used is kept.')) return;
+    scrColl = ScriptureCollection.remove(scrColl, id); saveColl();
+    if (cui.open === id) cui.open = null;
+    cui.fillTicks = cui.fillTicks.filter(function (x) { return x !== id; });
+    collSay('Removed ' + Scripture.format(item) + '.', false);
+    renderSections();
+  }
+  function revealCollRow(id) { var li = $('collList').querySelector('li[data-id="' + id + '"]'); if (li) li.scrollIntoView({ block: 'nearest' }); }
+  function randomPick() {
+    var items = ScriptureCollection.withTag(scrColl.items, cui.tag);
+    if (!items.length) { collSay('There’s nothing in this list to pick from.', true); return; }
+    var res = ScriptureCollection.randomPick(items, scrUses, videoRanges(), Math.random);
+    if (!res) { collSay('Everything in this list overlaps a scripture already in this video.', true); return; }
+    cui.open = res.item.id;
+    collSay('Picked ' + Scripture.format(res.item) + '. ' + (res.last ? 'Last used ' + shortDate(res.last) + '.' : 'Never used.'), false);
+    revealCollRow(res.item.id);
+    ensureTexts();
+  }
+  function placeFromCollection(id) {
+    var item = collItem(id);
+    if (!item) return;
+    try {
+      var p = passageFor(item);
+      if (!p) { collSay('The verses of ' + Scripture.format(item) + ' aren’t loaded yet. Try again in a moment.', true); ensureTexts(); return; }
+      var hits = ScriptureCollection.overlapsWith(item, videoRanges());
+      if (hits.length && !confirm(Scripture.format(item) + ' overlaps ' + hits.map(function (h) { return h.label; }).join(', ') + ', already in this video. Add it anyway?')) return;
+      var tx = newScriptureItem(p, cui.fillMode);
+      placeMany([tx]);
+      collSay('Put ' + Scripture.format(item) + ' on the timeline at ' + fmt(tx.start) + '.', false);
+    } catch (err) {
+      collSay('That could not be placed. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
+    }
+  }
+
+  /* ---------- filling a stretch of the timeline ---------- */
+  function pickHint(text) {
+    var h = $('fillHint');
+    h.hidden = !ui.fillPick;
+    h.textContent = text || 'Click a gap between texts, or drag across the stretch you want. Esc cancels.';
+    $('tl').classList.toggle('picking', ui.fillPick);
+  }
+  function startPicking() {
+    ui.fillPick = true; ui.fillWin = null; cui.fillTicks = []; cui.fillMsg = null;
+    pickHint(); renderTimeline(); renderCollection();
+  }
+  function stopFill() {
+    ui.fillPick = false; ui.fillWin = null; cui.fillTicks = []; cui.fillMsg = null;
+    pickHint(); renderTimeline(); renderCollection();
+  }
+  function setFillWin(win) {
+    ui.fillWin = win; ui.fillPick = false; cui.fillTicks = []; cui.fillMsg = null;
+    pickHint(); renderTimeline(); openCollSection(); renderCollection();
+    $('collFill').scrollIntoView({ block: 'nearest' });
+    ensureTexts();
+  }
+  function setFillMode(mode) {
+    cui.fillMode = mode;
+    var kept = [], lengths = [], winLen = ui.fillWin ? ui.fillWin.end - ui.fillWin.start : 0;
+    cui.fillTicks.forEach(function (id) {
+      var len = fillLen(collItem(id));
+      if (len != null && ScriptureFill.canAdd(lengths, len, winLen)) { kept.push(id); lengths.push(len); }
+    });
+    var dropped = cui.fillTicks.length - kept.length;
+    cui.fillTicks = kept;
+    fillSay(dropped ? 'Some ticks were removed because they no longer fit.' : '', false);
+  }
+  function toggleFillTick(id, on) {
+    cui.fillTicks = cui.fillTicks.filter(function (x) { return x !== id; });
+    if (on) cui.fillTicks.push(id);
+    fillSay('', false);
+  }
+  function fillRandom() {
+    var f = fillState();
+    if (!f) return;
+    if (cui.loading) { fillSay('Still loading the verses. Try again in a moment.', true); return; }
+    var order = ScriptureCollection.pickOrder(ScriptureCollection.withTag(scrColl.items, cui.tag), scrUses, Math.random);
+    var picked = f.ticks.map(collItem), vr = videoRanges();
+    var chosen = ScriptureFill.randomFill(order, fillLen, picked, f.winLen, function (it, sofar) {
+      return ScriptureCollection.overlapsWith(it, vr.concat(sofar.map(function (s) { return { range: s }; }))).length > 0;
+    });
+    var n = chosen.length - picked.length;
+    cui.fillTicks = chosen.map(function (it) { return it.id; });
+    fillSay(n ? 'Added ' + n + ' at random.' : 'Nothing more fits without overlapping.', !n);
+  }
+  function fillPlace() {
+    var f = fillState();
+    if (!f || !f.ticks.length) return;
+    var items = f.ticks.map(collItem), lengths = items.map(fillLen);
+    if (lengths.some(function (x) { return x == null; })) { fillSay('Some of the ticked verses aren’t loaded. Untick them or try again in a moment.', true); return; }
+    var starts = ScriptureFill.spaceEvenly(lengths, f.win.start, f.win.end);
+    if (!starts) { fillSay('These no longer fit. Untick one.', true); return; }
+    var vr = videoRanges(), warn = [];
+    items.forEach(function (it, i) {
+      warn = warn.concat(overlapLines(it, vr.concat(items.slice(0, i).map(function (o) { return { range: o, label: Scripture.format(o), ticked: true }; }))));
+    });
+    if (warn.length && !confirm(warn.join('\n') + '\n\nPlace them anyway?')) return;
+    var txs;
+    try {
+      txs = items.map(function (it, i) { var tx = newScriptureItem(passageFor(it), cui.fillMode); tx.start = starts[i]; return tx; });
+    } catch (err) {
+      fillSay('These could not be placed. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
+      return;
+    }
+    txs.forEach(function (tx) { mix.texts.push(tx); });
+    ui.fillWin = null; cui.fillTicks = []; cui.fillMsg = null;
+    ui.sel = { lane: 'texts', id: txs[0].id };
+    refreshTexts();
+    collSay('Placed ' + (txs.length === 1 ? '1 passage.' : txs.length + ' passages.'), false);
+  }
+  function spaceEvenlyInWindow() {
+    var win = ui.fillWin;
+    if (!win) return;
+    var ids = insideIds(win), batch = textBatch(ids);
+    if (batch.stayed.length) { fillSay(TextBatch.stayedNote(0, batch.stayed), true); return; }
+    var list = ids.map(function (id) { return findItem('texts', id); }).sort(function (a, b) { return txSpan(a).start - txSpan(b).start; });
+    var starts = ScriptureFill.spaceEvenly(list.map(function (tx) { return txSpan(tx).dur; }), win.start, win.end);
+    if (!starts) { fillSay('These texts are too long for this stretch with 2 seconds between them.', true); return; }
+    list.forEach(function (tx, i) { tx.start = starts[i]; });
+    ui.fillWin = null; cui.fillMsg = null;
+    refreshTexts();
+    collSay('Spaced ' + (list.length === 1 ? '1 text' : list.length + ' texts') + ' evenly.', false);
+  }
+  function wireCollection() {
+    var sec = $('sec-scriptures');
+    $('collAdd').onclick = addToCollection;
+    $('collPick').onclick = randomPick;
+    $('collFillBtn').onclick = function () { if (ui.fillPick) stopFill(); else startPicking(); };
+    $('collTag').onchange = function () { cui.tag = this.value; renderCollection(); };
+    sec.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-act]');
+      if (!b || b.tagName === 'INPUT') return;
+      var act = b.getAttribute('data-act'), id = b.getAttribute('data-id');
+      if (act === 'open') { cui.open = cui.open === id ? null : id; renderCollection(); if (cui.open) ensureTexts(); }
+      else if (act === 'accept') acceptTag(id, b.getAttribute('data-tag'));
+      else if (act === 'dismiss') { cui.suggest = cui.suggest.filter(function (s) { return s.id !== id; }); renderCollection(); }
+      else if (act === 'untag') { scrColl = ScriptureCollection.removeTag(scrColl, id, b.getAttribute('data-tag')); saveColl(); renderCollection(); }
+      else if (act === 'tag') tagFromInput(id);
+      else if (act === 'remove') removeFromCollection(id);
+      else if (act === 'place') placeFromCollection(id);
+      else if (act === 'fillrandom') fillRandom();
+      else if (act === 'fillplace') fillPlace();
+      else if (act === 'fillcancel') stopFill();
+      else if (act === 'space') spaceEvenlyInWindow();
+    });
+    sec.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (t.name === 'fillMode') setFillMode(t.value);
+      else if (t.getAttribute('data-act') === 'filltick') toggleFillTick(t.getAttribute('data-id'), t.checked);
+    });
+    sec.addEventListener('keydown', function (ev) {
+      var t = ev.target;
+      if (ev.key === 'Enter' && t.hasAttribute && t.hasAttribute('data-tagfor')) { ev.preventDefault(); tagFromInput(t.getAttribute('data-tagfor')); }
+    });
   }
 
   /* ---------- tap to place ---------- */
@@ -4641,7 +5285,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       ui.lastExport = { base: base, ext: res.ext, blob: res.blob, parts: res.parts, video: fmtNow === 'video' };
       if ($('markUsed').checked && $('usedDate').value) {
         markUsed(pl, $('usedDate').value);
-        renderLibrary();
+        var end = exportLen(), ranges = mix.texts.filter(function (tx) { return tx.passage && !tx.hidden && txSpan(tx).start < end; }).map(passageRange).filter(Boolean);
+        scrUses = ScriptureCollection.recordUses(scrUses, ranges, $('usedDate').value, mix.name || '');
+        saveUses();
+        renderLibrary(); renderCollection();
       }
       await deliver();
     } catch (err) {
@@ -4843,6 +5490,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (ev.code === 'Space' && t !== 'BUTTON') { ev.preventDefault(); $('playBtn').click(); return; }
       if (ev.key === 'Enter' && mix.queue.length && Player.tag && isMixTag(Player.tag)) { ev.preventDefault(); placeNext(); return; }
       if (ev.key === 'Backspace' && ui.taps.length) { ev.preventDefault(); undoTap(); return; }
+      if (ev.key === 'Escape' && (ui.fillPick || ui.fillWin)) { stopFill(); return; }
       if (pickKey(ev)) return;
       if (TextPick.count(ui.checked, mix.texts) && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
         ev.preventDefault();
@@ -4864,6 +5512,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     function timeAt(ev) { var r = tl.getBoundingClientRect(); return clamp((ev.clientX - r.left) / r.width, 0, 1) * ui.span; }
     tl.addEventListener('pointerdown', function (ev) {
       if (ev.button !== 0) return;
+      if (ui.fillPick) {
+        drag = { x: ev.clientX, t0: timeAt(ev), fill: true, moved: false };
+        try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+        return;
+      }
       var el = ev.target.closest ? ev.target.closest('.clip') : null;
       var grp = ev.target.closest ? ev.target.closest('.grp') : null;
       if (grp) {
@@ -4896,6 +5549,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
     });
     tl.addEventListener('pointermove', function (ev) {
+      if (drag && drag.fill) {
+        if (!drag.moved && Math.abs(ev.clientX - drag.x) <= 4) return;
+        drag.moved = true;
+        ui.fillWin = ScriptureFill.fromDrag(drag.t0, timeAt(ev), exportLen());
+        renderTimeline();
+        return;
+      }
       if (!drag || (!drag.sel && !drag.group)) return;
       var dx = ev.clientX - drag.x;
       if (!drag.moved && Math.abs(dx) > 4) {
@@ -4930,6 +5590,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     function endDrag(ev) {
       if (!drag) return;
       var d = drag; drag = null;
+      if (d.fill) {
+        if (ev.type === 'pointercancel') { ui.fillWin = null; renderTimeline(); return; }
+        var at = timeAt(ev), spans = visibleTexts().map(txSpan);
+        var win = d.moved ? ScriptureFill.fromDrag(d.t0, at, exportLen()) : ScriptureFill.gapAt(spans, at, exportLen());
+        if (win) { setFillWin(win); return; }
+        ui.fillWin = null; renderTimeline();
+        var onText = spans.some(function (sp) { return at > sp.start && at < sp.start + sp.dur; });
+        pickHint(d.moved ? 'Drag across at least 3 seconds. Esc cancels.' : onText ? 'That spot already has text. Click between texts, or drag across the stretch you want. Esc cancels.' : 'That gap is shorter than 3 seconds. Pick a longer one, or drag across the stretch you want. Esc cancels.');
+        return;
+      }
       if (ui.snapT != null) { ui.snapT = null; }
       if (d.group) {
         if (!d.moved) { ui.checked = TextPick.all(TextGroup.memberIds(mix.texts, d.group).map(function (id) { return { id: id }; })); checksChanged(); return; }
@@ -5253,6 +5923,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     };
     $('talkNote').addEventListener('click', function (ev) { var b = ev.target.closest('[data-act="info"]'); if (b) openInfo(b.getAttribute('data-key'), b.getAttribute('data-lane')); });
 
+    wireCollection();
+
     // your own text
     $('addText').onclick = addText;
     $('addMany').onclick = function () { $('manyEd').hidden = false; syncManyKind(); $('manyInput').focus(); };
@@ -5455,7 +6127,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var saved = lsGet('hp.saved') || {}, m = saved[this.value];
       if (!m) return;
       Player.stop();
-      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null;
+      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null;
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
@@ -5475,7 +6147,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
       Player.stop();
       var o = mix.opts, t = mix.target;
-      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
+      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
     };
@@ -5754,6 +6426,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       return mix.texts.length ? mix.texts.length + ' on screen' + (hid ? ', ' + hid + ' hidden' : '') : 'none yet';
     }
     if (id === 'titles') return caps.length + (caps.length === 1 ? ' title' : ' titles');
+    if (id === 'scriptures') return scrColl.items.length + (scrColl.items.length === 1 ? ' reference' : ' references');
     if (id === 'talkref') { var n = talksInMix().length; return n ? n + (n === 1 ? ' talk' : ' talks') : 'no talks in this mix'; }
     if (id === 'screen') return caps.length + (caps.length === 1 ? ' title' : ' titles') + (mix.texts.length ? ', ' + mix.texts.length + ' of your own text' : '');
     return '';
@@ -5842,6 +6515,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     try { localStorage.setItem('hp.savedAt', JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
     LM = lsGet('hp.libmeta') || {};
     folders = lsGet('hp.folders') || [];
+    scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));
+    scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));
+    cui.open = null; cui.suggest = []; cui.fillTicks = []; ui.fillWin = null; ui.fillPick = false;
     hymnSkip = lsGet('hp.hymnSkip') || {};
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};

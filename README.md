@@ -71,6 +71,22 @@ You can change this later in the text editor. Each verse starts on its own line 
 
 In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button. A scripture passage is one entry in the queue, and one **Enter** places the whole passage.
 
+### Scripture collection
+
+**Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.
+
+Click a reference to read its verses, add or remove tags, and see **Used in**: each video it was in, when, and how long ago. A use of a longer passage counts for every verse in it. **Tag** at the top shows only the references with that tag.
+
+**Random pick** chooses one for you, from the tag you picked if there is one. It picks never-used references first, then the ones used longest ago, and never one that overlaps a scripture already in this video. **Put on the timeline** places the open reference at the playhead, and asks first if it overlaps a scripture already there.
+
+A use is recorded when you export with **Mark these recordings and scriptures as used on** ticked, for every scripture showing in the video. **Remove from collection** asks first. Where a removed reference was used is kept, so adding it back brings its history with it. The collection is saved in your music folder's data file, like your playlists. Undo doesn't cover changes to the collection.
+
+### Filling a stretch with scriptures
+
+Press **Choose a stretch** in the Scripture collection, then click a gap between texts on the timeline, or drag across the stretch you want. **Esc** cancels. Choose how the passages show (**One verse at a time** to start with), then tick references. Each shows how long it takes to read. Ones that no longer fit are greyed out, and a warning shows when one overlaps a scripture in the video or another tick. **Random fill** ticks more for you by the same rules as Random pick.
+
+**Place** spaces them evenly: the first starts where the stretch starts, the last ends where it ends, with equal gaps of at least 2 seconds. A single passage is centred. They become ordinary scripture blocks, and one **Undo** takes them all away. If the stretch you dragged across already has texts, **Space evenly** spreads them out the same way, keeping their order and length. Locked texts, texts tied to a song or talk, and texts that follow the one before can't be moved, so it tells you and leaves everything as it was.
+
 ### Undo and redo
 
 Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
