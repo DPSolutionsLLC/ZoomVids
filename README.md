@@ -31,7 +31,7 @@ The motion background and still graphic are still kept in the browser. Keep the 
 
 ### Placing text
 
-Every text item sits in a box. Select a text, then drag inside its box in the preview to move it, or drag an edge or corner to resize it. Lines wrap at the box edges. **Line up** sets left, centered or right, and **Up and down** sets top, middle or bottom. Text shrinks to fit the box, down to a smallest readable size; **Largest size** is as big as it gets. The **Top**, **Upper third**, **Center** and **Lower third** buttons move the box without resizing it.
+Every text item sits in a box. Select a text, then drag inside its box in the preview to move it, or drag an edge or corner to resize it. Lines wrap at the box edges. **Line up** sets left, centered or right, and **Up and down** sets top, middle or bottom. Text shrinks to fit the box, down to a smallest readable size; **Largest size** is as big as it gets. The editor shows the size it's actually showing at, for example "Showing at 58 px", so you can match items by number. Tick **Fixed size** to keep the text at exactly the size you set: it still wraps at the box edges but never shrinks. If the text is then too long for its box, it runs past the box and both the editor and the item's row in the list say **Doesn't fit**. The **Top**, **Upper third**, **Center** and **Lower third** buttons move the box without resizing it.
 
 ### The text list
 

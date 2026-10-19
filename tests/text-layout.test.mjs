@@ -228,6 +228,47 @@ describe('fitSize', () => {
     const px = TextLayout.fitSize(spec({ frame, paragraphs: [{ num: null, text: 'ab' }], size: 20, ref: 'aaaa bbbb cccc' }), measure);
     assert.equal(px, 20);
   });
+
+  test('a fixed size never shrinks, even when it cannot fit', () => {
+    assert.equal(TextLayout.fitSize(spec({ size: 40, fixed: true, frame: { x: 0, y: 0, w: 400, h: 5 } }), measure), 40);
+  });
+
+  test('fixed set to false behaves like shrink-to-fit', () => {
+    assert.equal(TextLayout.fitSize(spec({ size: 40, fixed: false }), measure), 40);
+    assert.equal(TextLayout.fitSize(spec({ size: 40, fixed: false, frame: { x: 0, y: 0, w: 400, h: 5 } }), measure), 10);
+  });
+});
+
+describe('fits', () => {
+  test('text inside its box fits', () => {
+    assert.equal(TextLayout.fits(spec({ size: 20 }), 20, measure), true);
+  });
+
+  test('text taller than its box does not fit', () => {
+    assert.equal(TextLayout.fits(spec({ frame: { x: 0, y: 0, w: 400, h: 15 } }), 20, measure), false);
+  });
+
+  test('one word wider than its box does not fit', () => {
+    assert.equal(TextLayout.fits(spec({ paragraphs: [{ num: null, text: 'a'.repeat(50) }] }), 20, measure), false);
+  });
+
+  test('the reference counts toward the height', () => {
+    const frame = { x: 0, y: 0, w: 400, h: 25 };
+    assert.equal(TextLayout.fits(spec({ frame }), 20, measure), true);
+    assert.equal(TextLayout.fits(spec({ frame, ref: 'ab' }), 20, measure), false);
+  });
+
+  test('a fixed size too big for its box does not fit', () => {
+    const tooSmall = spec({ size: 40, fixed: true, frame: { x: 0, y: 0, w: 400, h: 5 } });
+    assert.equal(TextLayout.fits(tooSmall, TextLayout.fitSize(tooSmall, measure), measure), false);
+  });
+
+  test('shrink-to-fit stuck at the smallest size still does not fit', () => {
+    const tooSmall = spec({ size: 40, frame: { x: 0, y: 0, w: 400, h: 5 } });
+    const px = TextLayout.fitSize(tooSmall, measure);
+    assert.equal(px, 10);
+    assert.equal(TextLayout.fits(tooSmall, px, measure), false);
+  });
 });
 
 describe('place', () => {

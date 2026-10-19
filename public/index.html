@@ -226,6 +226,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .textrow.picked { background: color-mix(in srgb, var(--sel) 12%, transparent); box-shadow: inset 3px 0 0 var(--sel); }
 .textrow.off .txt, .textrow.off .t { color: var(--muted); }
 .textrow .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
+.textrow .tag.warn { color: var(--warn); }
 .eye svg, .tl .hi { fill: none; stroke: currentColor; stroke-width: 1.4; }
 .eye svg { width: 14px; height: 14px; vertical-align: -2px; }
 .grouprow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 2px; font-weight: 600; border-top: 1px solid var(--line); cursor: pointer; }
@@ -262,6 +263,9 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .texted .grid label { justify-content: space-between; }
 .texted .grid.timing { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
 .texted .grid.look { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+.sizefield { display: flex; flex-direction: column; gap: 4px; }
+#textSizeNow { color: var(--muted); font-size: 12px; }
+.fitwarn { color: var(--warn); font-weight: 600; }
 .texted input:disabled, .texted select:disabled { opacity: 0.5; cursor: not-allowed; }
 .texted input[type="text"] { width: 84px; }
 .texted input[type="number"] { width: 70px; }
@@ -528,7 +532,10 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             </div>
             <h4 class="edhead">Look</h4>
             <div class="grid look">
-              <label>Largest size <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output></span></label>
+              <div class="sizefield">
+                <label><span id="textSizeLabel">Largest size</span> <span class="btnrow"><input type="range" id="textSize" min="24" max="180" step="2"><output id="textSizeOut" class="num"></output></span></label>
+                <span class="btnrow"><label><input type="checkbox" id="textFixed"> Fixed size</label> <span id="textSizeNow"></span></span>
+              </div>
               <label>Font <select id="textFont"><option value="sans">Clean</option><option value="bold">Clean, bold</option><option value="serif">Classic</option><option value="italic">Classic italic</option></select></label>
               <label>Line up <select id="textAlign"><option value="center">Centered</option><option value="left">Left</option><option value="right">Right</option></select></label>
               <label>Up and down <select id="textValign"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label>
@@ -536,7 +543,8 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <label>Line spacing <span class="btnrow"><input type="range" id="textLh" min="0.9" max="2" step="0.05"><output id="textLhOut" class="num"></output></span></label>
               <label><span><input type="checkbox" id="textBox"> Dark box behind it</span></label>
             </div>
-            <p class="note">Drag the box’s edges in the preview to set where lines wrap. Text shrinks to fit the box.</p>
+            <p class="note fitwarn" id="textFitWarn" hidden></p>
+            <p class="note">Drag the box’s edges in the preview to set where lines wrap. Text shrinks to fit the box unless Fixed size is ticked.</p>
             <h4 class="edhead">Place on screen</h4>
             <div class="btnrow">
               <button class="btn small" data-place="0.12">Top</button>
@@ -1717,13 +1725,14 @@ var TextLayout = (function () {
     }
     return { lines: lines, textH: lines.length * px * lh, refPx: refPx, refH: refH, refLines: refLines, maxW: maxW };
   }
+  function fits(spec, px, measure) {
+    var f = spec.frame, m = measureBlock(spec.paragraphs, spec.ref, f.w, px, spec.lh, measure);
+    return m.textH + m.refH <= f.h && m.maxW <= f.w;
+  }
   function fitSize(spec, measure) {
-    var px = Math.round(spec.size), f = spec.frame;
-    var m = measureBlock(spec.paragraphs, spec.ref, f.w, px, spec.lh, measure);
-    while ((m.textH + m.refH > f.h || m.maxW > f.w) && px > spec.minSize) {
-      px = Math.max(spec.minSize, Math.min(px - 1, Math.round(px * 0.94)));
-      m = measureBlock(spec.paragraphs, spec.ref, f.w, px, spec.lh, measure);
-    }
+    var px = Math.round(spec.size);
+    if (spec.fixed) return px;
+    while (!fits(spec, px, measure) && px > spec.minSize) px = Math.max(spec.minSize, Math.min(px - 1, Math.round(px * 0.94)));
     return px;
   }
   function place(spec, px, measure) {
@@ -1745,7 +1754,7 @@ var TextLayout = (function () {
     return { px: px, numPx: Math.round(px * NUM_SCALE), refPx: m.refPx, lh: lh, lines: lines, ref: ref, textH: m.textH, refH: m.refH,
       content: { x: startX(m.maxW), y: top, w: m.maxW, h: blockH } };
   }
-  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fitSize: fitSize, place: place };
+  return { MIN_W: MIN_W, MIN_H: MIN_H, MIN_SIZE: MIN_SIZE, NUM_SCALE: NUM_SCALE, legacyFrame: legacyFrame, upgradeText: upgradeText, resizeFrame: resizeFrame, handleAt: handleAt, paragraphsOf: paragraphsOf, wrapParagraph: wrapParagraph, fits: fits, fitSize: fitSize, place: place };
 })();
 
 
@@ -3114,30 +3123,46 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (tx.font === 'italic') return 'italic ' + px + 'px ' + DISPLAY;
     return (tx.font === 'bold' ? '700 ' : '500 ') + px + 'px ' + SANS;
   }
-  // A message placed by hand, laid out inside its box.
-  function paintText(g, W, H, tx, alpha, boxes, avoid, selected, t) {
+  function layoutText(g, W, H, tx, t) {
     var s = H / 1080, f0 = tx.frame || TextLayout.legacyFrame(tx.x, tx.y, tx.wrap);
     var frame = { x: f0.x * W, y: f0.y * H, w: f0.w * W, h: f0.h * H };
     function measure(text, px) { g.font = textFont(tx, px); return g.measureText(text).width; }
     var base = { ref: typeof tx.ref === 'string' && tx.ref.trim() ? tx.ref : null, frame: frame, size: Math.max(8, Math.round((tx.size || 64) * s)), minSize: Math.round(TextLayout.MIN_SIZE * s),
-      lh: tx.lh || 1.25, align: tx.align || 'center', valign: tx.valign || 'top', refPos: (tx.passage && tx.passage.refPos) || 'bottom' };
+      lh: tx.lh || 1.25, align: tx.align || 'center', valign: tx.valign || 'top', refPos: (tx.passage && tx.passage.refPos) || 'bottom', fixed: !!tx.fixedSize };
     function spec(paragraphs, areaH) { return Object.assign({}, base, { paragraphs: paragraphs, areaH: areaH }); }
-    var paras = TextLayout.paragraphsOf(tx), mode = tx.passage ? tx.passage.mode : null, L, draws, content;
+    var paras = TextLayout.paragraphsOf(tx), mode = tx.passage ? tx.passage.mode : null, L, draws, content, fitsAll;
     if (mode === 'each' && paras.length > 1) {
       var va = TextTiming.verseAlphas(passageSchedule(tx), t - txSpan(tx).start);
       var px = Math.min.apply(null, paras.map(function (p) { return TextLayout.fitSize(spec([p]), measure); }));
       var areaH = Math.max.apply(null, paras.map(function (p) { return TextLayout.place(spec([p]), px, measure).textH; }));
       var outs = paras.map(function (p) { return TextLayout.place(spec([p], areaH), px, measure); });
       var maxW = Math.max.apply(null, outs.map(function (o) { return o.content.w; }));
+      fitsAll = paras.every(function (p) { return TextLayout.fits(spec([p]), px, measure); });
       L = outs[0]; draws = [];
       outs.forEach(function (o, i) { if (va[i] > 0) o.lines.forEach(function (ln) { draws.push({ ln: ln, a: va[i] }); }); });
       content = { x: base.align === 'left' ? frame.x : base.align === 'right' ? frame.x + frame.w - maxW : frame.x + (frame.w - maxW) / 2, y: L.content.y, w: maxW, h: L.content.h };
     } else {
-      L = TextLayout.place(spec(paras), TextLayout.fitSize(spec(paras), measure), measure);
+      var fitPx = TextLayout.fitSize(spec(paras), measure);
+      L = TextLayout.place(spec(paras), fitPx, measure);
+      fitsAll = TextLayout.fits(spec(paras), fitPx, measure);
       var build = mode === 'build' ? TextTiming.verseAlphas(passageSchedule(tx), t - txSpan(tx).start) : null;
       draws = L.lines.map(function (ln) { return { ln: ln, a: build ? build[ln.para] : 1 }; });
       content = L.content;
     }
+    return { L: L, draws: draws, content: content, frame: frame, px: L.px, fits: fitsAll };
+  }
+  var fitCtx = null;
+  function fitContext() { if (!fitCtx) fitCtx = document.createElement('canvas').getContext('2d'); return fitCtx; }
+  // The size a text item is drawn at in the 1080p video, and whether it stays inside its box.
+  function textFit(tx) {
+    var g = fitContext();
+    if (!g) return { px: null, fits: null };
+    var lay = layoutText(g, 1920, 1080, tx, txSpan(tx).start);
+    return { px: lay.px, fits: lay.fits };
+  }
+  // A message placed by hand, laid out inside its box.
+  function paintText(g, W, H, tx, alpha, boxes, avoid, selected, t) {
+    var lay = layoutText(g, W, H, tx, t), L = lay.L, draws = lay.draws, content = lay.content, frame = lay.frame, s = H / 1080;
     var pad = tx.box ? L.px * 0.5 : L.px * 0.15, lift = 0;
     if (avoid && tx.avoid) {
       var top = content.y - pad, bottom = content.y + content.h + pad, m = 24 * s;
@@ -3496,6 +3521,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function selText() { return ui.sel && ui.sel.lane === 'texts' ? findItem('texts', ui.sel.id) : null; }
   var textEdEl = $('textEd');
   var CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>';
+  var FIT_FLAG = '<span class="tag warn fitflag" hidden>Doesn’t fit</span>';
   function textRowLabel(tx) { return (tx.hidden ? '<span class="tag">Hidden</span>' : '') + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(plainText(tx)); }
   function groupRowHtml(g) {
     var ids = TextGroup.memberIds(mix.texts, g.id), open = !TextPick.has(ui.groupsClosed, g.id), gs = groupSpan(ids);
@@ -3526,7 +3552,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var label = (plainText(tx).split('\n')[0] || tx.ref || 'Text').slice(0, 60);
       h += '<li class="textrow' + (picked ? ' picked' : '') + (checked ? ' checked' : '') + (open ? ' open' : '') + (tx.hidden ? ' off' : '') + (grouped ? ' ingroup' : '') + '" data-text="' + tx.id + '">' +
         '<input type="checkbox" data-act="check" aria-label="Select: ' + esc(label) + '"' + (checked ? ' checked' : '') + '>' +
-        '<span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + textRowLabel(tx) + '</span>' +
+        '<span class="t">' + (tx.whole ? 'Whole video' : fmt1(sp.start) + '–' + fmt1(sp.start + sp.dur)) + '</span><span class="txt">' + FIT_FLAG + textRowLabel(tx) + '</span>' +
         '<button class="btn small quiet eye" data-act="hide" aria-pressed="' + !!tx.hidden + '" aria-label="' + (tx.hidden ? 'Show: ' : 'Hide: ') + esc(label) + '">' + (tx.hidden ? ICON.eyeOff : ICON.eye) + '</button>' +
         '<button class="btn small quiet exp" data-act="expand" aria-expanded="' + open + '" aria-label="' + (open ? 'Show one line' : 'Show all of it') + '">' + CHEVRON + '</button></li>';
       if (picked) h += '<li class="edslot" data-slot="1"></li>';
@@ -3542,6 +3568,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     renderTextBar();
     renderTextEditor();
     renderQueue();
+    showTextFit();
   }
   function placeTextEditor(html) {
     var list = $('texts'), home = list.parentNode;
@@ -3581,6 +3608,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (collapsed.screen || collapsed.texts) { collapsed.screen = false; collapsed.texts = false; lsSet('hp.collapsed', collapsed); renderSections(); }
     textEdEl.scrollIntoView({ block: 'nearest' });
   }
+  function showTextFit(onlyId) {
+    var rows = $('texts').querySelectorAll(onlyId ? '[data-text="' + onlyId + '"]' : '[data-text]');
+    for (var i = 0; i < rows.length; i++) {
+      var rowTx = findItem('texts', rows[i].getAttribute('data-text')), flag = rows[i].querySelector('.fitflag');
+      if (rowTx && flag) flag.hidden = textFit(rowTx).fits !== false;
+    }
+    var tx = selText();
+    if (!tx || (onlyId && tx.id !== onlyId)) return;
+    var fit = textFit(tx), warn = $('textFitWarn');
+    $('textSizeNow').textContent = fit.px == null ? '' : 'Showing at ' + fit.px + ' px';
+    warn.hidden = fit.fits !== false;
+    if (fit.fits === false) warn.textContent = tx.fixedSize
+      ? 'Doesn’t fit: the text runs past its box. Make the box bigger, the text shorter, or the size smaller.'
+      : 'Doesn’t fit, even at the smallest size (' + TextLayout.MIN_SIZE + ' px): the text runs past its box. Make the box bigger or the text shorter.';
+  }
   var edId = null;
   function renderTextEditor() {
     var tx = selText(), ed = textEdEl;
@@ -3598,6 +3640,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textRefRow').hidden = tx.ref == null;
     set('textRef', tx.ref || '');
     set('textSize', tx.size); $('textSizeOut').textContent = Math.round(tx.size) + ' px';
+    $('textFixed').checked = !!tx.fixedSize; $('textSizeLabel').textContent = tx.fixedSize ? 'Size' : 'Largest size';
     set('textFont', tx.font); set('textAlign', tx.align); set('textValign', tx.valign || 'top'); set('textColor', tx.color || '#FFFFFF');
     $('textBox').checked = !!tx.box;
     var sp = txSpan(tx);
@@ -3714,6 +3757,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!$('textRefRow').hidden) { var ref = $('textRef').value.trim(); if (ref) tx.ref = ref; else delete tx.ref; }
     tx.readTime = $('textRead').checked;
     tx.size = parseFloat($('textSize').value) || 72; $('textSizeOut').textContent = Math.round(tx.size) + ' px';
+    if ($('textFixed').checked) tx.fixedSize = true; else delete tx.fixedSize;
+    $('textSizeLabel').textContent = tx.fixedSize ? 'Size' : 'Largest size';
     tx.font = $('textFont').value; tx.align = $('textAlign').value; tx.valign = $('textValign').value; tx.color = $('textColor').value; tx.box = $('textBox').checked;
     tx.whole = $('textWhole').checked;
     tx.afterPrev = $('textAfterPrev').checked; tx.untilNext = $('textUntilNext').checked;
@@ -3738,7 +3783,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     persistMix();
     resolveTexts();
     renderTimeline(); renderSel(); drawScreen(); syncTextDisabled(tx);
-    var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = textRowLabel(tx);
+    var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = FIT_FLAG + textRowLabel(tx);
+    showTextFit(tx.id);
   }
   function persistMix() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250); }
 
@@ -4629,6 +4675,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       else { mix.opts.capPos = 'custom'; mix.opts.capX = clamp(sd.x0 + dx, 0, 1); mix.opts.capY = clamp(sd.y0 + dy, 0, 1); }
       drawScreen(ui.holdT);
+      if (sd.kind === 'frame') showTextFit(sd.tx.id);
     });
     function endScr() {
       if (!sd) return;
@@ -4747,7 +4794,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
     // redraw the canvases when the theme or the width changes
     var redraw = null;
-    function later() { clearTimeout(redraw); redraw = setTimeout(function () { renderTimeline(); drawWaves(); drawTrim(); drawScreen(); }, 120); }
+    function later() { clearTimeout(redraw); redraw = setTimeout(function () { renderTimeline(); drawWaves(); drawTrim(); drawScreen(); showTextFit(); }, 120); }
     window.addEventListener('resize', later);
     try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', later); } catch (e) { /* older browsers */ }
     try { new MutationObserver(later).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) { /* fine */ }
