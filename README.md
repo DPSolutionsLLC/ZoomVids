@@ -103,6 +103,8 @@ The files in `public/scriptures/` hold the verse text. They are built from the p
 
 Run it again only to refresh the text. The app loads each volume the first time it's needed, so it needs an internet connection to show scriptures.
 
+The verse text is checked against the Church's published list of changes in the 2013 edition (`tests/scripture-2013.test.mjs`, with the list in `tests/scripture-2013-changes.json`). Official Declarations 1 and 2 aren't included, because they're documents rather than numbered verses.
+
 ## Tests
 
 From this folder, with Node 22 or newer:
