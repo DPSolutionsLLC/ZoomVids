@@ -25,6 +25,8 @@ Firebase prints the site link: `https://zoommedia-e2d78.web.app`. Bookmark it on
 
 When you come back, Chrome may ask you to allow the folder again: press **Reconnect** in the Library. Choosing "Allow on every visit" stops the question.
 
+**Saved playlists.** Type a name in the box at the top and the playlist is kept in the **Open** list. From then on it saves itself after every change; the note beside the name says **Saved**. An unnamed playlist is still kept in this browser, but it isn't in the list. Changing the name renames the saved playlist, and asks first if that name is already taken. **Save a copy** makes "<name> copy" and opens it, so the original stays as it was. **Delete saved** asks first, then leaves what's open without a name. Undo doesn't change the name. Saved playlists travel in `hymn-playlist-data.json` with everything else.
+
 The folder can also hold videos (.mp4, .mov, .m4v, .webm) and pictures (.jpg, .png, .webp); see **Pictures and video clips** below.
 
 New downloads: drag them onto the page (they're copied into the folder you have open in the Library), or put them in the folder yourself and press **Rescan**. When you switch back to the app, it checks your music folder again on its own, so files you added, moved or removed show up without pressing anything. **Rescan** still does the same by hand.

@@ -68,6 +68,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .plbar input[type="text"] { width: 200px; }
 .undonote { color: var(--muted); font-size: 13px; }
 .undonote:empty { display: none; }
+.savenote { color: var(--muted); font-size: 13px; min-width: 9ch; }
+.savenote.warn { color: var(--warn); font-weight: 600; }
 
 /* the desk */
 .desk { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -404,10 +406,11 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <button class="btn quiet" id="redoBtn" title="Redo (Ctrl+Y)" disabled>Redo</button>
       <span class="undonote" id="undoNote" role="status" aria-live="polite"></span>
       <label for="plName" class="visually-hidden">Playlist name</label>
-      <input type="text" id="plName" placeholder="Name this playlist">
-      <button class="btn" id="plSave">Save</button>
+      <input type="text" id="plName" placeholder="Name this playlist to keep it">
+      <span class="savenote" id="plSaved" role="status" aria-live="polite"></span>
       <label for="plOpen" class="visually-hidden">Open a saved playlist</label>
       <select id="plOpen"></select>
+      <button class="btn quiet" id="plCopy">Save a copy</button>
       <button class="btn quiet" id="plDelete" hidden>Delete saved</button>
       <button class="btn quiet" id="plNew">New</button>
     </div>
@@ -1934,6 +1937,44 @@ var TextGroup = (function () {
     return out;
   }
   return { find: find, memberIds: memberIds, liveGroups: liveGroups, nextName: nextName, copyName: copyName, cleanName: cleanName, neighbours: neighbours, keepClosed: keepClosed, listRows: listRows };
+})();
+
+/* Saved playlists: names, renames and the save note. Pure functions; inputs are never changed. */
+var PlaylistSave = (function () {
+  function cleanName(name) { return String(name == null ? '' : name).replace(/\s+/g, ' ').trim(); }
+  function has(saved, name) { return Object.prototype.hasOwnProperty.call(saved, name); }
+  function copyName(name, saved) {
+    var out = name + ' copy';
+    for (var k = 2; has(saved, out); k++) out = name + ' copy ' + k;
+    return out;
+  }
+  function put(saved, name, data) {
+    if (!name) throw new Error('A saved playlist needs a name');
+    var out = Object.assign({}, saved);
+    out[name] = data;
+    return out;
+  }
+  function remove(saved, name) {
+    var out = Object.assign({}, saved);
+    delete out[name];
+    return out;
+  }
+  function rename(saved, from, to, replace) {
+    var target = cleanName(to);
+    if (!target) return { result: 'empty', saved: saved };
+    if (target === from) return { result: 'same', saved: saved };
+    if (has(saved, target) && !replace) return { result: 'taken', saved: saved };
+    var out = Object.assign({}, saved);
+    if (has(saved, from)) { out[target] = saved[from]; delete out[from]; }
+    return { result: 'renamed', saved: out };
+  }
+  function status(state) {
+    if (!state.named) return { text: 'Name it to keep it', warn: false };
+    if (state.failed) return { text: 'Couldn’t save', warn: true };
+    if (state.pending) return { text: 'Saving…', warn: false };
+    return { text: 'Saved', warn: false };
+  }
+  return { cleanName: cleanName, copyName: copyName, put: put, rename: rename, remove: remove, status: status };
 })();
 
 /* The order of text rows on the timeline and in the text list, kept apart from the drawing order. Pure functions; inputs are never changed. */
@@ -3947,15 +3988,41 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
 
   /* ---------- changing the mix ---------- */
-  var saveTimer = null;
+  var saveTimer = null, saveNoteTimer = null;
+  var saveState = { pending: false, failed: false };
+  // A named playlist saves itself: every write of the working copy also updates hp.saved[name].
+  // hp.saved is read fresh each time, because font removal and reconnect rewrite it too.
+  function storeNow() {
+    clearTimeout(saveTimer); saveTimer = null;
+    var ok = lsSet('hp.work', mix);
+    if (mix.name) {
+      var saved = PlaylistSave.put(lsGet('hp.saved') || {}, mix.name, clone(mix));
+      ok = lsSet('hp.saved', saved) && ok;
+    }
+    saveState.pending = false; saveState.failed = !ok;
+    renderSaveNote();
+  }
+  function saveSoon() { clearTimeout(saveTimer); saveState.pending = true; renderSaveNote(); saveTimer = setTimeout(storeNow, 250); }
+  function flushSave() { if (saveTimer) storeNow(); }
+  function renderSaveNote() {
+    clearTimeout(saveNoteTimer); saveNoteTimer = null;
+    var s = PlaylistSave.status({ named: !!mix.name, pending: saveState.pending, failed: saveState.failed }), el = $('plSaved');
+    el.textContent = s.text; el.classList.toggle('warn', s.warn);
+  }
+  function flashSaveNote(text, warn) {
+    var el = $('plSaved');
+    el.textContent = text; el.classList.toggle('warn', !!warn);
+    clearTimeout(saveNoteTimer);
+    saveNoteTimer = setTimeout(renderSaveNote, 3000);
+  }
 
   // Undo history: each settled change pushes the previous copy of the mix.
   // File actions (copying files in, Rescan) set historyBarrier so they stay final.
   var UNDO_LIMIT = 50, UNDO_QUIET_MS = 1000;
   var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
-  // Collapsing a group is a view choice, so it is left out of the Undo history.
-  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' ? undefined : v; }); }
+  // Collapsing a group is a view choice and the name is a file choice, so neither is an Undo step.
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && k === 'name') ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
     undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
@@ -3989,6 +4056,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var audioChanged = JSON.stringify([before.items, before.spoken, before.opts, before.target]) !== JSON.stringify([after.items, after.spoken, after.opts, after.target]);
     if (audioChanged && Player.tag) Player.stop();
     after.groups = TextGroup.keepClosed(after.groups || [], mix.groups);
+    after.name = mix.name;
     mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
@@ -4055,8 +4123,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ui.checked = TextPick.prune(ui.checked, mix.texts); ui.expanded = TextPick.prune(ui.expanded, mix.texts);
     if (ui.cursor >= plan.total) ui.cursor = 0;
     closeIdleClipPlayers(ui.screenT || 0);
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250);
+    saveSoon();
     render();
   }
   function live() { relayout(); renderHead(); renderTimeline(); renderSel(); drawScreen(); }
@@ -4350,6 +4417,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       names.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
     $('plOpen').disabled = !names.length;
     $('plDelete').hidden = !(mix.name && saved[mix.name]);
+    $('plCopy').disabled = !mix.name;
+    $('plCopy').title = mix.name ? '' : 'Name this playlist first';
+    if (!saveNoteTimer) renderSaveNote();
   }
 
   var TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
@@ -6275,8 +6345,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function setGroupClosed(gid, closed) {
     var g = TextGroup.find(mix.groups, gid); if (!g) return;
     if (closed) g.closed = true; else delete g.closed;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250);
+    saveSoon();
     renderTimeline(); renderTexts();
   }
   function duplicateGroup(gid) {
@@ -6446,7 +6515,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = FIT_FLAG + textRowLabel(tx);
     showTextFit(tx.id);
   }
-  function persistMix() { clearTimeout(saveTimer); saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250); checkpointSoon(); }
+  function persistMix() { saveSoon(); checkpointSoon(); }
 
   /* ---------- fonts for text on screen ---------- */
   // Built-in fonts load with the page; fonts added from Google Fonts are kept
@@ -8042,18 +8111,44 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('xfAll').onclick = function () { mix.items.forEach(function (it) { delete it.xf; }); if (Player.tag) Player.stop(); changed(); };
 
     // saved playlists
-    $('plName').addEventListener('change', function () { mix.name = this.value.trim(); changed(); });
-    $('plSave').onclick = function () {
-      var name = $('plName').value.trim() || 'Sacrament ' + ($('usedDate').value || nextSunday());
-      mix.name = name;
-      var saved = lsGet('hp.saved') || {}; saved[name] = clone(mix);
-      var ok = lsSet('hp.saved', saved);
-      changed();
-      var b = this; b.textContent = ok ? 'Saved' : 'Could not save';
-      setTimeout(function () { b.textContent = 'Save'; }, 1600);
+    function replaceQuestion(name) { return 'A saved playlist named “' + name + '” already exists. Replace it with this one?'; }
+    function hasContent(m) { return !!(m.items.length || m.spoken.length || m.texts.length || m.pictures.length); }
+    $('plName').addEventListener('change', function () {
+      var box = this, from = mix.name || '', to = PlaylistSave.cleanName(box.value);
+      if (!from) {
+        if (!to) { box.value = ''; return; }
+        var savedNow = lsGet('hp.saved') || {};
+        if (Object.prototype.hasOwnProperty.call(savedNow, to) && !confirm(replaceQuestion(to))) { box.value = ''; return; }
+        mix.name = to; box.value = to;
+        storeNow(); renderHead();
+        return;
+      }
+      if (!to) { box.value = from; flashSaveNote('To stop saving it, use Delete saved'); return; }
+      if (to === from) { box.value = from; return; }
+      flushSave();
+      var saved = lsGet('hp.saved') || {}, r = PlaylistSave.rename(saved, from, to, false);
+      if (r.result === 'taken') {
+        if (!confirm(replaceQuestion(to))) { box.value = from; return; }
+        r = PlaylistSave.rename(saved, from, to, true);
+      }
+      if (!lsSet('hp.saved', r.saved)) { box.value = from; saveState.failed = true; renderSaveNote(); return; }
+      mix.name = to; box.value = to;
+      storeNow(); renderHead();
+    });
+    $('plCopy').onclick = function () {
+      if (!mix.name) return;
+      flushSave();
+      var name = PlaylistSave.copyName(mix.name, lsGet('hp.saved') || {});
+      mix.name = name; $('plName').value = name;
+      storeNow(); resetHistory(); renderHead();
+      if (!saveState.failed) flashSaveNote('Saved as “' + name + '”');
     };
     $('plOpen').onchange = function () {
-      var saved = lsGet('hp.saved') || {}, m = saved[this.value];
+      var pick = this.value;
+      if (!pick) return;
+      if (!mix.name && hasContent(mix) && !confirm('This playlist has no name, so it isn’t kept. Open “' + pick + '” anyway?')) { this.value = ''; return; }
+      flushSave();
+      var saved = lsGet('hp.saved') || {}, m = saved[pick];
       if (!m) return;
       Player.stop();
       mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.renamingGroup = null;
@@ -8062,18 +8157,23 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       resetHistory();
     };
     $('plDelete').onclick = function () {
-      var saved = lsGet('hp.saved') || {}; delete saved[mix.name]; lsSet('hp.saved', saved);
-      changed();
+      var name = mix.name;
+      if (!name) return;
+      if (!confirm('Delete the saved playlist “' + name + '”? What’s open now stays open, without a name.')) return;
+      if (!lsSet('hp.saved', PlaylistSave.remove(lsGet('hp.saved') || {}, name))) { flashSaveNote('Couldn’t delete it', true); return; }
+      mix.name = '';
+      storeNow(); renderHead();
     };
     var newArmed = null;
     $('plNew').onclick = function () {
       var b = this;
       if (!newArmed && (mix.items.length || mix.spoken.length)) {
-        b.textContent = 'Clear this playlist?';
+        b.textContent = mix.name ? 'Start a new playlist?' : 'Clear this playlist?';
         newArmed = setTimeout(function () { newArmed = null; b.textContent = 'New'; }, 3500);
         return;
       }
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
+      flushSave();
       Player.stop();
       var o = mix.opts, t = mix.target;
       mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
@@ -8518,6 +8618,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   // Load settings from the folder's file into this browser and refresh.
   function importData(obj) {
+    clearTimeout(saveTimer); saveTimer = null; saveState.pending = false;
     bootSavedAt = obj.savedAt;
     Object.keys(obj.data).forEach(function (k) { try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
     try { localStorage.setItem('hp.savedAt', JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
@@ -8648,8 +8749,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ui.libMsg = { text: 'To play your music, allow this page to open “' + h.name + '” again.', relink: true };
     renderLibrary();
   }
-  window.addEventListener('pagehide', function () { if (Link.timer) writeData(); });
-  document.addEventListener('visibilitychange', function () { if (document.hidden && Link.timer) writeData(); });
+  window.addEventListener('pagehide', function () { flushSave(); if (Link.timer) writeData(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) { flushSave(); if (Link.timer) writeData(); } });
   // Coming back to the app (from File Explorer, another tab or window)
   // rereads the linked folder so added, moved and removed files show up.
   var lastFolderCheck = 0;
