@@ -87,3 +87,15 @@ test('listRows with no groups sorts by start and keeps array order for equal sta
   const texts = [{ id: 'a', start: 8 }, { id: 'b', start: 2 }, { id: 'c', start: 8 }];
   assert.deepEqual(TextGroup.listRows(texts, [], (tx) => tx.start).map((r) => r.id), ['b', 'a', 'c']);
 });
+
+test('nextName with no base word still counts "Group N"', () => {
+  assert.equal(TextGroup.nextName([{ id: 'g1', name: 'Group 1' }]), 'Group 2');
+});
+
+test('nextName with a base word skips names already taken', () => {
+  assert.equal(TextGroup.nextName([{ id: 'g1', name: 'Scriptures 1' }], 'Scriptures'), 'Scriptures 2');
+});
+
+test('nextName counts each base word on its own', () => {
+  assert.equal(TextGroup.nextName([{ id: 'g1', name: 'Scriptures 1' }], 'Text'), 'Text 1');
+});

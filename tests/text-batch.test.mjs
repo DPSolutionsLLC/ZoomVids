@@ -52,3 +52,8 @@ test('hideAction offers show only when every listed text is hidden', () => {
   assert.equal(TextBatch.hideAction(texts, []), 'hide');
   assert.equal(TextBatch.hideAction(texts, ['zz9']), 'hide');
 });
+
+test('kindsText counts each kind in a fixed order', () => {
+  assert.equal(TextBatch.kindsText(['locked', 'tied', 'locked']), '2 locked, 1 tied to a recording');
+  assert.equal(TextBatch.kindsText([]), '');
+});

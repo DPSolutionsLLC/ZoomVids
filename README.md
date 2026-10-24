@@ -61,6 +61,14 @@ To remove several at once, tick their rows (or **Select all**) and press **Remov
 
 **Groups.** Tick items and press **Group selected**, then type a name and press Enter. A group is a heading in the list that you can open and close, with an eye to hide or show the whole group. On the timeline, drag the group's bar to move all of it, or click the bar to tick its items. **Duplicate** makes a copy at the same times (for example "take 3" from "take 2") and hides the original, so you can try a different set and switch between them. **Ungroup** keeps the items; **Remove group and its items** deletes them (it asks first). Inside a group, "Start right after the previous text" and "Keep showing until the next text starts" look only at texts in the same group. To take one item out, open it and press **Take it out of the group**.
 
+**Stretch or squeeze a group.** Drag either end of a group's bar on the timeline to make the group start earlier or later, or end earlier or later. The texts rearrange to fill the new length, following the group's **Fill** choice in its heading in the list:
+
+- **Evenly spaced**: the first starts at the start, the last ends at the end, with equal gaps of at least 2 seconds.
+- **One after another, finish early**: back to back, each crossfading into the next. Any time left at the end stays empty.
+- **One after another, stretched to fill**: back to back with crossfades, and each stays on screen longer so they fill the whole length. This turns off "Show for as long as it takes to read" on those texts. Squeezing the group again, or picking another choice, gives them back their own length.
+
+A group can't be squeezed shorter than its texts need, and it can't start before 0:00. Changing **Fill** or pressing **Reset** arranges the texts once. After that you can nudge any text by hand and it stays put. Texts that are locked, show for the whole video, start at 0:00, or are tied to a recording stop the group from being arranged, and a note says which. "Start right after the previous text" and "Keep showing until the next text starts" are turned off inside the group when it's arranged, because the group's choice now decides the timing. Hidden texts keep their place. One **Undo** reverses a whole drag, Fill change or Reset.
+
 ### Scriptures on screen
 
 Under **Your text on screen**, press **Add scriptures or a list**, choose **Scriptures**, and type or paste references such as `John 3:16, Moroni 10:4, D&C 4:2, Alma 32:21-23`. Full book names and the usual abbreviations both work. Each reference becomes one block on the timeline, and you choose how it plays:
@@ -69,7 +77,7 @@ Under **Your text on screen**, press **Add scriptures or a list**, choose **Scri
 - **One verse at a time** shows each verse in turn, crossfading from one to the next.
 - **Build up verse by verse** adds each verse under the ones before, and the earlier ones stay.
 
-You can change this later in the text editor. Each verse starts on its own line with a small raised verse number (a single verse has none). The full reference, for example `Luke 3:10–15`, shows at the bottom or, if you choose **Reference at the top**, above the verses. It's the same size as the verses and shrinks with them, and a long reference wraps onto a second line. Selecting a one-verse-at-a-time passage shows its longest verse in the preview, so you size the box for the worst case. A reference with a typo is listed with the reason and left in the box to fix; the others are still added. Playlists made before this keep their separate verse items.
+You can change this later in the text editor. Each verse starts on its own line with a small raised verse number (a single verse has none). The full reference, for example `Luke 3:10–15`, shows at the bottom or, if you choose **Reference at the top**, above the verses. It's the same size as the verses and shrinks with them, and a long reference wraps onto a second line. Selecting a one-verse-at-a-time passage shows its longest verse in the preview, so you size the box for the worst case. A reference with a typo is listed with the reason and left in the box to fix; the others are still added. Tick **Add them as a group** to put them on the timeline as one new group, back to back with crossfades, ready to stretch. Type a name, or leave it empty for "Scriptures 1" (or "Text 1" for your own lines). The box starts unticked each time you open the panel, and **Add to the tap queue** ignores it. Playlists made before this keep their separate verse items.
 
 ### Tap to place
 

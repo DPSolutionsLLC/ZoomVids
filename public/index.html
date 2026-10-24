@@ -270,6 +270,12 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip .hi, .tl .grp .hi { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }
 .tl .grp { position: absolute; height: 18px; line-height: 18px; border-radius: 3px; padding: 0 8px; font: 700 11px/18px var(--ui); letter-spacing: 0.04em; color: var(--msg); background: color-mix(in srgb, var(--msg) 16%, transparent); border: 1px solid color-mix(in srgb, var(--msg) 45%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; touch-action: none; z-index: 2; min-width: 6px; box-sizing: border-box; }
 .tl .grp.hid { opacity: 0.6; border-style: dashed; }
+.tl .grp .ggrip { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; background: color-mix(in srgb, var(--msg) 45%, transparent); }
+.tl .grp .ggrip.s { left: 0; }
+.tl .grp .ggrip.e { right: 0; }
+.grouprow .gfill { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; font-size: 13px; color: var(--muted); }
+.grouprow .gfill select { padding: 2px 6px; color: var(--ink); }
+#manyGroupName { width: min(100%, 220px); }
 .tl .grpbox { position: absolute; border: 1px solid color-mix(in srgb, var(--msg) 35%, transparent); border-radius: 4px; pointer-events: none; z-index: 1; margin: 0 -3px; padding: 0 3px; }
 .tl .clip .lk { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; }
 .tl.picking, .tl.picking .clip, .tl.picking .grp { cursor: crosshair; }
@@ -529,6 +535,11 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <label><input type="radio" name="manyMode" value="together" checked> All at once</label>
               <label><input type="radio" name="manyMode" value="each"> One verse at a time</label>
               <label><input type="radio" name="manyMode" value="build"> Build up verse by verse</label>
+            </div>
+            <div class="btnrow" id="manyGroupRow">
+              <label><input type="checkbox" id="manyGroup"> Add them as a group</label>
+              <label for="manyGroupName" class="visually-hidden">Group name</label>
+              <input type="text" id="manyGroupName" maxlength="60" placeholder="Group name (optional)" disabled>
             </div>
             <p class="msg" id="manyMsg" role="status"></p>
             <div class="btnrow">
@@ -1807,21 +1818,25 @@ var TextBatch = (function () {
     ids.forEach(function (id) { starts[id] = Math.max(0, round1(bases[id] + d)); });
     return { delta: d, starts: starts };
   }
-  function stayedNote(moved, stayed) {
-    if (!stayed.length) return '';
+  function kindsText(kinds) {
     var parts = [];
     KINDS.forEach(function (kind) {
-      var n = stayed.filter(function (k) { return k === kind; }).length;
+      var n = kinds.filter(function (k) { return k === kind; }).length;
       if (n) parts.push(n + ' ' + LABELS[kind]);
     });
-    if (moved === 0) return 'Nothing moved: ' + parts.join(', ') + '.';
-    return 'Moved ' + moved + '. ' + stayed.length + (stayed.length === 1 ? ' stayed where it was: ' : ' stayed where they were: ') + parts.join(', ') + '.';
+    return parts.join(', ');
+  }
+  function stayedNote(moved, stayed) {
+    if (!stayed.length) return '';
+    var parts = kindsText(stayed);
+    if (moved === 0) return 'Nothing moved: ' + parts + '.';
+    return 'Moved ' + moved + '. ' + stayed.length + (stayed.length === 1 ? ' stayed where it was: ' : ' stayed where they were: ') + parts + '.';
   }
   function hideAction(texts, ids) {
     var list = texts.filter(function (tx) { return ids.indexOf(tx.id) >= 0; });
     return list.length && list.every(function (tx) { return tx.hidden; }) ? 'show' : 'hide';
   }
-  return { shiftStarts: shiftStarts, stayedNote: stayedNote, hideAction: hideAction };
+  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction };
 })();
 
 /* Named groups of texts. Pure functions; inputs are never changed. */
@@ -1830,7 +1845,7 @@ var TextGroup = (function () {
   function memberIds(texts, groupId) { return texts.filter(function (tx) { return tx.group === groupId; }).map(function (tx) { return tx.id; }); }
   function liveGroups(groups, texts) { return groups.filter(function (g) { return memberIds(texts, g.id).length > 0; }); }
   function taken(groups, name) { return groups.some(function (g) { return g.name === name; }); }
-  function nextName(groups) { var n = 1; while (taken(groups, 'Group ' + n)) n++; return 'Group ' + n; }
+  function nextName(groups, base) { var b = base || 'Group', n = 1; while (taken(groups, b + ' ' + n)) n++; return b + ' ' + n; }
   function copyName(name, groups) {
     var m = /^(.*?)(\d+)$/.exec(name), out;
     if (m) {
@@ -2695,6 +2710,69 @@ var ScriptureFill = (function () {
   return { MIN_GAP: MIN_GAP, MIN_WINDOW: MIN_WINDOW, gapAt: gapAt, fromDrag: fromDrag, spansInside: spansInside, used: used, fits: fits, left: left, canAdd: canAdd, spaceEvenly: spaceEvenly, randomFill: randomFill };
 })();
 
+/* How a group's texts fill its window. Pure functions; inputs are never changed. */
+var GroupFill = (function () {
+  var MODES = ['even', 'packed', 'stretch'];
+  var LABELS = { even: 'Evenly spaced', packed: 'One after another, finish early', stretch: 'One after another, stretched to fill' };
+  function round1(x) { return Math.round(x * 10) / 10; }
+  function floor1(x) { return Math.floor(x * 10 + 1e-6) / 10; }
+  function ceil1(x) { return Math.ceil(x * 10 - 1e-6) / 10; }
+  function modeOf(group) { return group && MODES.indexOf(group.fill) >= 0 ? group.fill : 'even'; }
+  function overlap(items, i) { return i ? Math.max(0, Math.min(items[i].fadeIn || 0, items[i - 1].len - 0.5)) : 0; }
+  function packedLength(items) {
+    var total = 0;
+    items.forEach(function (it, i) { total += it.len - overlap(items, i); });
+    return total;
+  }
+  function chain(items, lens, start) {
+    var out = [], t = start;
+    items.forEach(function (it, i) {
+      if (i) t += lens[i - 1] - overlap(items, i);
+      out.push(round1(t));
+    });
+    return out;
+  }
+  function packed(items, start) {
+    return chain(items, items.map(function (it) { return it.len; }), start).map(function (s) { return { start: s }; });
+  }
+  function stretched(items, win) {
+    var n = items.length;
+    if (!n) return [];
+    var extra = (win.end - win.start) - packedLength(items);
+    if (extra < -1e-6) return null;
+    var lens = items.map(function (it) { return it.len + Math.max(0, extra) / n; });
+    var starts = chain(items, lens, win.start);
+    var out = starts.map(function (s, i) { return { start: s, dur: round1(lens[i]) }; });
+    var last = out[n - 1];
+    if (last.start + last.dur > win.end + 1e-6) last.dur = floor1(win.end - last.start);
+    return out;
+  }
+  function minLength(items, mode, minGap) {
+    if (mode === 'even') return items.reduce(function (s, it) { return s + it.len; }, 0) + minGap * Math.max(0, items.length - 1);
+    return packedLength(items);
+  }
+  function dragWindow(win, edge, t, minLen) {
+    var start = win.start, end = win.end, clamped = false;
+    if (edge === 'start') {
+      var maxStart = Math.max(0, floor1(end - minLen));
+      if (t < 0) { t = 0; clamped = true; }
+      if (t > maxStart) { t = maxStart; clamped = true; }
+      start = Math.min(round1(t), maxStart);
+    } else {
+      var minEnd = ceil1(start + minLen);
+      if (t < minEnd) { t = minEnd; clamped = true; }
+      end = Math.max(round1(t), minEnd);
+    }
+    return { start: start, end: end, clamped: clamped };
+  }
+  function unionSpan(span, win) {
+    if (!win) return span;
+    var s = Math.min(span.start, win.start), e = Math.max(span.start + span.len, win.end);
+    return { start: s, len: e - s };
+  }
+  return { MODES: MODES, LABELS: LABELS, modeOf: modeOf, packedLength: packedLength, packed: packed, stretched: stretched, minLength: minLength, dragWindow: dragWindow, unionSpan: unionSpan };
+})();
+
 /* Floating preview preset and saved widths. Pure functions. */
 var FloatSizes = (function () {
   var PHONE_WIDTH = 440;
@@ -2951,6 +3029,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     m.groups = TextGroup.liveGroups(m.groups || [], m.texts);
     m.texts.forEach(function (tx) { if (tx.group && !TextGroup.find(m.groups, tx.group)) delete tx.group; });
     m.queue.forEach(function (tx) { delete tx.group; });
+    m.texts.forEach(function (tx) { if (!tx.group) delete tx.ownLen; });
+    m.queue.forEach(function (tx) { delete tx.ownLen; });
   }
   function sampleMix() {
     var m = blankMix();
@@ -3850,6 +3930,78 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (start === Infinity) start = 0;
     return { start: start, len: Math.max(0, end - start) };
   }
+  function groupWindow(gid) {
+    var g = TextGroup.find(mix.groups, gid);
+    if (g && g.win) return { start: g.win.start, end: g.win.end };
+    var gs = groupSpan(TextGroup.memberIds(mix.texts, gid));
+    return { start: gs.start, end: gs.start + gs.len };
+  }
+  function groupBarSpan(gid) {
+    var g = TextGroup.find(mix.groups, gid);
+    return GroupFill.unionSpan(groupSpan(TextGroup.memberIds(mix.texts, gid)), g && g.win ? g.win : null);
+  }
+  function readingLength(tx) { return tx.passage ? passageSchedule(tx).total : TextTiming.readSeconds(tx.text, mix.opts.wpm, tx.fadeIn, tx.fadeOut); }
+  function ownLength(tx) {
+    if (tx.ownLen) return tx.ownLen.readTime ? readingLength(tx) : tx.ownLen.dur;
+    return txSpan(tx).dur;
+  }
+  // Everything an arrangement needs, captured before anything changes.
+  function groupPlan(gid, mode) {
+    var g = TextGroup.find(mix.groups, gid);
+    var members = mix.texts.map(function (tx, i) { return { tx: tx, i: i }; }).filter(function (m) { return m.tx.group === gid; });
+    members.sort(function (a, b) { return (txSpan(a.tx).start - txSpan(b.tx).start) || (a.i - b.i); });
+    var plan = { gid: gid, mode: mode || GroupFill.modeOf(g), ids: [], blocked: [], linked: [], items: [] };
+    members.forEach(function (m) {
+      var tx = m.tx, kind = textFixedKind(tx);
+      plan.ids.push(tx.id);
+      if (kind) plan.blocked.push(kind);
+      if (tx.afterPrev || tx.untilNext || tx.toEnd) plan.linked.push(tx.id);
+      plan.items.push({ len: ownLength(tx), fadeIn: tx.fadeIn || 0 });
+    });
+    return plan;
+  }
+  function minGroupLength(plan) { return GroupFill.minLength(plan.items, plan.mode, ScriptureFill.MIN_GAP); }
+  function restoreOwnLen(tx) {
+    if (!tx.ownLen) return;
+    tx.readTime = tx.ownLen.readTime; tx.dur = tx.ownLen.dur;
+    delete tx.ownLen;
+  }
+  function applyGroupPlan(plan, win) {
+    var texts = plan.ids.map(function (id) { return findItem('texts', id); });
+    var out;
+    if (plan.mode === 'even') {
+      out = ScriptureFill.spaceEvenly(plan.items.map(function (it) { return it.len; }), win.start, win.end);
+      if (!out) return false;
+      out = out.map(function (s) { return { start: s }; });
+    } else if (plan.mode === 'packed') {
+      out = GroupFill.packed(plan.items, win.start);
+    } else {
+      out = GroupFill.stretched(plan.items, win);
+      if (!out) return false;
+    }
+    plan.linked.forEach(function (id) {
+      var tx = findItem('texts', id);
+      if (tx) { tx.afterPrev = false; tx.xfIn = false; tx.untilNext = false; tx.xfOut = false; tx.toEnd = false; }
+    });
+    texts.forEach(function (tx, i) {
+      if (!tx) return;
+      tx.start = out[i].start;
+      if (plan.mode === 'stretch') {
+        if (!tx.ownLen) tx.ownLen = { readTime: !!tx.readTime, dur: tx.dur };
+        tx.readTime = false;
+        tx.dur = out[i].dur;
+      } else restoreOwnLen(tx);
+    });
+    return true;
+  }
+  function groupNote(plan, extra) {
+    var parts = [];
+    if (extra) parts.push(extra);
+    var n = plan.linked.length;
+    if (n) parts.push('Turned off the links to the previous and next text on ' + n + (n === 1 ? ' text' : ' texts') + ', so the group setting decides their timing.');
+    return parts.join(' ');
+  }
+  function blockedGroupNote(name, kinds) { return '“' + name + '” can’t be arranged: ' + TextBatch.kindsText(kinds) + '.'; }
   function nudgeChecked(delta) {
     if (Player.tag) Player.stop();
     var b = textBatch(checkedIds());
@@ -3968,10 +4120,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     rows.forEach(function (rw, row) {
       if (rw.kind === 'group') {
-        var g = TextGroup.find(mix.groups, rw.id), ids = TextGroup.memberIds(mix.texts, rw.id), gs = groupSpan(ids);
+        var g = TextGroup.find(mix.groups, rw.id), ids = TextGroup.memberIds(mix.texts, rw.id), gs = groupBarSpan(rw.id);
         var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show';
         h += '<i class="grpbox" style="top:' + (textTop + row * 22 - 2) + 'px;height:' + ((1 + ids.length) * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
-        h += '<div class="grp' + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, click to select it" style="top:' + (textTop + row * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"><span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span></div>';
+        h += '<div class="grp' + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, drag an end to stretch or squeeze it, click to select it" style="top:' + (textTop + row * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"><span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span><i class="ggrip s" data-gedge="start" title="Drag to change when the group starts"></i><i class="ggrip e" data-gedge="end" title="Drag to change when the group ends"></i></div>';
         return;
       }
       var tx = findItem('texts', rw.id);
@@ -4982,14 +5134,24 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function placeMany(items) {
     var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor > 0 ? ui.cursor : 5;
     if (Player.tag) Player.stop();
-    items.forEach(function (tx, i) {
-      tx.start = Math.round(t * 10) / 10;
-      if (i > 0) { tx.afterPrev = true; tx.xfIn = true; }
-      mix.texts.push(tx);
-    });
+    var asGroup = $('manyGroup').checked, g = null;
+    if (asGroup) {
+      var base = manyKind() === 'scripture' ? 'Scriptures' : 'Text';
+      g = { id: 'g' + nid(), name: TextGroup.cleanName($('manyGroupName').value, TextGroup.nextName(mix.groups, base)), fill: 'packed' };
+      mix.groups.push(g);
+      var starts = GroupFill.packed(items.map(function (tx) { return { len: textLen(tx), fadeIn: tx.fadeIn || 0 }; }), Math.round(t * 10) / 10);
+      items.forEach(function (tx, i) { tx.start = starts[i].start; tx.group = g.id; mix.texts.push(tx); });
+      ui.groupsClosed = TextPick.set(ui.groupsClosed, g.id, false);
+    } else {
+      items.forEach(function (tx, i) {
+        tx.start = Math.round(t * 10) / 10;
+        if (i > 0) { tx.afterPrev = true; tx.xfIn = true; }
+        mix.texts.push(tx);
+      });
+    }
     ui.sel = { lane: 'texts', id: items[0].id };
     changed(); revealSel();
-    return 'Added ' + items.length + '.';
+    return g ? 'Added ' + items.length + ' as “' + g.name + '”.' : 'Added ' + items.length + '.';
   }
   function queueMany(items) {
     mix.queue = mix.queue.concat(items);
@@ -5390,7 +5552,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var last = ui.taps[ui.taps.length - 1], p = last ? findItem('texts', last.id) : null;
     if (p && !p.untilNext && !p.toEnd && !p.during && !p.whole) {
       var sp = txSpan(p), nd = TextTiming.cutForTap({ start: sp.start, dur: sp.dur, fadeOut: p.fadeOut }, t);
-      if (nd != null) { prev = { id: p.id, dur: p.dur, readTime: p.readTime }; p.readTime = false; p.dur = nd; }
+      if (nd != null) { prev = { id: p.id, dur: p.dur, readTime: p.readTime }; delete p.ownLen; p.readTime = false; p.dur = nd; }
     }
     mix.texts.push(tx);
     ui.taps.push({ id: tx.id, prev: prev });
@@ -5421,7 +5583,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var FIT_FLAG = '<span class="tag warn fitflag" hidden>Doesn’t fit</span>';
   function textRowLabel(tx) { return (tx.hidden ? '<span class="tag">Hidden</span>' : '') + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(plainText(tx)); }
   function groupRowHtml(g) {
-    var ids = TextGroup.memberIds(mix.texts, g.id), open = !TextPick.has(ui.groupsClosed, g.id), gs = groupSpan(ids);
+    var ids = TextGroup.memberIds(mix.texts, g.id), open = !TextPick.has(ui.groupsClosed, g.id), gs = groupBarSpan(g.id), mode = GroupFill.modeOf(g);
     var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show', allChecked = ids.every(function (id) { return TextPick.has(ui.checked, id); });
     var name = ui.renamingGroup === g.id ?
       '<input type="text" id="groupNameInput" value="' + esc(g.name) + '" aria-label="Group name" maxlength="60"><button class="btn small primary" data-act="grenameOk">Rename</button><button class="btn small quiet" data-act="grenameCancel">Cancel</button>' :
@@ -5433,6 +5595,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       '<span class="t">' + ids.length + (ids.length === 1 ? ' text' : ' texts') + ' · ' + fmt1(gs.start) + '–' + fmt1(gs.start + gs.len) + '</span>' +
       '<button class="btn small quiet eye" data-act="ghide" aria-pressed="' + allHidden + '" aria-label="' + (allHidden ? 'Show the group: ' : 'Hide the group: ') + esc(g.name) + '">' + (allHidden ? ICON.eyeOff : ICON.eye) + '</button>' +
       '<span class="gacts">' +
+      '<label class="gfill">Fill <select data-act="gfill" aria-label="How they fill the window: ' + esc(g.name) + '">' +
+      GroupFill.MODES.map(function (m) { return '<option value="' + m + '"' + (m === mode ? ' selected' : '') + '>' + GroupFill.LABELS[m] + '</option>'; }).join('') + '</select></label>' +
+      '<button class="btn small quiet" data-act="greset" title="Arrange the texts again to fill the group’s window">Reset</button>' +
       '<button class="btn small quiet" data-act="grename">Rename</button>' +
       '<button class="btn small quiet" data-act="gdup">Duplicate</button>' +
       '<button class="btn small quiet" data-act="gungroup">Ungroup</button>' +
@@ -5793,6 +5958,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function duplicateGroup(gid) {
     var g = TextGroup.find(mix.groups, gid), ids = TextGroup.memberIds(mix.texts, gid); if (!g || !ids.length) return;
     var copy = { id: 'g' + nid(), name: TextGroup.copyName(g.name, mix.groups) };
+    if (g.fill) copy.fill = g.fill;
+    if (g.win) copy.win = clone(g.win);
     var last = mix.texts.indexOf(findItem('texts', ids[ids.length - 1]));
     var copies = ids.map(function (id) { var c = clone(findItem('texts', id)); c.id = nid(); c.group = copy.id; return c; });
     mix.texts.splice.apply(mix.texts, [last + 1, 0].concat(copies));
@@ -5801,6 +5968,27 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     refreshTexts();
     flashSel('Made “' + copy.name + '” and hid “' + g.name + '”. Show it again any time.');
   }
+  function setGroupFill(gid, mode) {
+    var g = TextGroup.find(mix.groups, gid); if (!g) return;
+    if (Player.tag) Player.stop();
+    var plan = groupPlan(gid, mode);
+    if (plan.blocked.length) { flashSel(blockedGroupNote(g.name, plan.blocked)); showGroupFill(g); return; }
+    g.fill = mode;
+    var win = groupWindow(gid), min = minGroupLength(plan), extra = '';
+    if (win.end - win.start < min - 1e-6) {
+      win.end = Math.ceil((win.start + min) * 10 - 1e-6) / 10;
+      g.win = win;
+      extra = 'Made the group longer so they fit.';
+    }
+    if (!applyGroupPlan(plan, win)) { flashSel('“' + g.name + '” doesn’t fit its window.'); showGroupFill(g); return; }
+    refreshTexts();
+    var note = groupNote(plan, extra); if (note) flashSel(note);
+  }
+  function showGroupFill(g) {
+    var box = $('texts').querySelector('[data-group="' + g.id + '"] [data-act="gfill"]');
+    if (box) box.value = GroupFill.modeOf(g);
+  }
+  function resetGroup(gid) { var g = TextGroup.find(mix.groups, gid); if (g) setGroupFill(gid, GroupFill.modeOf(g)); }
   function takeOutOfGroup(id) { var tx = findItem('texts', id); if (tx) { delete tx.group; refreshTexts(); } }
   function checksChanged() { renderTimeline(); renderSel(); renderTexts(); }
   var BULK = Object.assign({ textSize: 'size', textFixed: 'fixedSize', textFont: 'font', textBold: 'bold', textItalic: 'italic', textAlign: 'align', textValign: 'valign', textColor: 'color', textLh: 'lh', textLook: 'look', textLookColor: 'lookColor', textLookOpacity: 'lookOpacity', textGlowWidth: 'glowWidth', textGlowSoft: 'glowSoft', textFadeIn: 'fadeIn', textFadeOut: 'fadeOut', textDurMin: 'dur', textDurSec: 'dur' }, BOX_FIELDS, TEXT_TICKS);
@@ -5825,6 +6013,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function applyBulkField(tx, field, value) {
     var was = txSpan(tx), lk = TextLook.resolve(tx).look;
+    if ((field === 'dur' || field === 'readTime') && tx[field] !== value) delete tx.ownLen;
     if (field === 'fixedSize') { if (value) tx.fixedSize = true; else delete tx.fixedSize; }
     else if (field === 'lookColor') { if (lk === 'outline') tx.glowColor = value; else if (lk === 'box') tx.boxColor = value; }
     else if (field === 'lookOpacity') { if (lk === 'outline') tx.glowOpacity = value; else if (lk === 'box') tx.boxOpacity = value; }
@@ -5877,7 +6066,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var bv = parseFloat(target.value);
       if (!isNaN(bv)) tx.frame = TextLayout.setFrameField(TextLayout.upgradeText(tx).frame, BOX_FIELDS[target.id], bv / 100);
     }
-    var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole, readTime: tx.readTime, mode: tx.passage && tx.passage.mode, look: TextLook.resolve(tx).look };
+    var was = txSpan(tx), before = { afterPrev: tx.afterPrev, untilNext: tx.untilNext, fromStart: tx.fromStart, toEnd: tx.toEnd, during: tx.during, whole: tx.whole, readTime: tx.readTime, dur: tx.dur, mode: tx.passage && tx.passage.mode, look: TextLook.resolve(tx).look };
     if (tx.passage) {
       var pm = document.querySelector('input[name="textMode"]:checked'), pr = document.querySelector('input[name="textRefPos"]:checked');
       if (pm) tx.passage.mode = pm.value;
@@ -5919,6 +6108,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var d = (parseFloat($('textDurMin').value) || 0) * 60 + (parseFloat($('textDurSec').value) || 0);
       if (d >= 0.5) tx.dur = Math.round(d * 10) / 10;
     }
+    if (!before.readTime !== !tx.readTime || before.dur !== tx.dur) delete tx.ownLen;
     var linksChanged = before.afterPrev !== tx.afterPrev || before.untilNext !== tx.untilNext || !before.fromStart !== !tx.fromStart || !before.toEnd !== !tx.toEnd || before.during !== tx.during || before.whole !== tx.whole || !before.readTime !== !tx.readTime || before.mode !== (tx.passage && tx.passage.mode);
     var fi = parseFloat($('textFadeIn').value); if (fi >= 0) tx.fadeIn = fi;
     var fo = parseFloat($('textFadeOut').value); if (fo >= 0) tx.fadeOut = fo;
@@ -6682,7 +6872,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           drag = null; checksChanged();
           return;
         }
-        drag = { x: ev.clientX, moved: false, sel: null, group: gid, batch: textBatch(members), span: groupSpan(members) };
+        var edgeEl = ev.target.closest('[data-gedge]');
+        if (edgeEl) {
+          drag = { x: ev.clientX, moved: false, sel: null, gedge: edgeEl.getAttribute('data-gedge'), group: gid, plan: groupPlan(gid), win0: groupWindow(gid) };
+          drag.min = minGroupLength(drag.plan);
+          try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+          return;
+        }
+        var gw = TextGroup.find(mix.groups, gid).win;
+        drag = { x: ev.clientX, moved: false, sel: null, group: gid, batch: textBatch(members), span: groupBarSpan(gid), win0: gw ? clone(gw) : null };
         try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
         return;
       }
@@ -6711,6 +6909,27 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         renderTimeline();
         return;
       }
+      if (drag && drag.gedge) {
+        if (!drag.moved) {
+          if (Math.abs(ev.clientX - drag.x) <= 4) return;
+          var eg = TextGroup.find(mix.groups, drag.group);
+          if (drag.plan.blocked.length) { flashSel(blockedGroupNote(eg ? eg.name : 'The group', drag.plan.blocked)); drag = null; return; }
+          if (Player.tag) Player.stop();
+          drag.moved = true;
+        }
+        var g2 = TextGroup.find(mix.groups, drag.group); if (!g2) return;
+        var et = timeAt(ev); ui.snapT = null;
+        if (!ev.shiftKey) {
+          var esn = snapTo([et], snapEdges(TextPick.all(drag.plan.ids.map(function (id) { return { id: id }; }))), 8 / pxPerSec());
+          if (esn) { et += esn.d; ui.snapT = esn.at; }
+        }
+        var w = GroupFill.dragWindow(drag.win0, drag.gedge, et, drag.min);
+        if (w.clamped && !drag.saidMin) { flashSel('The group can’t be shorter than ' + fmt1(drag.min) + '. Its texts need that much.'); drag.saidMin = true; }
+        g2.win = { start: w.start, end: w.end };
+        applyGroupPlan(drag.plan, g2.win);
+        live();
+        return;
+      }
       if (!drag || (!drag.sel && !drag.group)) return;
       var dx = ev.clientX - drag.x;
       if (!drag.moved && Math.abs(dx) > 4) {
@@ -6728,6 +6947,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           if (sn0) { dtb += sn0.d; ui.snapT = sn0.at; }
         }
         drag.delta = moveBatch(drag.batch, dtb);
+        if (drag.group && drag.win0) {
+          var gm = TextGroup.find(mix.groups, drag.group);
+          if (gm) gm.win = { start: Math.round((drag.win0.start + drag.delta) * 10) / 10, end: Math.round((drag.win0.end + drag.delta) * 10) / 10 };
+        }
         live(); renderTextEditor(); return;
       }
       var dt = dx / pxPerSec(), hit2 = clipOf(drag.sel);
@@ -6740,7 +6963,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       if (drag.resize) {
         if (drag.sel.lane === 'pictures') { if (hit2) hit2.p.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
-        else if (hit2 && hit2.t && !hit2.t.locked) { hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
+        else if (hit2 && hit2.t && !hit2.t.locked) { delete hit2.t.ownLen; hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
       }
       else if (!shiftClip(drag.sel, drag.base, dt)) { drag.sel = null; ui.snapT = null; return; }
       live(); renderTextEditor();
@@ -6759,6 +6982,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         return;
       }
       if (ui.snapT != null) { ui.snapT = null; }
+      if (d.gedge) {
+        if (!d.moved) {
+          if (ev.type !== 'pointercancel') { ui.checked = TextPick.all(TextGroup.memberIds(mix.texts, d.group).map(function (id) { return { id: id }; })); checksChanged(); }
+          return;
+        }
+        changed();
+        if (ev.type !== 'pointercancel') { var enote = groupNote(d.plan, ''); if (enote) flashSel(enote); }
+        return;
+      }
       if (d.group) {
         if (!d.moved) { ui.checked = TextPick.all(TextGroup.memberIds(mix.texts, d.group).map(function (id) { return { id: id }; })); checksChanged(); return; }
         changed();
@@ -7094,9 +7326,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
     // your own text
     $('addText').onclick = addText;
-    $('addMany').onclick = function () { $('manyEd').hidden = false; syncManyKind(); $('manyInput').focus(); };
+    $('addMany').onclick = function () { $('manyEd').hidden = false; $('manyGroup').checked = false; $('manyGroupName').value = ''; $('manyGroupName').disabled = true; syncManyKind(); $('manyInput').focus(); };
     $('manyClose').onclick = function () { $('manyEd').hidden = true; manySay('', false); };
-    $('manyEd').addEventListener('change', function (ev) { if (ev.target.name === 'manyKind') syncManyKind(); });
+    $('manyEd').addEventListener('change', function (ev) {
+      if (ev.target.name === 'manyKind') syncManyKind();
+      if (ev.target.id === 'manyGroup') $('manyGroupName').disabled = !ev.target.checked;
+    });
     $('manyPlace').onclick = function () { runMany(placeMany); };
     $('manyQueue').onclick = function () { runMany(queueMany); };
     $('tapPlace').onclick = placeNext;
@@ -7122,7 +7357,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (ga === 'gdup') { duplicateGroup(gid); return; }
         if (ga === 'gungroup') { ungroup(gid); return; }
         if (ga === 'gremove') { removeGroup(gid); return; }
-        if (ev.target.closest('input')) return;
+        if (ga === 'greset') { resetGroup(gid); return; }
+        if (ev.target.closest('input, select, label')) return;
         ui.groupsClosed = TextPick.toggle(ui.groupsClosed, gid); renderTexts();
         return;
       }
@@ -7134,6 +7370,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (box) { ui.checked = TextPick.set(ui.checked, id, box.checked); checksChanged(); return; }
       if (TextPick.rowClick(ev.ctrlKey || ev.metaKey, TextPick.count(ui.checked, mix.texts) > 0) === 'check') { ui.checked = TextPick.toggle(ui.checked, id); checksChanged(); return; }
       select({ lane: 'texts', id: id });
+    });
+    $('texts').addEventListener('change', function (ev) {
+      if (!ev.target.matches('[data-act="gfill"]')) return;
+      var gh = ev.target.closest('[data-group]'); if (!gh) return;
+      setGroupFill(gh.getAttribute('data-group'), ev.target.value);
     });
     $('texts').addEventListener('keydown', function (ev) {
       if (ev.target.id !== 'groupNameInput') return;
