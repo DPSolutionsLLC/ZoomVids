@@ -33,6 +33,8 @@ The motion background and still graphic are still kept in the browser. Keep the 
 
 **Background.** Under **Background**, **Color** is a plain color behind the titles (it replaces Plain dark, and older playlists keep the same look). Choose **Fade, top to bottom** to go from a top color to a bottom color, or **Flat** for one color. Pick a color with the color box, a ready-made swatch, or **Recent** (your last 8 colors, which travel with your music folder). Swatches and recent colors go to the color box you clicked last, which has a colored outline. The color is saved with each playlist and in the exported video. When a motion background or graphic isn't available, the Color background is used. On a light color, give your text a **Dark box** or **Soft outline** so it stays readable.
 
+**On-screen details.** **On-screen details** sets what shows on screen while a song or talk plays. It's saved with the recording, so it carries over to future mixes. Use **Previous**, **Next** or the list at the top of the window to go through every song, talk and video clip on the timeline, songs first, then talks, each from left to right. Moving to another recording saves the one you were on. **Cancel** only throws away changes to the recording showing now.
+
 ### Source links and missing files
 
 Every recording in the library can keep the web link it came from. Press ⋯ on its row, paste the address into **Source link**, and **Open** takes you back there. A talk with an on-screen **Link** uses that link when it has no source link of its own.

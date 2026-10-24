@@ -331,6 +331,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 #screen { touch-action: none; }
 .talkshare { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; }
 #talkText { width: 100%; font: 14px/1.5 var(--ui); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; resize: vertical; }
+.info-nav { flex-wrap: nowrap; }
+.info-nav select { flex: 1; min-width: 0; }
 #infoPreview { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: var(--r); background: #111; }
 .cues li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .cues .t { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -829,6 +831,12 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
     <div>
       <h3 id="infoTitle"></h3>
       <p class="note">What shows on screen while this plays. It is saved with the recording, so it carries over to future mixes.</p>
+    </div>
+    <div class="btnrow info-nav" id="infoNav">
+      <button type="button" class="btn small" id="infoPrev" aria-label="Previous recording">‹ Previous</button>
+      <label for="infoPick" class="visually-hidden">Go to a recording on the timeline</label>
+      <select id="infoPick"></select>
+      <button type="button" class="btn small" id="infoNext" aria-label="Next recording">Next ›</button>
     </div>
     <fieldset class="btnrow" style="border:0;padding:0;margin:0">
       <legend class="visually-hidden">This recording is</legend>
@@ -3117,6 +3125,51 @@ var TextFont = (function () {
   }
   return { BUILT_IN: BUILT_IN, TUPLES: TUPLES, upgrade: upgrade, clean: clean, entries: entries, find: find, can: can, fitStyle: fitStyle, resolve: resolve,
     cssFont: cssFont, faces: faces, cssUrl: cssUrl, probeUrl: probeUrl, nameCandidates: nameCandidates, duplicateOf: duplicateOf, usage: usage, replaceFont: replaceFont };
+})();
+
+var InfoTour = (function () {
+  function byStart(list) {
+    return list.map(function (c, i) { return { c: c, i: i }; })
+      .sort(function (a, b) { return a.c.start - b.c.start || a.i - b.i; })
+      .map(function (x) { return x.c; });
+  }
+  // Every recording on the timeline, songs row first, each left to right.
+  // A recording placed twice is listed once, at its first spot.
+  function order(music, spoken) {
+    var seen = {}, out = [];
+    function take(list, lane) {
+      byStart(list || []).forEach(function (c) {
+        if (!c.key || seen[c.key]) return;
+        seen[c.key] = true;
+        out.push({ key: c.key, lane: lane });
+      });
+    }
+    take(music, 'items');
+    take(spoken, 'spoken');
+    return out;
+  }
+  function indexOf(list, key) {
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return i;
+    return -1;
+  }
+  // The next (dir 1) or previous (dir -1) recording, wrapping at both ends.
+  // From a recording not in the list, Next goes to the first and Previous to the last.
+  function step(list, key, dir) {
+    if (!list.length) return null;
+    var i = indexOf(list, key);
+    if (i < 0) return dir > 0 ? list[0] : list[list.length - 1];
+    return list[(i + (dir > 0 ? 1 : list.length - 1)) % list.length];
+  }
+  // "Elder Holland — The Atonement" for a talk, the title for a song.
+  function name(info) {
+    if (info.kind === 'talk') {
+      var parts = [info.speaker, info.talk].filter(function (s) { return s && String(s).trim(); });
+      if (parts.length) return parts.map(function (s) { return String(s).trim(); }).join(' — ');
+    }
+    return info.title || '';
+  }
+  function label(position, info) { return position + '. ' + name(info); }
+  return { order: order, indexOf: indexOf, step: step, name: name, label: label };
 })();
 
 
@@ -7017,10 +7070,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
 
   /* ---------- on-screen details dialog ---------- */
-  var infoKey = null, infoLane = null;
+  var infoKey = null, infoLane = null, infoTour = [], infoMoved = false, infoBaseline = '';
   function openInfo(key, lane) {
     if (!lib[key]) return;
-    infoKey = key; infoLane = lane || 'items';
+    infoMoved = false;
+    showInfo(key, lane || 'items');
+    var d = $('infoDlg');
+    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+    drawInfoPreview();
+  }
+  // Fill the window for one recording, and the list of timeline recordings.
+  function showInfo(key, lane) {
+    infoKey = key; infoLane = lane;
     var i = infoOf(key, infoLane);
     $('infoTitle').textContent = lib[key].name;
     $('kindSong').checked = i.kind !== 'talk'; $('kindTalk').checked = i.kind === 'talk';
@@ -7029,9 +7090,32 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('infoSpeaker').value = i.speaker || ''; $('infoTalk').value = i.talk || ''; $('infoSource').value = i.source || ''; $('infoUrl').value = i.url || '';
     $('infoSize').value = i.size || 100;
     syncInfoKind();
-    var d = $('infoDlg');
-    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+    infoBaseline = JSON.stringify(draftInfo());
+    renderInfoNav();
+  }
+  function renderInfoNav() {
+    infoTour = InfoTour.order(plan.music, plan.spoken).filter(function (e) { return lib[e.key]; });
+    var at = InfoTour.indexOf(infoTour, infoKey), h = '';
+    $('infoNav').hidden = !infoTour.length;
+    if (at < 0) h += '<option value="" selected disabled>' + esc('Not on the timeline: ' + InfoTour.name(infoOf(infoKey, infoLane))) + '</option>';
+    infoTour.forEach(function (e, n) {
+      h += '<option value="' + n + '"' + (n === at ? ' selected' : '') + '>' + esc(InfoTour.label(n + 1, infoOf(e.key, e.lane))) + '</option>';
+    });
+    $('infoPick').innerHTML = h;
+    var only = infoTour.length === 1 && at === 0;
+    $('infoPrev').disabled = only; $('infoNext').disabled = only;
+  }
+  // Going to another recording saves this one first, if anything changed.
+  function goInfo(entry) {
+    if (!entry || entry.key === infoKey) return;
+    if (JSON.stringify(draftInfo()) !== infoBaseline) saveInfo();
+    infoMoved = true;
+    showInfo(entry.key, entry.lane);
     drawInfoPreview();
+  }
+  function endInfo() {
+    if (infoMoved) { ui.sel = null; render(); }
+    infoMoved = false;
   }
   function draftInfo() {
     return {
@@ -7919,6 +8003,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('infoForm').addEventListener('change', drawInfoPreview);
     $('infoForm').addEventListener('submit', function (ev) { ev.preventDefault(); saveInfo(); closeDlg('infoDlg'); });
     $('infoCancel').onclick = function () { closeDlg('infoDlg'); };
+    $('infoPrev').onclick = function () { goInfo(InfoTour.step(infoTour, infoKey, -1)); };
+    $('infoNext').onclick = function () { goInfo(InfoTour.step(infoTour, infoKey, 1)); };
+    $('infoPick').addEventListener('change', function (ev) {
+      ev.stopPropagation();
+      var n = parseInt(this.value, 10);
+      if (!isNaN(n)) goInfo(infoTour[n]);
+    });
+    $('infoDlg').addEventListener('close', endInfo);
 
     // settings
     function opt(id, key, isLive) {
