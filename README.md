@@ -95,6 +95,20 @@ In the same panel, press **Add to the tap queue** instead of **Put on the timeli
 
 **Preview sizes.** When the preview is floating, **Phone** shrinks or grows it to about the size of the video on a phone turned sideways, so you can check the text is readable for people watching on a phone. To match your own phone, hold it up to the screen, drag the preview to the same size, then press **Save…** and **Phone**. Phone remembers that size, also after closing the browser; to change it, save again. **1** and **2** remember other sizes you like: press **Save…** then **1** or **2** to store the current size, and press **1** or **2** later to go back to it. An empty **1** or **2** saves on the first click. Sizes change the width only, and the preview stays where it is. The buttons sort themselves from the smallest size to the biggest, so you can see where Phone falls between 1 and 2; a 1 or 2 with nothing saved yet comes last.
 
+### Floating panels
+
+Every main section has a **Float** button: the timeline (at the end of its zoom buttons), the library, order of music, spoken clips, on-screen text, your text on screen, pictures and video, song and talk titles, talk references, scripture collection, mix settings and export. A floating section stays where you put it while you scroll the page, and keeps working as usual: you can still drag, select and play on a floating timeline, and keyboard shortcuts still work.
+
+- **Move** a panel by dragging its header bar. **Resize** it from the bottom-right corner (or focus the corner and use the arrow keys).
+- Panels **snap** to the window edges and to each other when they come within 12 px. Keep dragging past that and they let go, so panels can overlap.
+- **Click** a panel to bring it to the front.
+- **Put back** in a panel's header returns it to its place in the page. **Reset layout**, at the top next to Undo, puts every floating panel back at once. It only shows while something is floating.
+- A section that floats out of another one (for example Your text on screen out of On-screen text) leaves a small note behind, and Put back always returns it to the right place.
+
+The preview floats the same way and keeps its own controls and sizes (see Preview sizes above).
+
+The layout is saved in this browser and comes back when you open the app again. It belongs to this computer only: it's not copied into the music folder's data file, and moving panels never counts as a change to undo. If the window is smaller than your layout, panels are shrunk and nudged into view without losing their saved spots; make the window bigger again and they go back where they were.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.

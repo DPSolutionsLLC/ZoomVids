@@ -209,9 +209,16 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .transport .btnrow { gap: 4px; }
 .speeds .btn[aria-pressed="true"], .sizes .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .sizes.saving [data-slot], .sizes.saving #sizePhone { outline: 2px dashed var(--accent); outline-offset: 1px; }
-.floatgrip { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border: 0; background: none; cursor: nwse-resize; touch-action: none; border-radius: 4px; padding: 0; display: grid; place-items: center; }
-.floatgrip i { display: block; width: 10px; height: 10px; border-right: 3px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 0 0 3px 0; }
-.floatgrip:hover i, .floatgrip:focus-visible i { border-color: var(--muted); }
+.floatgrip, .panelgrip { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border: 0; background: none; cursor: nwse-resize; touch-action: none; border-radius: 4px; padding: 0; display: grid; place-items: center; }
+.floatgrip i, .panelgrip i { display: block; width: 10px; height: 10px; border-right: 3px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 0 0 3px 0; }
+.floatgrip:hover i, .floatgrip:focus-visible i, .panelgrip:hover i, .panelgrip:focus-visible i { border-color: var(--muted); }
+.panel { position: fixed; z-index: 40; display: flex; flex-direction: column; max-height: calc(100vh - 16px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); }
+.panelhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: move; touch-action: none; user-select: none; }
+.panelbody { overflow: auto; padding: 8px 12px 18px; min-height: 0; flex: 1; }
+.panel .desk { border: 0; padding: 0; }
+.panel > .panelbody > * > .headrow > [data-float], .panel > .panelbody > .desk [data-float="timeline"] { display: none; }
+.panel:has(> .panelbody > .sec.collapsed) { height: auto !important; }
+.floatslot { padding: 6px 0; }
 #speedPill { border: 0; cursor: pointer; font-family: inherit; }
 .opts { display: flex; flex-direction: column; gap: 10px; }
 .opts fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
@@ -402,6 +409,8 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <p class="sub">Line up the music for the sacrament, check each crossfade, and export one file for OBS.</p>
     </div>
     <div class="plbar">
+      <button class="btn quiet" id="layoutReset" hidden title="Put every floating panel back into the page">Reset layout</button>
+      <span class="note" id="layoutNote" role="status" aria-live="polite"></span>
       <button class="btn quiet" id="undoBtn" title="Undo (Ctrl+Z)" disabled>Undo</button>
       <button class="btn quiet" id="redoBtn" title="Redo (Ctrl+Y)" disabled>Redo</button>
       <span class="undonote" id="undoNote" role="status" aria-live="polite"></span>
@@ -416,7 +425,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
     </div>
   </header>
 
-  <section class="desk" aria-label="The mix">
+  <section class="desk" data-panel="timeline" aria-label="The mix">
     <div class="deskhead">
       <button class="btn primary" id="playBtn"></button>
       <div class="clock num"><span id="now">0:00</span> <small>of <span id="total">0:00</span></small></div>
@@ -429,6 +438,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
         <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
         <button class="btn small" id="zoomFit">Fit</button>
         <button class="btn small" id="zoomIn" aria-label="Zoom in">+</button>
+        <button class="btn small quiet" data-float="timeline" aria-pressed="false">Float</button>
       </div>
     </div>
     <div class="tlwrap" id="tlwrap"><div class="tl" id="tl" aria-label="Timeline of the mix, to scale"></div></div>
@@ -447,6 +457,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           <button class="btn small" id="newFolder">New folder</button>
           <button class="btn small" id="openHymns">Hymn checklist</button>
         </div>
+        <button class="btn small quiet" data-float="library" aria-pressed="false">Float</button>
       </div>
       <input type="file" id="folderInput" webkitdirectory multiple hidden>
       <input type="file" id="filesInput" multiple accept="audio/*,video/mp4,image/jpeg,image/png,image/webp,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.mp4,.m4v,.mov,.webm,.jpg,.jpeg,.png,.webp" hidden>
@@ -478,18 +489,18 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
 
     <div class="main">
       <section class="stack sec" id="sec-order">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="order" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Order of music</button></h2><span class="note" id="orderNote"></span></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="order" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Order of music</button></h2><span class="note" id="orderNote"></span><button class="btn small quiet" data-float="order" aria-pressed="false">Float</button></div>
         <div id="missing"></div>
         <ul class="list" id="order"></ul>
       </section>
 
       <section class="stack sec" id="sec-spoken">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="spoken" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Spoken clips over the music</button></h2></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="spoken" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Spoken clips over the music</button></h2><button class="btn small quiet" data-float="spoken" aria-pressed="false">Float</button></div>
         <ul class="list" id="spoken"></ul>
       </section>
 
       <section class="stack sec" id="sec-screen">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="screen" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>On-screen text</button></h2><span class="note">Used when you export a video</span></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="screen" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>On-screen text</button></h2><span class="note">Used when you export a video</span><button class="btn small quiet" data-float="screen" aria-pressed="false">Float</button></div>
         <div class="screengrid">
           <div id="screenDock">
             <div class="screenbox" id="screenBox">
@@ -553,7 +564,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           </div>
         </div>
         <div class="stack textsec sec" id="sec-texts">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="texts" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Your text on screen</button></h3><span class="btnrow"><button class="btn small" id="addMany">Add scriptures or a list</button><button class="btn small" id="addText">Add text</button></span></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="texts" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Your text on screen</button></h3><span class="btnrow"><button class="btn small" id="addMany">Add scriptures or a list</button><button class="btn small" id="addText">Add text</button></span><button class="btn small quiet" data-float="texts" aria-pressed="false">Float</button></div>
           <div class="texted" id="manyEd" hidden>
             <div class="btnrow" role="radiogroup" aria-label="What to add">
               <label><input type="radio" name="manyKind" value="scripture" checked> Scriptures</label>
@@ -699,16 +710,16 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           </div>
         </div>
         <div class="stack textsec sec" id="sec-pictures">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="pictures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Pictures and video on screen</button></h3><span class="note">Add pictures with Add in the library. Video clips come in with Clip.</span></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="pictures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Pictures and video on screen</button></h3><span class="note">Add pictures with Add in the library. Video clips come in with Clip.</span><button class="btn small quiet" data-float="pictures" aria-pressed="false">Float</button></div>
           <ul class="list" id="pictures"></ul>
           <div class="texted" id="picEd" hidden></div>
         </div>
         <div class="stack sec" id="sec-titles">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="titles" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Song and talk titles</button></h3></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="titles" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Song and talk titles</button></h3><button class="btn small quiet" data-float="titles" aria-pressed="false">Float</button></div>
           <ol class="cues" id="cues"></ol>
         </div>
         <div class="talkshare stack sec" id="sec-talkref">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="talkref" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Talk references to send</button></h3><button class="btn small" id="copyTalks">Copy for email or text</button></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="talkref" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Talk references to send</button></h3><button class="btn small" id="copyTalks">Copy for email or text</button><button class="btn small quiet" data-float="talkref" aria-pressed="false">Float</button></div>
           <label for="talkIntro" class="note">Opening line</label>
           <input type="text" id="talkIntro" style="width:100%">
           <p class="note" id="talkNote"></p>
@@ -719,7 +730,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
 
       <section class="stack sec" id="sec-scriptures">
         <div class="headrow"><h2><button class="sectoggle" data-sec="scriptures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Scripture collection</button></h2>
-          <span class="btnrow"><button class="btn small" id="collPick">Random pick</button><button class="btn small" id="collFillBtn">Choose a stretch</button></span></div>
+          <span class="btnrow"><button class="btn small" id="collPick">Random pick</button><button class="btn small" id="collFillBtn">Choose a stretch</button></span><button class="btn small quiet" data-float="scriptures" aria-pressed="false">Float</button></div>
         <div class="texted" id="collFill" hidden></div>
         <label for="collInput" class="visually-hidden">References to add to the collection</label>
         <textarea id="collInput" rows="2" placeholder="Alma 32:21-23, John 3:16, D&amp;C 4:2"></textarea>
@@ -734,7 +745,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       </section>
 
       <section class="stack sec" id="sec-settings">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="settings" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Mix settings</button></h2></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="settings" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Mix settings</button></h2><button class="btn small quiet" data-float="settings" aria-pressed="false">Float</button></div>
         <div class="settings">
           <label>Length to cover <span class="ctl"><input type="number" id="target" min="1" max="90" step="1"> min</span></label>
           <label>Crossfade for new transitions <span class="ctl"><input type="range" id="defaultXf" min="0" max="15" step="0.5"><output id="defaultXfOut"></output></span></label>
@@ -749,7 +760,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       </section>
 
       <section class="stack sec" id="sec-export">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="export" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Export</button></h2></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="export" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Export</button></h2><button class="btn small quiet" data-float="export" aria-pressed="false">Float</button></div>
         <div class="export">
           <div class="formats">
             <label><input type="radio" name="fmt" id="fmtMp3" value="mp3"><span>MP3 audio<small>Arrives as a zip to unzip</small></span></label>
@@ -3003,6 +3014,88 @@ var FloatSizes = (function () {
   return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches, readPhone: readPhone, phoneWidth: phoneWidth, order: order };
 })();
 
+/* Floating panels: saved spots, fitting into the window, snapping and stacking. Pure functions; inputs are never changed. */
+var PanelLayout = (function () {
+  var KEY = 'hp.layout';
+  var IDS = ['timeline', 'preview', 'library', 'order', 'spoken', 'screen', 'texts', 'pictures', 'titles', 'talkref', 'scriptures', 'settings', 'export'];
+  var MIN_W = 280, MIN_H = 120, MARGIN = 8, SNAP = 12;
+  function isNumber(v) { return typeof v === 'number' && Number.isFinite(v); }
+  function limit(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function emptyLayout() { return { panels: {}, order: [] }; }
+  function cleanEntry(raw) {
+    if (!raw || typeof raw !== 'object' || !isNumber(raw.x) || !isNumber(raw.y) || !isNumber(raw.w) || Math.round(raw.w) <= 0) return null;
+    var h = isNumber(raw.h) && Math.round(raw.h) > 0 ? Math.round(raw.h) : null;
+    return { on: raw.on === true, x: Math.round(raw.x), y: Math.round(raw.y), w: Math.round(raw.w), h: h };
+  }
+  function clean(raw) {
+    var out = emptyLayout();
+    if (!raw || typeof raw !== 'object') return out;
+    var panels = raw.panels && typeof raw.panels === 'object' ? raw.panels : {};
+    IDS.forEach(function (id) {
+      if (!Object.prototype.hasOwnProperty.call(panels, id)) return;
+      var entry = cleanEntry(panels[id]);
+      if (entry) out.panels[id] = entry;
+    });
+    if (Array.isArray(raw.order)) {
+      raw.order.forEach(function (id) { if (IDS.indexOf(id) >= 0 && out.order.indexOf(id) < 0) out.order.push(id); });
+    }
+    return out;
+  }
+  function fromLegacyFloat(raw) {
+    if (!raw || typeof raw !== 'object' || !isNumber(raw.x) || !isNumber(raw.y) || !isNumber(raw.w)) return null;
+    return { on: raw.on === true, x: Math.round(raw.x), y: Math.round(raw.y), w: Math.round(raw.w), h: null };
+  }
+  function heightOf(rect) { return rect.h != null ? rect.h : isNumber(rect.shownH) ? rect.shownH : 0; }
+  function fit(rect, view, limits) {
+    var maxW = Math.max(limits.minW, Math.min(limits.maxW, view.w - 2 * MARGIN));
+    var w = limit(rect.w, limits.minW, maxW);
+    var h = rect.h == null ? null : limit(rect.h, MIN_H, Math.max(MIN_H, view.h - 2 * MARGIN));
+    var shownH = h != null ? h : heightOf(rect);
+    var x = limit(rect.x, MARGIN, Math.max(MARGIN, view.w - w - MARGIN));
+    var y = limit(rect.y, MARGIN, Math.max(MARGIN, view.h - shownH - MARGIN));
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: h == null ? null : Math.round(h) };
+  }
+  function closeTo(a0, a1, b0, b1) { return a0 <= b1 + SNAP && b0 <= a1 + SNAP; }
+  function nearest(raw, candidates) {
+    var best = raw, distance = Infinity;
+    candidates.forEach(function (c) {
+      var d = Math.abs(c - raw);
+      if (d <= SNAP && d < distance) { best = c; distance = d; }
+    });
+    return best;
+  }
+  function snap(rect, others, view) {
+    var w = rect.w, h = heightOf(rect);
+    var xs = [MARGIN, view.w - w - MARGIN], ys = [MARGIN, view.h - h - MARGIN];
+    others.forEach(function (o) {
+      if (closeTo(rect.y, rect.y + h, o.y, o.y + o.h)) xs.push(o.x + o.w, o.x - w, o.x, o.x + o.w - w);
+      if (closeTo(rect.x, rect.x + w, o.x, o.x + o.w)) ys.push(o.y + o.h, o.y - h, o.y, o.y + o.h - h);
+    });
+    return { x: Math.round(nearest(rect.x, xs)), y: Math.round(nearest(rect.y, ys)) };
+  }
+  function snapSize(rect, others, view) {
+    var h = heightOf(rect), right = rect.x + rect.w, bottom = rect.y + h;
+    var rights = [view.w - MARGIN], bottoms = [view.h - MARGIN];
+    others.forEach(function (o) {
+      if (closeTo(rect.y, bottom, o.y, o.y + o.h)) rights.push(o.x, o.x + o.w);
+      if (closeTo(rect.x, right, o.x, o.x + o.w)) bottoms.push(o.y, o.y + o.h);
+    });
+    var w = Math.round(nearest(right, rights) - rect.x);
+    return { w: w, h: rect.h == null ? null : Math.round(nearest(bottom, bottoms) - rect.y) };
+  }
+  function toFront(order, id) { return order.filter(function (x) { return x !== id; }).concat([id]); }
+  function dockAll(layout) {
+    var panels = {};
+    Object.keys(layout.panels).forEach(function (id) {
+      var e = layout.panels[id];
+      panels[id] = { on: false, x: e.x, y: e.y, w: e.w, h: e.h };
+    });
+    return { panels: panels, order: layout.order.slice() };
+  }
+  function anyFloating(layout) { return Object.keys(layout.panels).some(function (id) { return layout.panels[id].on === true; }); }
+  return { KEY: KEY, IDS: IDS, MIN_W: MIN_W, MIN_H: MIN_H, MARGIN: MARGIN, SNAP: SNAP, clean: clean, fromLegacyFloat: fromLegacyFloat, fit: fit, snap: snap, snapSize: snapSize, toFront: toFront, dockAll: dockAll, anyFloating: anyFloating };
+})();
+
 /* Color background: flat or fade colors, ready-made swatches, recent colors. Pure functions; inputs are never changed. */
 var BgColor = (function () {
   var DEFAULT_TOP = '#16231d', DEFAULT_BOTTOM = '#0b110e', RECENT_MAX = 8;
@@ -3266,7 +3359,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function lsSet(k, v) {
     try {
       localStorage.setItem(k, JSON.stringify(v));
-      if (k !== 'hp.savedAt' && k.indexOf('hp.') === 0) { localStorage.setItem('hp.savedAt', JSON.stringify(Date.now())); if (onSaved) onSaved(); }
+      if (k !== 'hp.savedAt' && k !== PanelLayout.KEY && k.indexOf('hp.') === 0) { localStorage.setItem('hp.savedAt', JSON.stringify(Date.now())); if (onSaved) onSaved(); }
       return true;
     } catch (e) { return false; }
   }
@@ -3310,6 +3403,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var userFonts = TextFont.clean(lsGet('hp.fonts'));                         // fonts added from Google Fonts
   function addedFonts() { return userFonts.items; }
   var fontsLoaded = function () {};                                          // set up with the redraw below
+  var redrawSoon = function () {};                                           // set up with the redraw below
   var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
   var bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));                 // last colors picked for the Color background
   var mix = blankMix();
@@ -8229,6 +8323,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     try { new MutationObserver(later).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) { /* fine */ }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(later);
     fontsLoaded = later;
+    redrawSoon = later;
+    try { var panelSizes = new ResizeObserver(later); ['tlwrap', 'order', 'screen'].forEach(function (id) { panelSizes.observe($(id)); }); } catch (e) { /* older browsers redraw through redrawSoon */ }
   }
   function loadMotion(blob) {
     return Media.openMotion(blob).then(function (src) {
@@ -8267,19 +8363,203 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('tlReset').onclick = function () { tlHeight(TL_BASE); lsSet('hp.tlHeight', TL_BASE); };
   })();
 
+  /* ---------- floating panels ---------- */
+  var layout = readLayout();
+  function readLayout() {
+    var saved = PanelLayout.clean(lsGet(PanelLayout.KEY));
+    if (!saved.panels.preview) {
+      var legacy = PanelLayout.fromLegacyFloat(lsGet('hp.float'));
+      if (legacy) saved.panels.preview = legacy;
+    }
+    return saved;
+  }
+  function saveLayout() {
+    var ok = lsSet(PanelLayout.KEY, layout);
+    $('layoutNote').textContent = ok ? '' : 'Couldn\'t save the layout in this browser.';
+    return ok;
+  }
+  function viewSize() { return { w: innerWidth, h: innerHeight }; }
+  function isFloating(id) { var entry = layout.panels[id]; return !!(entry && entry.on); }
+  function panelNode(id) { return id === 'timeline' ? document.querySelector('[data-panel="timeline"]') : $('sec-' + id); }
+  function panelBox(id) { return id === 'preview' ? $('screenBox') : document.querySelector('[data-panel-box="' + id + '"]'); }
+  function panelName(id) {
+    if (id === 'timeline') return 'Timeline';
+    var toggle = panelNode(id).querySelector('.sectoggle');
+    return toggle ? toggle.textContent.trim() : id;
+  }
+  function shownRect(el) { var r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }
+  function otherShownRects(id) {
+    return PanelLayout.IDS.filter(function (other) { return other !== id && isFloating(other) && panelBox(other); })
+      .map(function (other) { return shownRect(panelBox(other)); });
+  }
+  function applyOrder() {
+    layout.order.forEach(function (id, i) {
+      var box = isFloating(id) && panelBox(id);
+      if (box) box.style.zIndex = String(40 + i);
+    });
+  }
+  function bringToFront(id) {
+    var next = PanelLayout.toFront(layout.order, id);
+    var same = next.length === layout.order.length && next.every(function (x, i) { return x === layout.order[i]; });
+    layout.order = next;
+    applyOrder();
+    if (!same) saveLayout();
+  }
+  function renderLayoutBar() { $('layoutReset').hidden = !PanelLayout.anyFloating(layout); }
+  function setFloatButtons(id, on) {
+    document.querySelectorAll('[data-float="' + id + '"]').forEach(function (b) { b.setAttribute('aria-pressed', String(on)); });
+  }
+  function showPanel(id) {
+    var box = panelBox(id), entry = layout.panels[id];
+    if (!box || !entry) return;
+    var view = viewSize(), limits = { minW: PanelLayout.MIN_W, maxW: Infinity };
+    var shown = PanelLayout.fit({ x: entry.x, y: entry.y, w: entry.w, h: entry.h, shownH: box.offsetHeight }, view, limits);
+    box.style.width = shown.w + 'px';
+    box.style.height = shown.h == null ? '' : shown.h + 'px';
+    shown = PanelLayout.fit({ x: entry.x, y: entry.y, w: entry.w, h: entry.h, shownH: box.offsetHeight }, view, limits);
+    box.style.left = shown.x + 'px'; box.style.top = shown.y + 'px';
+  }
+  function dockButton(id, label) {
+    var b = document.createElement('button');
+    b.className = 'btn small'; b.setAttribute('data-dock', id); b.textContent = label;
+    return b;
+  }
+  function floatPanel(id, restoring) {
+    var node = panelNode(id);
+    if (!node || panelBox(id)) return;
+    var entry = layout.panels[id];
+    if (!entry) {
+      var start = PanelLayout.MARGIN + 28 * PanelLayout.IDS.filter(isFloating).length;
+      var width = Math.max(PanelLayout.MIN_W, Math.round(Math.min(node.offsetWidth, innerWidth - 2 * PanelLayout.MARGIN)));
+      entry = layout.panels[id] = { on: false, x: start, y: start, w: width, h: null };
+    }
+    var name = panelName(id);
+    var slot = document.createElement('p');
+    slot.className = 'note floatslot'; slot.setAttribute('data-slot-for', id);
+    slot.append(name + ' is floating. ', dockButton(id, 'Put it back'));
+    node.replaceWith(slot);
+    var box = document.createElement('div');
+    box.className = 'panel'; box.setAttribute('data-panel-box', id); box.setAttribute('role', 'region'); box.setAttribute('aria-label', name);
+    box.innerHTML = '<div class="panelhead"><span class="note"></span></div><div class="panelbody"></div><button class="panelgrip" title="Drag to resize"><i></i></button>';
+    var putBack = dockButton(id, 'Put back'); putBack.className = 'btn small quiet';
+    box.querySelector('.panelhead').appendChild(putBack);
+    box.querySelector('.panelhead .note').textContent = name;
+    box.querySelector('.panelgrip').setAttribute('aria-label', 'Drag to resize ' + name);
+    box.querySelector('.panelbody').appendChild(node);
+    document.body.appendChild(box);
+    bindPanel(id, box);
+    entry.on = true;
+    if (!restoring) bringToFront(id);
+    showPanel(id);
+    setFloatButtons(id, true);
+    if (!restoring) saveLayout();
+    renderSections(); renderLayoutBar(); redrawSoon();
+  }
+  function dockPanel(id, quiet) {
+    var box = panelBox(id), slot = document.querySelector('[data-slot-for="' + id + '"]'), node = panelNode(id);
+    if (!box || !slot || !node) return;
+    slot.replaceWith(node);
+    box.remove();
+    if (layout.panels[id]) layout.panels[id].on = false;
+    setFloatButtons(id, false);
+    if (!quiet) saveLayout();
+    renderSections(); renderLayoutBar(); redrawSoon();
+  }
+  function bindPanel(id, box) {
+    var head = box.querySelector('.panelhead'), grip = box.querySelector('.panelgrip'), drag = null, size = null;
+    var limits = { minW: PanelLayout.MIN_W, maxW: Infinity };
+    head.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('button')) return;
+      var r = shownRect(box);
+      drag = { px: ev.clientX, py: ev.clientY, x0: r.x, y0: r.y, w: r.w, h: r.h };
+      try { head.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+      ev.preventDefault();
+    });
+    head.addEventListener('pointermove', function (ev) {
+      if (!drag) return;
+      var entry = layout.panels[id], view = viewSize();
+      var raw = { x: drag.x0 + ev.clientX - drag.px, y: drag.y0 + ev.clientY - drag.py, w: drag.w, h: drag.h };
+      var snapped = PanelLayout.snap(raw, otherShownRects(id), view);
+      var shown = PanelLayout.fit({ x: snapped.x, y: snapped.y, w: drag.w, h: drag.h }, view, { minW: drag.w, maxW: drag.w });
+      entry.x = shown.x; entry.y = shown.y;
+      showPanel(id);
+    });
+    function endDrag() { if (!drag) return; drag = null; saveLayout(); }
+    head.addEventListener('pointerup', endDrag); head.addEventListener('pointercancel', endDrag);
+    grip.addEventListener('pointerdown', function (ev) {
+      var r = shownRect(box);
+      size = { px: ev.clientX, py: ev.clientY, x: r.x, y: r.y, w: r.w, h: r.h };
+      try { grip.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+      ev.preventDefault();
+    });
+    function resizeTo(w, h) {
+      var entry = layout.panels[id], view = viewSize(), r = shownRect(box);
+      var snapped = PanelLayout.snapSize({ x: r.x, y: r.y, w: w, h: h, shownH: r.h }, otherShownRects(id), view);
+      var shown = PanelLayout.fit({ x: r.x, y: r.y, w: Math.max(PanelLayout.MIN_W, snapped.w), h: snapped.h == null ? null : Math.max(PanelLayout.MIN_H, snapped.h) }, view, limits);
+      entry.w = shown.w; entry.h = shown.h;
+      showPanel(id);
+    }
+    grip.addEventListener('pointermove', function (ev) { if (size) resizeTo(size.w + ev.clientX - size.px, size.h + ev.clientY - size.py); });
+    function endSize() { if (!size) return; size = null; saveLayout(); }
+    grip.addEventListener('pointerup', endSize); grip.addEventListener('pointercancel', endSize);
+    grip.addEventListener('keydown', function (ev) {
+      var dw = ev.key === 'ArrowRight' ? 40 : ev.key === 'ArrowLeft' ? -40 : 0;
+      var dh = ev.key === 'ArrowDown' ? 40 : ev.key === 'ArrowUp' ? -40 : 0;
+      if (!dw && !dh) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var r = shownRect(box), keepFit = layout.panels[id].h == null && !dh;
+      resizeTo(r.w + dw, keepFit ? null : r.h + dh);
+      saveLayout();
+    });
+  }
+  function restoreLayout() {
+    PanelLayout.IDS.forEach(function (id) {
+      if (!isFloating(id)) return;
+      if (id === 'preview') floatPreview(true, true); else floatPanel(id, true);
+    });
+    applyOrder();
+    renderLayoutBar();
+  }
+  (function () {
+    document.addEventListener('pointerdown', function (ev) {
+      var box = ev.target.closest ? ev.target.closest('.panel, .screenbox.floating') : null;
+      if (box) bringToFront(box.id === 'screenBox' ? 'preview' : box.getAttribute('data-panel-box'));
+    }, true);
+    document.addEventListener('click', function (ev) {
+      var b = ev.target.closest ? ev.target.closest('[data-float], [data-dock]') : null;
+      if (!b) return;
+      var id = b.getAttribute('data-float') || b.getAttribute('data-dock');
+      if (PanelLayout.IDS.indexOf(id) < 0) return;
+      if (id === 'preview') { floatPreview(b.hasAttribute('data-float') ? !floatState.on : false); return; }
+      if (b.hasAttribute('data-dock') || isFloating(id)) dockPanel(id); else floatPanel(id);
+    });
+    $('layoutReset').onclick = function () {
+      if (floatState.on) floatPreview(false);
+      PanelLayout.IDS.forEach(function (id) { if (id !== 'preview' && panelBox(id)) dockPanel(id, true); });
+      layout = PanelLayout.dockAll(layout);
+      floatState = previewEntry();
+      saveLayout();
+      renderLayoutBar();
+    };
+    window.addEventListener('resize', function () {
+      PanelLayout.IDS.forEach(function (id) { if (id !== 'preview' && panelBox(id)) showPanel(id); });
+    });
+  })();
+
   /* ---------- floating preview ---------- */
-  var floatState = readFloat();
-  function readFloat() {
-    var s = lsGet('hp.float');
-    var w = Math.min(420, innerWidth - 32);
-    var fallback = { on: false, x: innerWidth - w - 16, y: innerHeight - Math.round(w * 9 / 16) - 140, w: w };
-    if (!s || typeof s !== 'object' || !Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(s.w)) return fallback;
-    return { on: s.on === true, x: s.x, y: s.y, w: s.w };
+  var PREVIEW_LIMITS = { minW: 240, maxW: 1280 };
+  var floatState = previewEntry();
+  function previewEntry() {
+    if (!layout.panels.preview) {
+      var w = Math.min(420, innerWidth - 32);
+      layout.panels.preview = { on: false, x: innerWidth - w - 16, y: innerHeight - Math.round(w * 9 / 16) - 140, w: w, h: null };
+    }
+    return layout.panels.preview;
   }
   var floatSlots = FloatSizes.readSlots(lsGet('hp.floatSizes'));
   var phoneSaved = FloatSizes.readPhone(lsGet('hp.floatPhone'));
   var sizeSaving = false;
-  function saveFloat() { lsSet('hp.float', floatState); }
+  function saveFloat() { saveLayout(); }
   function renderSizes() {
     var phone = $('sizePhone');
     phone.setAttribute('aria-pressed', String(!sizeSaving && FloatSizes.matches(FloatSizes.phoneWidth(phoneSaved), floatState.w)));
@@ -8336,15 +8616,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
   }
   function placeFloat(x, y, w) {
-    var box = $('screenBox');
-    w = clamp(Math.round(w), 240, Math.max(240, Math.min(1280, innerWidth - 32)));
-    box.style.width = w + 'px';
-    x = clamp(Math.round(x), 8, Math.max(8, innerWidth - box.offsetWidth - 8));
-    y = clamp(Math.round(y), 8, Math.max(8, innerHeight - box.offsetHeight - 8));
-    box.style.left = x + 'px'; box.style.top = y + 'px';
-    floatState.x = x; floatState.y = y; floatState.w = w;
+    floatState.x = Math.round(x); floatState.y = Math.round(y);
+    floatState.w = clamp(Math.round(w), PREVIEW_LIMITS.minW, PREVIEW_LIMITS.maxW);
+    showFloat();
   }
-  function floatPreview(on) {
+  function showFloat() {
+    var box = $('screenBox'), view = viewSize();
+    var shown = PanelLayout.fit({ x: floatState.x, y: floatState.y, w: floatState.w, h: null, shownH: box.offsetHeight }, view, PREVIEW_LIMITS);
+    box.style.width = shown.w + 'px';
+    shown = PanelLayout.fit({ x: floatState.x, y: floatState.y, w: floatState.w, h: null, shownH: box.offsetHeight }, view, PREVIEW_LIMITS);
+    box.style.left = shown.x + 'px'; box.style.top = shown.y + 'px';
+  }
+  function shownFloatWidth() { return parseFloat($('screenBox').style.width) || floatState.w; }
+  function floatPreview(on, restoring) {
     var box = $('screenBox');
     floatState.on = on;
     if (!on) sizeSaving = false;
@@ -8354,15 +8638,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } else {
       $('screenDock').insertBefore(box, $('dockNote'));
       box.classList.remove('floating');
-      box.style.left = ''; box.style.top = ''; box.style.width = '';
+      box.style.left = ''; box.style.top = ''; box.style.width = ''; box.style.zIndex = '';
     }
     $('transport').hidden = !on; $('floatGrip').hidden = !on; $('dockNote').hidden = !on;
     $('floatBtn').textContent = on ? 'Put back' : 'Float';
     $('floatBtn').setAttribute('aria-pressed', String(on));
-    if (on) placeFloat(floatState.x, floatState.y, floatState.w);
+    if (on) showFloat();
+    if (on && !restoring) bringToFront('preview');
     renderSizes();
     renderTransport();
     saveFloat();
+    renderLayoutBar();
+    redrawSoon();
     drawScreen();
   }
   (function () {
@@ -8371,25 +8658,38 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('dockBtn').onclick = function () { floatPreview(false); };
     head.addEventListener('pointerdown', function (ev) {
       if (!floatState.on || ev.target.closest('button')) return;
-      drag = { x: ev.clientX, y: ev.clientY, x0: floatState.x, y0: floatState.y };
+      var r = shownRect($('screenBox'));
+      drag = { x: ev.clientX, y: ev.clientY, x0: r.x, y0: r.y };
       try { head.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
       ev.preventDefault();
     });
-    head.addEventListener('pointermove', function (ev) { if (drag) placeFloat(drag.x0 + ev.clientX - drag.x, drag.y0 + ev.clientY - drag.y, floatState.w); });
+    head.addEventListener('pointermove', function (ev) {
+      if (!drag) return;
+      var box = $('screenBox'), view = viewSize(), w = box.offsetWidth, h = box.offsetHeight;
+      var snapped = PanelLayout.snap({ x: drag.x0 + ev.clientX - drag.x, y: drag.y0 + ev.clientY - drag.y, w: w, h: h }, otherShownRects('preview'), view);
+      var shown = PanelLayout.fit({ x: snapped.x, y: snapped.y, w: w, h: h }, view, { minW: w, maxW: w });
+      placeFloat(shown.x, shown.y, floatState.w);
+    });
     function endDrag() { if (!drag) return; drag = null; saveFloat(); }
     head.addEventListener('pointerup', endDrag); head.addEventListener('pointercancel', endDrag);
     grip.addEventListener('pointerdown', function (ev) {
-      size = { x: ev.clientX, w: floatState.w };
+      size = { x: ev.clientX, w: shownFloatWidth() };
       try { grip.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
       ev.preventDefault();
     });
-    grip.addEventListener('pointermove', function (ev) { if (size) placeFloat(floatState.x, floatState.y, size.w + ev.clientX - size.x); });
+    function resizePreview(w) {
+      var box = $('screenBox'), r = shownRect(box), view = viewSize();
+      var snapped = PanelLayout.snapSize({ x: r.x, y: r.y, w: w, h: null, shownH: r.h }, otherShownRects('preview'), view);
+      var shown = PanelLayout.fit({ x: r.x, y: r.y, w: snapped.w, h: null, shownH: r.h }, view, PREVIEW_LIMITS);
+      placeFloat(floatState.x, floatState.y, shown.w);
+    }
+    grip.addEventListener('pointermove', function (ev) { if (size) resizePreview(size.w + ev.clientX - size.x); });
     function endSize() { if (!size) return; size = null; saveFloat(); renderSizes(); }
     grip.addEventListener('pointerup', endSize); grip.addEventListener('pointercancel', endSize);
     grip.addEventListener('keydown', function (ev) {
       if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight' && ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
       ev.preventDefault(); ev.stopPropagation();
-      placeFloat(floatState.x, floatState.y, floatState.w + (ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 40 : -40));
+      resizePreview(shownFloatWidth() + (ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 40 : -40));
       saveFloat();
       renderSizes();
     });
@@ -8418,7 +8718,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (ev.key !== 'Escape' || !sizeSaving) return;
       sizeSaving = false; renderSizes(); ev.stopPropagation();
     });
-    window.addEventListener('resize', function () { if (floatState.on) { placeFloat(floatState.x, floatState.y, floatState.w); renderSizes(); } });
+    window.addEventListener('resize', function () { if (floatState.on) showFloat(); });
   })();
 
   /* ---------- hymn checklist ---------- */
@@ -8547,7 +8847,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var hr = secs[i].querySelector('.headrow'); if (hr) hr.setAttribute('data-summary', shut ? sectionSummary(id) : '');
       var b = secs[i].querySelector('.sectoggle'); if (b) b.setAttribute('aria-expanded', String(!shut));
     }
-    document.querySelector('.cols').classList.toggle('lib-collapsed', !!collapsed.library);
+    document.querySelector('.cols').classList.toggle('lib-collapsed', !!collapsed.library || isFloating('library'));
   }
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('.sectoggle') : null;
@@ -8592,7 +8892,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var data = {};
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (k && k.indexOf('hp.') === 0 && k !== 'hp.savedAt' && k !== 'hp.folder') data[k] = localStorage.getItem(k);
+      if (k && k.indexOf('hp.') === 0 && k !== 'hp.savedAt' && k !== 'hp.folder' && k !== PanelLayout.KEY) data[k] = localStorage.getItem(k);
     }
     return { app: 'Hymn Playlist', version: 1, savedAt: lsGet('hp.savedAt') || Date.now(), data: data };
   }
@@ -8620,7 +8920,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function importData(obj) {
     clearTimeout(saveTimer); saveTimer = null; saveState.pending = false;
     bootSavedAt = obj.savedAt;
-    Object.keys(obj.data).forEach(function (k) { try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
+    Object.keys(obj.data).forEach(function (k) { if (k === PanelLayout.KEY) return; try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
     try { localStorage.setItem('hp.savedAt', JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
     LM = lsGet('hp.libmeta') || {};
     folders = lsGet('hp.folders') || [];
@@ -8789,7 +9089,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed();
     resetHistory();
     var th = lsGet('hp.tlHeight'); if (th) tlHeight(th);
-    if (floatState.on) floatPreview(true);
+    restoreLayout();
     Store.open().then(function (ok) {
       if (!ok) return;
       return Store.all('assets').then(function (recs) {
