@@ -31,6 +31,8 @@ New downloads: drag them onto the page (they're copied into the folder you have 
 
 The motion background and still graphic are still kept in the browser. Keep the original files in your Drive so you can pick them again if needed.
 
+**Background.** Under **Background**, **Color** is a plain color behind the titles (it replaces Plain dark, and older playlists keep the same look). Choose **Fade, top to bottom** to go from a top color to a bottom color, or **Flat** for one color. Pick a color with the color box, a ready-made swatch, or **Recent** (your last 8 colors, which travel with your music folder). Swatches and recent colors go to the color box you clicked last, which has a colored outline. The color is saved with each playlist and in the exported video. When a motion background or graphic isn't available, the Color background is used. On a light color, give your text a **Dark box** or **Soft outline** so it stays readable.
+
 ### Source links and missing files
 
 Every recording in the library can keep the web link it came from. Press ⋯ on its row, paste the address into **Source link**, and **Open** takes you back there. A talk with an on-screen **Link** uses that link when it has no source link of its own.
@@ -83,7 +85,7 @@ You can change this later in the text editor. Each verse starts on its own line 
 
 In the same panel, press **Add to the tap queue** instead of **Put on the timeline**. You can also queue your own messages: choose **My own text, one per line**. Then play the mix and press **Enter** (or **Place next**) at each moment you want the next item to appear. Playback keeps going. If the item before is still showing, it fades out as the new one fades in. **Backspace** undoes the last tap and puts that item back at the front of the queue. When the preview is floating, it has its own **Place next** button. A scripture passage is one entry in the queue, and one **Enter** places the whole passage.
 
-**Preview sizes.** When the preview is floating, **Phone** shrinks or grows it to about the real size of the video on a phone turned sideways (about 12 cm wide), so you can check the text is readable for people watching on a phone. **1** and **2** remember sizes you like: press **Save…** then **1** or **2** to store the current size, and press **1** or **2** later to go back to it. An empty button saves on the first click. Sizes change the width only, and the preview stays where it is.
+**Preview sizes.** When the preview is floating, **Phone** shrinks or grows it to about the size of the video on a phone turned sideways, so you can check the text is readable for people watching on a phone. To match your own phone, hold it up to the screen, drag the preview to the same size, then press **Save…** and **Phone**. Phone remembers that size, also after closing the browser; to change it, save again. **1** and **2** remember other sizes you like: press **Save…** then **1** or **2** to store the current size, and press **1** or **2** later to go back to it. An empty **1** or **2** saves on the first click. Sizes change the width only, and the preview stays where it is.
 
 ### Scripture collection
 

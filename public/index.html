@@ -206,7 +206,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .transport { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-top: 6px; }
 .transport .btnrow { gap: 4px; }
 .speeds .btn[aria-pressed="true"], .sizes .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.sizes.saving [data-slot] { outline: 2px dashed var(--accent); outline-offset: 1px; }
+.sizes.saving [data-slot], .sizes.saving #sizePhone { outline: 2px dashed var(--accent); outline-offset: 1px; }
 .floatgrip { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border: 0; background: none; cursor: nwse-resize; touch-action: none; border-radius: 4px; padding: 0; display: grid; place-items: center; }
 .floatgrip i { display: block; width: 10px; height: 10px; border-right: 3px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 0 0 3px 0; }
 .floatgrip:hover i, .floatgrip:focus-visible i { border-color: var(--muted); }
@@ -314,6 +314,14 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .texted .mixtag { margin-left: 6px; }
 .texted.bulk [data-single], .texted:not(.bulk) [data-bulk] { display: none !important; }
 .texted input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.bgcolor { display: flex; flex-direction: column; gap: 8px; background: var(--sunk); border-radius: var(--r); padding: 10px 12px; }
+.bgcolor .bgwells { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.bgcolor input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); vertical-align: middle; }
+.bgcolor input[type="color"].target { outline: 2px solid var(--accent); outline-offset: 1px; }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.swatches .swatchlabel { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.swatch { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; padding: 0; }
+.swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #screen { touch-action: none; }
 .talkshare { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; }
 #talkText { width: 100%; font: 14px/1.5 var(--ui); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; resize: vertical; }
@@ -489,7 +497,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
                 </div>
                 <div class="btnrow speeds" role="group" aria-label="Playback speed" id="trSpeeds"></div>
                 <div class="btnrow sizes" role="group" aria-label="Preview size" id="trSizes">
-                  <button class="btn small" id="sizePhone" title="About the real size of the video on a phone turned sideways (about 12 cm wide)">Phone</button>
+                  <button class="btn small" id="sizePhone">Phone</button>
                   <button class="btn small" data-slot="0">1</button>
                   <button class="btn small" data-slot="1">2</button>
                   <button class="btn small quiet" id="sizeSave" aria-pressed="false">Save…</button>
@@ -505,8 +513,18 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
               <label><input type="radio" name="bg" id="bgMotion" value="motion"> Motion background</label>
               <label><input type="radio" name="bg" id="bgImage" value="image"> Still graphic</label>
               <label><input type="radio" name="bg" id="bgGreen" value="green"> Green screen</label>
-              <label><input type="radio" name="bg" id="bgDark" value="dark"> Plain dark</label>
+              <label><input type="radio" name="bg" id="bgColor" value="color"> Color</label>
             </fieldset>
+            <div id="bgColorEd" class="bgcolor" hidden>
+              <div class="bgwells">
+                <label>Style <select id="bgStyle"><option value="fade">Fade, top to bottom</option><option value="flat">Flat</option></select></label>
+                <label><span id="bgTopLabel">Top</span> <input type="color" id="bgTop"></label>
+                <label id="bgBottomRow">Bottom <input type="color" id="bgBottom"></label>
+              </div>
+              <div class="swatches" id="bgSwatches" role="group" aria-label="Ready-made colors"></div>
+              <div class="swatches" id="bgRecentRow" role="group" aria-label="Recent colors" hidden></div>
+              <p class="note">Swatches and recent colors go to the color you clicked last.</p>
+            </div>
             <div class="btnrow"><button class="btn small" id="pickMotion">Choose motion background</button><button class="btn small" id="pickBg">Choose graphic</button></div>
             <p class="note" id="bgNote"></p>
             <input type="file" id="bgInput" accept="image/*" hidden>
@@ -2791,7 +2809,59 @@ var FloatSizes = (function () {
     return out;
   }
   function matches(target, current) { return target != null && Math.abs(target - current) <= 2; }
-  return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches };
+  function readPhone(raw) { return validWidth(raw) ? Math.round(raw) : null; }
+  function phoneWidth(saved) { return saved != null ? saved : PHONE_WIDTH; }
+  return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches, readPhone: readPhone, phoneWidth: phoneWidth };
+})();
+
+/* Color background: flat or fade colors, ready-made swatches, recent colors. Pure functions; inputs are never changed. */
+var BgColor = (function () {
+  var DEFAULT_TOP = '#16231d', DEFAULT_BOTTOM = '#0b110e', RECENT_MAX = 8;
+  var SWATCHES = [
+    { hex: '#16231d', name: 'Dark green' },
+    { hex: '#000000', name: 'Black' },
+    { hex: '#2b2d31', name: 'Charcoal' },
+    { hex: '#5e5650', name: 'Warm grey' },
+    { hex: '#14213d', name: 'Navy' },
+    { hex: '#1f3a68', name: 'Deep blue' },
+    { hex: '#4a1626', name: 'Burgundy' },
+    { hex: '#3a1f45', name: 'Deep plum' }
+  ];
+  function cleanHex(value) {
+    if (typeof value !== 'string') return null;
+    var short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(value);
+    if (short) return ('#' + short[1] + short[1] + short[2] + short[2] + short[3] + short[3]).toLowerCase();
+    return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+  }
+  function cleanOpts(opts) {
+    var out = Object.assign({}, opts || {});
+    if (out.bg === 'dark') out.bg = 'color';
+    if (out.bgStyle !== 'flat' && out.bgStyle !== 'fade') out.bgStyle = 'fade';
+    out.bgTop = cleanHex(out.bgTop) || DEFAULT_TOP;
+    out.bgBottom = cleanHex(out.bgBottom) || DEFAULT_BOTTOM;
+    return out;
+  }
+  function stops(opts) {
+    var source = opts || {};
+    var top = cleanHex(source.bgTop) || DEFAULT_TOP;
+    var bottom = source.bgStyle === 'flat' ? top : cleanHex(source.bgBottom) || DEFAULT_BOTTOM;
+    return { top: top, bottom: bottom };
+  }
+  function readRecent(raw) {
+    if (!Array.isArray(raw)) return [];
+    var out = [];
+    raw.forEach(function (value) {
+      var hex = cleanHex(value);
+      if (hex && out.indexOf(hex) < 0 && out.length < RECENT_MAX) out.push(hex);
+    });
+    return out;
+  }
+  function addRecent(list, hex) {
+    var current = readRecent(list), clean = cleanHex(hex);
+    if (!clean) return current;
+    return [clean].concat(current.filter(function (value) { return value !== clean; })).slice(0, RECENT_MAX);
+  }
+  return { DEFAULT_TOP: DEFAULT_TOP, DEFAULT_BOTTOM: DEFAULT_BOTTOM, RECENT_MAX: RECENT_MAX, SWATCHES: SWATCHES, cleanHex: cleanHex, cleanOpts: cleanOpts, stops: stops, readRecent: readRecent, addRecent: addRecent };
 })();
 
 /* Fonts for text on screen: the built-in list, fonts added from Google Fonts, bold and italic. Pure functions; inputs are never changed. */
@@ -2997,7 +3067,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- state ---------- */
   var DEFAULTS = {
     level: true, trimSilence: true, defaultXf: 5, fadeIn: 2, fadeOut: 8, duckDb: -14,
-    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'dark', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150
+    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'color', bgStyle: 'fade', bgTop: '#16231d', bgBottom: '#0b110e', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150
   };
   var lib = {}, libOrder = [];
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
@@ -3007,18 +3077,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function addedFonts() { return userFonts.items; }
   var fontsLoaded = function () {};                                          // set up with the redraw below
   var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
+  var bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));                 // last colors picked for the Color background
   var mix = blankMix();
   var plan = E.layout(mix, {});
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
   function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [], pictures: [] }; }
   function upgradeMix(m) {
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
+    m.opts = BgColor.cleanOpts(m.opts);
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); });
@@ -4528,8 +4600,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (bg === 'green') { g.fillStyle = '#00B140'; g.fillRect(0, 0, W, H); return; }
     if (bg === 'image' && ui.bgImg && cover(g, W, H, ui.bgImg, ui.bgImg.width, ui.bgImg.height)) return;
     if (bg === 'motion' && frame && cover(g, W, H, frame, frame.displayWidth, frame.displayHeight)) return;
+    var st = BgColor.stops(opts);
+    if (st.top === st.bottom) { g.fillStyle = st.top; g.fillRect(0, 0, W, H); return; }
     var grd = g.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, '#16231D'); grd.addColorStop(1, '#0B110E');
+    grd.addColorStop(0, st.top); grd.addColorStop(1, st.bottom);
     g.fillStyle = grd; g.fillRect(0, 0, W, H);
   }
   // One lower third. `kind` is 'song' or 'talk'; `info` is what to show.
@@ -4945,7 +5019,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function renderScreenOpts() {
     var o = mix.opts;
-    ['Motion', 'Image', 'Green', 'Dark'].forEach(function (k) { $('bg' + k).checked = o.bg === k.toLowerCase(); });
+    ['Motion', 'Image', 'Green', 'Color'].forEach(function (k) { $('bg' + k).checked = o.bg === k.toLowerCase(); });
+    renderBgColor();
     var note = '';
     if (o.bg === 'motion') note = ui.motionErr ? ui.motionErr : !ui.motion ? 'Choose an MP4 motion background. It loops for the whole video.' : 'Motion background: ' + fmt1(ui.motion.duration) + ' loop, ' + ui.motion.width + '×' + ui.motion.height + '. It repeats for the length of the mix. Kept in this browser for next time.';
     else if (o.bg === 'green') note = 'In OBS, add a Chroma Key filter to this video and lay it over your scene.';
@@ -4963,6 +5038,30 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (document.activeElement !== $('motionSpeed')) $('motionSpeed').value = o.motionSpeed || 1;
     $('motionSpeedOut').textContent = (o.motionSpeed || 1).toFixed(2) + '×';
     $('textScaleOut').textContent = o.textScale + '%';
+  }
+  function swatchButton(hex, name) {
+    return '<button type="button" class="swatch" data-hex="' + hex + '" title="' + esc(name) + '" aria-label="' + esc(name) + '" style="background:' + hex + '"></button>';
+  }
+  function renderBgColor() {
+    var o = mix.opts, flat = o.bgStyle === 'flat';
+    $('bgColorEd').hidden = o.bg !== 'color';
+    $('bgStyle').value = flat ? 'flat' : 'fade';
+    if (document.activeElement !== $('bgTop')) $('bgTop').value = BgColor.cleanHex(o.bgTop) || BgColor.DEFAULT_TOP;
+    if (document.activeElement !== $('bgBottom')) $('bgBottom').value = BgColor.cleanHex(o.bgBottom) || BgColor.DEFAULT_BOTTOM;
+    $('bgBottomRow').hidden = flat;
+    $('bgTopLabel').textContent = flat ? 'Color' : 'Top';
+    if (flat) ui.bgTarget = 'top';
+    markBgTarget();
+    renderBgRecent();
+  }
+  function markBgTarget() {
+    $('bgTop').classList.toggle('target', ui.bgTarget !== 'bottom');
+    $('bgBottom').classList.toggle('target', ui.bgTarget === 'bottom');
+  }
+  function renderBgRecent() {
+    var row = $('bgRecentRow');
+    row.hidden = !bgRecent.length;
+    setHTML(row, '<span class="swatchlabel">Recent</span>' + bgRecent.map(function (hex) { return swatchButton(hex, 'Recent color ' + hex); }).join(''));
   }
   function cueText(c) {
     var i = infoOf(c.key, c.lane);
@@ -6455,7 +6554,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       extra += v.smooth
         ? ' With ' + (v.motion ? 'a motion background' : 'moving pictures or video clips') + ' the video is built at 30 frames a second, which can take 10 minutes or more for a full mix. Keep this tab open and in front while it works.'
         : ' Building it takes a few minutes for a full mix.';
-      if (mix.opts.bg === 'motion' && !ui.motion) extra += ' Choose the motion background first, or it will use plain dark.';
+      if (mix.opts.bg === 'motion' && !ui.motion) extra += ' Choose the motion background first, or it will use your Color background.';
     }
     say(fmt(exportLen()) + ', about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB.' + extra);
   }
@@ -7271,13 +7370,38 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
 
     // on-screen text
-    ['bgMotion', 'bgImage', 'bgGreen', 'bgDark'].forEach(function (id) {
+    ['bgMotion', 'bgImage', 'bgGreen', 'bgColor'].forEach(function (id) {
       $(id).onchange = function () {
         mix.opts.bg = this.value;
         if (this.value === 'image' && !ui.bgImg) $('bgInput').click();
         if (this.value === 'motion' && !ui.motion) $('motionInput').click();
         changed();
       };
+    });
+    $('bgSwatches').innerHTML = BgColor.SWATCHES.map(function (s) { return swatchButton(s.hex, s.name); }).join('');
+    $('bgStyle').onchange = function () { mix.opts.bgStyle = this.value; changed(); };
+    [['bgTop', 'top'], ['bgBottom', 'bottom']].forEach(function (pair) {
+      var key = pair[0], target = pair[1], well = $(key);
+      function pickTarget() { ui.bgTarget = target; markBgTarget(); }
+      well.addEventListener('pointerdown', pickTarget);
+      well.addEventListener('focus', pickTarget);
+      well.addEventListener('input', function () { mix.opts[key] = this.value; drawScreen(); });
+      well.addEventListener('change', function () { mix.opts[key] = this.value; changed(); rememberColor(this.value); });
+    });
+    function rememberColor(hex) {
+      bgRecent = BgColor.addRecent(bgRecent, hex);
+      if (!lsSet('hp.bgRecent', bgRecent)) $('bgNote').textContent = 'Couldn\'t save your recent colors in this browser.';
+      renderBgRecent();
+    }
+    ['bgSwatches', 'bgRecentRow'].forEach(function (id) {
+      $(id).addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-hex]');
+        if (!b) return;
+        var hex = b.getAttribute('data-hex');
+        mix.opts[ui.bgTarget === 'bottom' ? 'bgBottom' : 'bgTop'] = hex;
+        changed();
+        rememberColor(hex);
+      });
     });
     $('pickBg').onclick = function () { $('bgInput').click(); };
     $('pickMotion').onclick = function () { $('motionInput').click(); };
@@ -7703,10 +7827,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return { on: s.on === true, x: s.x, y: s.y, w: s.w };
   }
   var floatSlots = FloatSizes.readSlots(lsGet('hp.floatSizes'));
+  var phoneSaved = FloatSizes.readPhone(lsGet('hp.floatPhone'));
   var sizeSaving = false;
   function saveFloat() { lsSet('hp.float', floatState); }
   function renderSizes() {
-    $('sizePhone').setAttribute('aria-pressed', String(FloatSizes.matches(FloatSizes.PHONE_WIDTH, floatState.w)));
+    var phone = $('sizePhone');
+    phone.setAttribute('aria-pressed', String(!sizeSaving && FloatSizes.matches(FloatSizes.phoneWidth(phoneSaved), floatState.w)));
+    var phoneTitle = sizeSaving ? 'Save the current size as Phone'
+      : phoneSaved != null ? 'Go to your phone size (' + phoneSaved + ' px wide)'
+      : 'About the size of the video on a phone turned sideways. Press Save… then Phone to set your own.';
+    phone.title = phoneTitle;
+    phone.setAttribute('aria-label', phoneTitle);
     $('trSizes').querySelectorAll('[data-slot]').forEach(function (b) {
       var i = +b.getAttribute('data-slot'), saved = floatSlots[i];
       b.classList.toggle('quiet', saved == null);
@@ -7728,6 +7859,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var message = 'Couldn\'t save the size in this browser.';
       var b = $('trSizes').querySelector('[data-slot="' + i + '"]');
       b.title = message; b.setAttribute('aria-label', message);
+      $('screenWhat').textContent = message;
+    }
+  }
+  function savePhone() {
+    phoneSaved = FloatSizes.readPhone(floatState.w);
+    var ok = lsSet('hp.floatPhone', phoneSaved);
+    sizeSaving = false; renderSizes();
+    if (!ok) {
+      var message = 'Couldn\'t save the size in this browser.';
+      $('sizePhone').title = message; $('sizePhone').setAttribute('aria-label', message);
       $('screenWhat').textContent = message;
     }
   }
@@ -7798,7 +7939,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (b) setSpeed(parseFloat(b.getAttribute('data-speed')));
     });
     $('speedPill').onclick = function () { setSpeed(1); };
-    $('sizePhone').onclick = function () { sizeSaving = false; resizeFloat(FloatSizes.PHONE_WIDTH); };
+    $('sizePhone').onclick = function () {
+      if (sizeSaving) { savePhone(); return; }
+      resizeFloat(FloatSizes.phoneWidth(phoneSaved));
+    };
     $('sizeSave').onclick = function () { sizeSaving = !sizeSaving; renderSizes(); };
     $('trSizes').addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-slot]');
@@ -8018,6 +8162,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     folders = lsGet('hp.folders') || [];
     scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));
     scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));
+    bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));
+    phoneSaved = FloatSizes.readPhone(lsGet('hp.floatPhone'));
     userFonts = TextFont.clean(lsGet('hp.fonts')); renderFontMenu(); loadUserFontsQuietly();
     cui.open = null; cui.suggest = []; cui.fillTicks = []; ui.fillWin = null; ui.fillPick = false;
     hymnSkip = lsGet('hp.hymnSkip') || {};

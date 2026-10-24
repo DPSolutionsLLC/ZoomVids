@@ -76,3 +76,19 @@ test('matches allows 2 px either way', () => {
 test('matches is false for an empty slot', () => {
   assert.equal(FloatSizes.matches(null, 440), false);
 });
+
+test('readPhone keeps and rounds a valid width', () => {
+  assert.equal(FloatSizes.readPhone(600), 600);
+  assert.equal(FloatSizes.readPhone(512.6), 513);
+});
+
+test('readPhone gives null for missing, non-number or out-of-range widths', () => {
+  for (const raw of [null, undefined, '500', NaN, Infinity, 239, 1281]) {
+    assert.equal(FloatSizes.readPhone(raw), null);
+  }
+});
+
+test('phoneWidth uses the saved width, or 440 when nothing is saved', () => {
+  assert.equal(FloatSizes.phoneWidth(null), 440);
+  assert.equal(FloatSizes.phoneWidth(500), 500);
+});
