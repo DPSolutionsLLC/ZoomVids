@@ -2948,7 +2948,18 @@ var FloatSizes = (function () {
   function matches(target, current) { return target != null && Math.abs(target - current) <= 2; }
   function readPhone(raw) { return validWidth(raw) ? Math.round(raw) : null; }
   function phoneWidth(saved) { return saved != null ? saved : PHONE_WIDTH; }
-  return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches, readPhone: readPhone, phoneWidth: phoneWidth };
+  function order(phoneSaved, slots) {
+    var clean = readSlots(slots);
+    var entries = [{ key: 'phone', width: phoneWidth(readPhone(phoneSaved)), base: 0 }];
+    clean.forEach(function (w, i) { entries.push({ key: i, width: w, base: i + 1 }); });
+    entries.sort(function (a, b) {
+      if ((a.width == null) !== (b.width == null)) return a.width == null ? 1 : -1;
+      if (a.width != null && a.width !== b.width) return a.width - b.width;
+      return a.base - b.base;
+    });
+    return entries.map(function (e) { return e.key; });
+  }
+  return { PHONE_WIDTH: PHONE_WIDTH, SLOTS: SLOTS, readSlots: readSlots, saveSlot: saveSlot, matches: matches, readPhone: readPhone, phoneWidth: phoneWidth, order: order };
 })();
 
 /* Color background: flat or fade colors, ready-made swatches, recent colors. Pure functions; inputs are never changed. */
@@ -8188,6 +8199,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('trSizes').classList.toggle('saving', sizeSaving);
     $('sizeSave').setAttribute('aria-pressed', String(sizeSaving));
     $('sizeSave').textContent = sizeSaving ? 'Cancel' : 'Save…';
+    orderSizeButtons();
+  }
+  function orderSizeButtons() {
+    var bar = $('trSizes');
+    var wanted = FloatSizes.order(phoneSaved, floatSlots).map(function (key) {
+      return key === 'phone' ? $('sizePhone') : bar.querySelector('[data-slot="' + key + '"]');
+    });
+    var current = Array.prototype.slice.call(bar.querySelectorAll('#sizePhone, [data-slot]'));
+    var same = wanted.every(function (b, i) { return b === current[i]; });
+    if (same) return;
+    var focused = document.activeElement;
+    wanted.forEach(function (b) { bar.insertBefore(b, $('sizeSave')); });
+    if (wanted.indexOf(focused) !== -1 && document.activeElement !== focused) focused.focus();
   }
   function resizeFloat(w) { placeFloat(floatState.x, floatState.y, w); saveFloat(); renderSizes(); }
   function saveSize(i) {
@@ -8503,6 +8527,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));
     bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));
     phoneSaved = FloatSizes.readPhone(lsGet('hp.floatPhone'));
+    floatSlots = FloatSizes.readSlots(lsGet('hp.floatSizes'));
+    renderSizes();
     userFonts = TextFont.clean(lsGet('hp.fonts')); renderFontMenu(); loadUserFontsQuietly();
     cui.open = null; cui.suggest = []; cui.fillTicks = []; ui.fillWin = null; ui.fillPick = false;
     hymnSkip = lsGet('hp.hymnSkip') || {};

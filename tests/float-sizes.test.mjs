@@ -92,3 +92,46 @@ test('phoneWidth uses the saved width, or 440 when nothing is saved', () => {
   assert.equal(FloatSizes.phoneWidth(null), 440);
   assert.equal(FloatSizes.phoneWidth(500), 500);
 });
+
+
+test('order puts Phone first and empty slots after it when nothing is saved', () => {
+  assert.deepEqual(FloatSizes.order(null, [null, null]), ['phone', 0, 1]);
+});
+
+test('order sorts by width with an unsaved Phone at 440', () => {
+  assert.deepEqual(FloatSizes.order(null, [600, 300]), [1, 'phone', 0]);
+});
+
+test('order sorts when every size is saved', () => {
+  assert.deepEqual(FloatSizes.order(700, [500, 900]), [0, 'phone', 1]);
+});
+
+test('order puts a saved Phone first when it is the smallest', () => {
+  assert.deepEqual(FloatSizes.order(300, [500, 600]), ['phone', 0, 1]);
+});
+
+test('order puts an empty slot after the saved ones', () => {
+  assert.deepEqual(FloatSizes.order(null, [null, 1000]), ['phone', 1, 0]);
+});
+
+test('order puts empty slots last even when Phone is large', () => {
+  assert.deepEqual(FloatSizes.order(1200, [null, null]), ['phone', 0, 1]);
+  assert.deepEqual(FloatSizes.order(1200, [null, 300]), [1, 'phone', 0]);
+});
+
+test('order keeps Phone, 1, 2 for equal widths', () => {
+  assert.deepEqual(FloatSizes.order(500, [500, 500]), ['phone', 0, 1]);
+  assert.deepEqual(FloatSizes.order(600, [500, 500]), [0, 1, 'phone']);
+});
+
+test('order treats bad stored values as unsaved', () => {
+  assert.deepEqual(FloatSizes.order('500', [NaN, 300]), [1, 'phone', 0]);
+  assert.deepEqual(FloatSizes.order(null, 'x'), ['phone', 0, 1]);
+});
+
+test('order does not change its input', () => {
+  const slots = [600, 300];
+  const copy = structuredClone(slots);
+  FloatSizes.order(null, slots);
+  assert.deepEqual(slots, copy);
+});
