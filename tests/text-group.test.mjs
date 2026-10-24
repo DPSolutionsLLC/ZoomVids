@@ -55,18 +55,22 @@ test('neighbours skips items with a different key', () => {
   assert.equal(near.next.d, null);
 });
 
-test('rowOrder pulls a group together where its first member is', () => {
-  const groups = [{ id: 'gX', name: 'X' }];
-  const texts = [{ id: 't1', group: 'gX' }, { id: 't2' }, { id: 't3', group: 'gX' }, { id: 't4' }];
-  assert.deepEqual(TextGroup.rowOrder(texts, groups), [
-    { kind: 'group', id: 'gX' }, { kind: 'text', id: 't1' }, { kind: 'text', id: 't3' }, { kind: 'text', id: 't2' }, { kind: 'text', id: 't4' }
-  ]);
+test('keepClosed copies the closed flag by group id', () => {
+  const groups = [{ id: 'gA', name: 'A' }, { id: 'gB', name: 'B', closed: true }];
+  const from = [{ id: 'gA', name: 'A', closed: true }, { id: 'gB', name: 'B' }];
+  assert.deepEqual(TextGroup.keepClosed(groups, from), [{ id: 'gA', name: 'A', closed: true }, { id: 'gB', name: 'B' }]);
 });
 
-test('rowOrder treats an unknown group as no group and lists every text once', () => {
-  const texts = [{ id: 't1', group: 'gGone' }, { id: 't2' }];
-  const rows = TextGroup.rowOrder(texts, []);
-  assert.deepEqual(rows, [{ kind: 'text', id: 't1' }, { kind: 'text', id: 't2' }]);
+test('keepClosed leaves groups that are not in the current list open', () => {
+  const out = TextGroup.keepClosed([{ id: 'gNew', name: 'N', closed: true }], [{ id: 'gA', name: 'A', closed: true }]);
+  assert.deepEqual(out, [{ id: 'gNew', name: 'N' }]);
+});
+
+test('keepClosed leaves its inputs alone', () => {
+  const groups = [{ id: 'gA', name: 'A' }], from = [{ id: 'gA', name: 'A', closed: true }];
+  TextGroup.keepClosed(groups, from);
+  assert.deepEqual(groups, [{ id: 'gA', name: 'A' }]);
+  assert.deepEqual(from, [{ id: 'gA', name: 'A', closed: true }]);
 });
 
 test('listRows places a group at its earliest member and interleaves the rest by start', () => {

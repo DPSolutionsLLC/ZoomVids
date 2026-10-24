@@ -166,3 +166,14 @@ test('describe counts an added picture when the old playlist had none', () => {
 test('describe returns "change" when nothing differs', () => {
   assert.equal(UndoStack.describe(json(playlist()), json(playlist())), 'change');
 });
+
+test('describe names the text row order when only the rows moved', () => {
+  const before = playlist({ textRows: ['a', 'b'] });
+  assert.equal(UndoStack.describe(json(before), json(playlist({ textRows: ['b', 'a'] }))), 'change to the text row order');
+});
+
+test('describe leaves the row order out when a text changed too', () => {
+  const before = playlist({ textRows: ['a', 'b'] });
+  const after = playlist({ textRows: ['b', 'a'], texts: [] });
+  assert.doesNotMatch(UndoStack.describe(json(before), json(after)), /row order/);
+});

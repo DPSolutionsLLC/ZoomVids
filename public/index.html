@@ -125,7 +125,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .sec.collapsed > .headrow::after { content: attr(data-summary); color: var(--muted); font-size: 13px; margin-right: auto; }
 .cols.lib-collapsed { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .cols.lib-collapsed #sec-library { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-@media (prefers-reduced-motion: reduce) { .sectoggle svg, .textrow .exp svg, .grouprow .exp svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sectoggle svg, .textrow .exp svg, .grouprow .exp svg, .tl .grp .gtog svg { transition: none; } }
 .headrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
@@ -273,6 +273,12 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .grp .ggrip { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; background: color-mix(in srgb, var(--msg) 45%, transparent); }
 .tl .grp .ggrip.s { left: 0; }
 .tl .grp .ggrip.e { right: 0; }
+.tl .grp .gtog { display: inline-block; width: 11px; height: 11px; margin: 0 3px 0 2px; vertical-align: -1px; cursor: pointer; }
+.tl .grp .gtog svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform 0.15s; }
+.tl .grp.closed .gtog svg { transform: rotate(-90deg); }
+.tl .grp.slim { height: 12px; line-height: 10px; font-size: 9px; padding: 0 8px; }
+.tl .grp.slim .gtog { width: 9px; height: 9px; vertical-align: 0; }
+.tl .rowdrop { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--sel); z-index: 5; pointer-events: none; }
 .grouprow .gfill { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; font-size: 13px; color: var(--muted); }
 .grouprow .gfill select { padding: 2px 6px; color: var(--ink); }
 #manyGroupName { width: min(100%, 220px); }
@@ -413,6 +419,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <span class="pill" id="status"></span>
       <span class="note" id="fillHint" role="status" hidden></span>
       <div class="zoom">
+        <button class="btn small" id="sortRows" title="Line up the text rows with the earliest start on top">Sort by start</button>
         <span class="note num" id="zoomNote"></span>
         <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
         <button class="btn small" id="zoomFit">Fit</button>
@@ -1891,17 +1898,12 @@ var TextGroup = (function () {
     return { prev: prev, next: next };
   }
   function groupOf(tx, groups) { return tx.group && find(groups, tx.group) ? tx.group : null; }
-  function rowOrder(texts, groups) {
-    var rows = [], done = {};
-    texts.forEach(function (tx) {
-      var gid = groupOf(tx, groups);
-      if (!gid) { rows.push({ kind: 'text', id: tx.id }); return; }
-      if (done[gid]) return;
-      done[gid] = true;
-      rows.push({ kind: 'group', id: gid });
-      texts.forEach(function (m) { if (groupOf(m, groups) === gid) rows.push({ kind: 'text', id: m.id }); });
+  function keepClosed(groups, fromGroups) {
+    return groups.map(function (g) {
+      var copy = Object.assign({}, g), from = find(fromGroups, g.id);
+      if (from && from.closed) copy.closed = true; else delete copy.closed;
+      return copy;
     });
-    return rows;
   }
   function listRows(texts, groups, startOf) {
     var units = [], byGroup = {};
@@ -1923,7 +1925,133 @@ var TextGroup = (function () {
     units.sort(byStart).forEach(function (u) { out = out.concat(u.rows); });
     return out;
   }
-  return { find: find, memberIds: memberIds, liveGroups: liveGroups, nextName: nextName, copyName: copyName, cleanName: cleanName, neighbours: neighbours, rowOrder: rowOrder, listRows: listRows };
+  return { find: find, memberIds: memberIds, liveGroups: liveGroups, nextName: nextName, copyName: copyName, cleanName: cleanName, neighbours: neighbours, keepClosed: keepClosed, listRows: listRows };
+})();
+
+/* The order of text rows on the timeline and in the text list, kept apart from the drawing order. Pure functions; inputs are never changed. */
+var TextRows = (function () {
+  function groupOf(tx, groups) { return tx.group && TextGroup.find(groups, tx.group) ? tx.group : null; }
+  function byIdOf(texts) { var out = {}; texts.forEach(function (tx) { out[tx.id] = tx; }); return out; }
+  function flatten(units) {
+    var out = [];
+    units.forEach(function (u) { if (u.kind === 'text') out.push(u.id); else out.push.apply(out, u.members); });
+    return out;
+  }
+  function units(rows, texts, groups) {
+    var byId = byIdOf(texts), out = [], byGroup = {}, seen = {};
+    (rows || []).forEach(function (id) {
+      var tx = byId[id];
+      if (!tx || seen[id]) return;
+      seen[id] = true;
+      var gid = groupOf(tx, groups);
+      if (!gid) { out.push({ kind: 'text', id: id }); return; }
+      if (!byGroup[gid]) { byGroup[gid] = { kind: 'group', id: gid, members: [] }; out.push(byGroup[gid]); }
+      byGroup[gid].members.push(id);
+    });
+    return out;
+  }
+  function tidy(rows, texts, groups, startOf) {
+    var byId = byIdOf(texts), index = {};
+    texts.forEach(function (tx, i) { index[tx.id] = i; });
+    var list = units(Array.isArray(rows) ? rows : texts.map(function (tx) { return tx.id; }), texts, groups);
+    var inRows = {}, groupUnit = {};
+    list.forEach(function (u) {
+      if (u.kind === 'text') inRows[u.id] = true;
+      else { groupUnit[u.id] = u; u.members.forEach(function (id) { inRows[id] = true; }); }
+    });
+    function start(id) { return startOf(byId[id]); }
+    function unitStart(u) { return u.kind === 'text' ? start(u.id) : Math.min.apply(null, u.members.map(start)); }
+    function insertUnit(u) {
+      var s = unitStart(u), at = list.length;
+      for (var i = 0; i < list.length; i++) if (unitStart(list[i]) > s) { at = i; break; }
+      list.splice(at, 0, u);
+    }
+    var fresh = texts.filter(function (tx) { return !inRows[tx.id]; }), placedGroup = {};
+    fresh.forEach(function (tx) {
+      var gid = groupOf(tx, groups);
+      if (!gid) { insertUnit({ kind: 'text', id: tx.id }); return; }
+      var u = groupUnit[gid];
+      if (u && !placedGroup[gid]) {
+        var s = start(tx.id), at = u.members.length;
+        for (var i = 0; i < u.members.length; i++) if (start(u.members[i]) > s) { at = i; break; }
+        u.members.splice(at, 0, tx.id);
+        return;
+      }
+      if (placedGroup[gid]) return;
+      placedGroup[gid] = true;
+      var members = fresh.filter(function (m) { return groupOf(m, groups) === gid; }).map(function (m) { return m.id; });
+      members.sort(function (a, b) { return start(a) - start(b) || index[a] - index[b]; });
+      groupUnit[gid] = { kind: 'group', id: gid, members: members };
+      insertUnit(groupUnit[gid]);
+    });
+    return flatten(list);
+  }
+  function display(unitList, groupsById, rowH, closedH) {
+    var rows = [], y = 0;
+    unitList.forEach(function (u, i) {
+      if (u.kind === 'text') { rows.push({ kind: 'text', id: u.id, y: y, h: rowH, unit: i }); y += rowH; return; }
+      var g = groupsById[u.id];
+      if (g && g.closed) {
+        rows.push({ kind: 'group', id: u.id, y: y, h: closedH, closed: true, unit: i, members: u.members.slice() });
+        y += closedH;
+        return;
+      }
+      rows.push({ kind: 'group', id: u.id, y: y, h: rowH, closed: false, unit: i });
+      y += rowH;
+      u.members.forEach(function (id, k) { rows.push({ kind: 'text', id: id, y: y, h: rowH, unit: i, member: true, group: u.id, index: k }); y += rowH; });
+    });
+    return { rows: rows, height: y };
+  }
+  function keyOf(u) { return u.kind === 'text' ? u.id : 'g:' + u.id; }
+  function clampIndex(i, length) { return Math.max(0, Math.min(length, Math.round(i) || 0)); }
+  function move(rows, texts, groups, ids, toIndex, within) {
+    var list = units(rows, texts, groups), want = {};
+    ids.forEach(function (id) { want[id] = true; });
+    if (within && within.group) {
+      list = list.map(function (u) {
+        if (u.kind !== 'group' || u.id !== within.group) return u;
+        var lifted = u.members.filter(function (id) { return want[id]; }), rest = u.members.filter(function (id) { return !want[id]; });
+        if (!lifted.length) return u;
+        var at = clampIndex(toIndex, rest.length);
+        return { kind: 'group', id: u.id, members: rest.slice(0, at).concat(lifted, rest.slice(at)) };
+      });
+      return flatten(list);
+    }
+    var liftedUnits = list.filter(function (u) { return want[keyOf(u)]; }), others = list.filter(function (u) { return !want[keyOf(u)]; });
+    if (!liftedUnits.length) return flatten(list);
+    var to = clampIndex(toIndex, others.length);
+    return flatten(others.slice(0, to).concat(liftedUnits, others.slice(to)));
+  }
+  function sortByStart(rows, texts, groups, startOf) {
+    var rowList = rows || [], position = {};
+    rowList.forEach(function (id, i) { if (!(id in position)) position[id] = i; });
+    var ordered = texts.map(function (tx, i) { return { tx: tx, at: tx.id in position ? position[tx.id] : rowList.length + i }; });
+    ordered.sort(function (a, b) { return a.at - b.at; });
+    return TextGroup.listRows(ordered.map(function (o) { return o.tx; }), groups, startOf)
+      .filter(function (r) { return r.kind === 'text'; })
+      .map(function (r) { return r.id; });
+  }
+  function isSorted(rows, texts, groups, startOf) {
+    var sorted = sortByStart(rows, texts, groups, startOf);
+    return sorted.length === (rows || []).length && sorted.every(function (id, i) { return rows[i] === id; });
+  }
+  function dropIndex(displayRows, y, scope) {
+    var slots = [];
+    if (scope && scope.group) {
+      displayRows.forEach(function (r) { if (r.member && r.group === scope.group) slots.push(r.y + r.h / 2); });
+    } else {
+      displayRows.forEach(function (r) {
+        var end = r.y + r.h;
+        if (!slots[r.unit]) slots[r.unit] = { top: r.y, end: end };
+        else slots[r.unit].end = Math.max(slots[r.unit].end, end);
+      });
+      slots = slots.map(function (s) { return (s.top + s.end) / 2; });
+    }
+    var best = 0;
+    for (var i = 1; i < slots.length; i++) if (Math.abs(slots[i] - y) < Math.abs(slots[best] - y)) best = i;
+    return best;
+  }
+  return { tidy: tidy, units: units, display: display, move: move, sortByStart: sortByStart, isSorted: isSorted, dropIndex: dropIndex };
 })();
 
 /* Where on-screen text goes inside its box. Pure functions; measuring is passed in. */
@@ -2406,6 +2534,7 @@ var UndoStack = (function () {
     if (pics) labels.push(pics === 1 ? '1 picture' : pics + ' pictures');
     if (!same(a.queue, b.queue)) labels.push('the tap queue');
     if (!texts && !same(a.groups, b.groups)) labels.push('text groups');
+    if (!texts && same(a.groups, b.groups) && !same(a.textRows, b.textRows)) labels.push('the text row order');
     if (!same(a.items, b.items) || !same(a.spoken, b.spoken)) labels.push('songs and talks');
     if (!same(a.opts, b.opts) || !same(a.target, b.target)) labels.push('mix settings');
     if (!same(a.name, b.name)) labels.push('the playlist name');
@@ -3083,11 +3212,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, groupsClosed: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
-  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [], pictures: [] }; }
+  function blankMix() { return { name: '', target: 1200, opts: clone(DEFAULTS), items: [], spoken: [], texts: [], queue: [], groups: [], pictures: [], textRows: [] }; }
   function upgradeMix(m) {
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
     m.opts = BgColor.cleanOpts(m.opts);
@@ -3103,7 +3232,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     m.queue.forEach(function (tx) { delete tx.group; });
     m.texts.forEach(function (tx) { if (!tx.group) delete tx.ownLen; });
     m.queue.forEach(function (tx) { delete tx.ownLen; });
+    m.textRows = TextRows.tidy(m.textRows, m.texts, m.groups, rowStart);
   }
+  function rowStart(tx) { return tx.whole || tx.fromStart ? 0 : tx.start || 0; }
+  function tidyRows() { return TextRows.tidy(mix.textRows, mix.texts, mix.groups, rowStart); }
+  function rowUnits() { return TextRows.units(tidyRows(), mix.texts, mix.groups); }
+  function groupsById() { var out = {}; mix.groups.forEach(function (g) { out[g.id] = g; }); return out; }
+  function rowLayout() { return TextRows.display(rowUnits(), groupsById(), ROW_H, CLOSED_H); }
+  function textTopPx() { return 100 + PictureBox.rows(pictureSpans()).count * ROW_H; }
+  function shownStart(tx) { return txSpan(tx).start; }
+  var ROW_H = 22, CLOSED_H = 34, SLIM_H = 12;
   function sampleMix() {
     var m = blankMix();
     SAMPLES.forEach(function (s, i) {
@@ -3750,18 +3888,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // Undo history: each settled change pushes the previous copy of the mix.
   // File actions (copying files in, Rescan) set historyBarrier so they stay final.
   var UNDO_LIMIT = 50, UNDO_QUIET_MS = 1000;
-  var undoStack = UndoStack.create(UNDO_LIMIT, JSON.stringify(mix));
+  var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
+  // Collapsing a group is a view choice, so it is left out of the Undo history.
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
-    undoStack = UndoStack.create(UNDO_LIMIT, JSON.stringify(mix));
+    undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
     renderUndo();
   }
   function checkpoint() {
     clearTimeout(undoTimer); undoWaiting = false;
     if (pointerHeld) { undoPending = true; renderUndo(); return; }
     undoPending = false;
-    var json = JSON.stringify(mix);
+    var json = historyJson();
     if (historyBarrier) { historyBarrier = false; undoStack = UndoStack.create(UNDO_LIMIT, json); renderUndo(); return; }
     var next = UndoStack.record(undoStack, json);
     if (next !== undoStack) undoStack = next;
@@ -3784,8 +3924,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var before = JSON.parse(r.before), after = JSON.parse(r.after);
     var audioChanged = JSON.stringify([before.items, before.spoken, before.opts, before.target]) !== JSON.stringify([after.items, after.spoken, after.opts, after.target]);
     if (audioChanged && Player.tag) Player.stop();
+    after.groups = TextGroup.keepClosed(after.groups || [], mix.groups);
     mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
-    undoStack = UndoStack.settle(r.stack, JSON.stringify(mix));
+    undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
     $('undoNote').textContent = verb + ': ' + UndoStack.describe(r.before, r.after);
     clearTimeout(undoNoteTimer);
@@ -3845,7 +3986,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function changed() {
     tidyGroups(mix);
     checkpoint();
-    ui.groupsClosed = TextPick.prune(ui.groupsClosed, mix.groups);
     relayout();
     if (ui.sel && !findItem(ui.sel.lane, ui.sel.id)) ui.sel = null;
     ui.checked = TextPick.prune(ui.checked, mix.texts); ui.expanded = TextPick.prune(ui.expanded, mix.texts);
@@ -4169,9 +4309,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     h = '<div class="axis">' + axis + '</div>' + h;
     // rows: two for music, one for spoken clips, then rows of pictures, then one per piece of text
-    var rows = TextGroup.rowOrder(mix.texts, mix.groups);
-    var pr = PictureBox.rows(pictureSpans()), picTop = 100, textTop = 100 + pr.count * 22;
-    tl.style.height = Math.max(134, textTop + rows.length * 22 + 4) + 'px';
+    var lay = rowLayout();
+    var pr = PictureBox.rows(pictureSpans()), picTop = 100, textTop = textTopPx();
+    tl.style.height = Math.max(134, textTop + lay.height + 4) + 'px';
     plan.spoken.forEach(function (c) {
       if (c.mute) return;
       h += '<i class="duck" style="left:' + pct(Math.max(0, c.start - plan.ramp)) + ';width:' + pct(c.len + 2 * plan.ramp) + '"></i>';
@@ -4190,21 +4330,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var pname = lib[it.key] ? lib[it.key].name : it.name;
       h += '<div class="clip picc' + (sel.lane === 'pictures' && sel.id === it.id ? ' sel' : '') + '" data-lane="pictures" data-id="' + it.id + '" title="' + esc(pname) + '" style="top:' + (picTop + pr.rowOf[it.id] * 22) + 'px;left:' + pct(it.start) + ';width:' + pct(it.dur) + '"><span class="lbl">' + esc(pname) + '</span><i class="grip" data-grip="1" title="Drag to change how long it shows"></i></div>';
     });
-    rows.forEach(function (rw, row) {
-      if (rw.kind === 'group') {
-        var g = TextGroup.find(mix.groups, rw.id), ids = TextGroup.memberIds(mix.texts, rw.id), gs = groupBarSpan(rw.id);
-        var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show';
-        h += '<i class="grpbox" style="top:' + (textTop + row * 22 - 2) + 'px;height:' + ((1 + ids.length) * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
-        h += '<div class="grp' + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, drag an end to stretch or squeeze it, click to select it" style="top:' + (textTop + row * 22) + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"><span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span><i class="ggrip s" data-gedge="start" title="Drag to change when the group starts"></i><i class="ggrip e" data-gedge="end" title="Drag to change when the group ends"></i></div>';
-        return;
-      }
-      var tx = findItem('texts', rw.id);
+    function textClip(tx, top, collapsed) {
       var line = plainText(tx).split('\n')[0], first = tx.ref ? tx.ref + ' · ' + line : line || 'Text';
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
       var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '') + (TextPick.has(ui.checked, tx.id) ? ' checked' : '') + (tx.hidden ? ' hid' : '');
       var fixedEnd = tx.whole || during || tx.untilNext || tx.toEnd || tx.locked;
-      h += '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '" title="' + esc(plainText(tx)) + '" style="top:' + (textTop + row * 22) + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
+      return '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '"' + (collapsed ? ' data-collapsed="1"' : '') + ' title="' + esc(plainText(tx)) + '" style="top:' + top + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
+    }
+    lay.rows.forEach(function (rw) {
+      var top = textTop + rw.y;
+      if (rw.kind === 'group') {
+        var g = TextGroup.find(mix.groups, rw.id), ids = TextGroup.memberIds(mix.texts, rw.id), gs = groupBarSpan(rw.id);
+        var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show', boxH = rw.closed ? CLOSED_H : (1 + ids.length) * ROW_H;
+        var toggle = '<i class="gtog" data-gtoggle="1" role="button" aria-label="' + (rw.closed ? 'Expand the group' : 'Collapse the group') + '" title="' + (rw.closed ? 'Open the group onto its own rows' : 'Collapse the group onto one row') + '">' + CHEVRON + '</i>';
+        h += '<i class="grpbox" style="top:' + (top - 2) + 'px;height:' + boxH + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
+        h += '<div class="grp' + (rw.closed ? ' slim closed' : '') + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, drag an end to stretch or squeeze it, click to select it" style="top:' + top + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '">' + toggle + '<span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span><i class="ggrip s" data-gedge="start" title="Drag to change when the group starts"></i><i class="ggrip e" data-gedge="end" title="Drag to change when the group ends"></i></div>';
+        if (rw.closed) {
+          rw.members.map(function (id) { return findItem('texts', id); }).filter(Boolean)
+            .sort(function (x, y) { return txSpan(x).start - txSpan(y).start; })
+            .forEach(function (tx) { h += textClip(tx, top + SLIM_H, true); });
+        }
+        return;
+      }
+      h += textClip(findItem('texts', rw.id), top, false);
     });
+    if (ui.rowDrop != null) h += '<i class="rowdrop" style="top:' + ui.rowDrop + 'px"></i>';
     if (ui.snapT != null) h += '<i class="snapline" style="left:' + pct(ui.snapT) + '"></i>';
     if (ui.fillWin) h += '<i class="fillwin" style="left:' + pct(ui.fillWin.start) + ';width:' + pct(ui.fillWin.end - ui.fillWin.start) + '"><span>Scriptures go here</span></i>';
     h += '<div class="mark" style="left:' + pct(mix.target) + '"><b>' + fmt(mix.target) + '</b></div>';
@@ -4215,6 +4365,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var visible = $('tlwrap').clientWidth / pps;
     $('zoomNote').textContent = ui.zoom > 1 ? 'Showing ' + fmt(visible) + ' at a time' : 'Showing the whole mix';
     $('zoomOut').disabled = ui.zoom <= 1; $('zoomFit').disabled = ui.zoom <= 1; $('zoomIn').disabled = ui.zoom >= 64;
+    $('sortRows').hidden = mix.texts.length < 2;
+    $('sortRows').disabled = TextRows.isSorted(tidyRows(), mix.texts, mix.groups, shownStart);
     drawClipWaves();
   }
   function syncHead() { var h = $('tl').querySelector('.head'); if (h) { h.hidden = ui.cursor <= 0; h.style.left = (ui.cursor / ui.span * 100) + '%'; } }
@@ -5240,7 +5392,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       mix.groups.push(g);
       var starts = GroupFill.packed(items.map(function (tx) { return { len: textLen(tx), fadeIn: tx.fadeIn || 0 }; }), Math.round(t * 10) / 10);
       items.forEach(function (tx, i) { tx.start = starts[i].start; tx.group = g.id; mix.texts.push(tx); });
-      ui.groupsClosed = TextPick.set(ui.groupsClosed, g.id, false);
     } else {
       items.forEach(function (tx, i) {
         tx.start = Math.round(t * 10) / 10;
@@ -5682,7 +5833,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var FIT_FLAG = '<span class="tag warn fitflag" hidden>Doesn’t fit</span>';
   function textRowLabel(tx) { return (tx.hidden ? '<span class="tag">Hidden</span>' : '') + (tx.ref ? esc(tx.ref) + ' · ' : '') + esc(plainText(tx)); }
   function groupRowHtml(g) {
-    var ids = TextGroup.memberIds(mix.texts, g.id), open = !TextPick.has(ui.groupsClosed, g.id), gs = groupBarSpan(g.id), mode = GroupFill.modeOf(g);
+    var ids = TextGroup.memberIds(mix.texts, g.id), open = !g.closed, gs = groupBarSpan(g.id), mode = GroupFill.modeOf(g);
     var allHidden = TextBatch.hideAction(mix.texts, ids) === 'show', allChecked = ids.every(function (id) { return TextPick.has(ui.checked, id); });
     var name = ui.renamingGroup === g.id ?
       '<input type="text" id="groupNameInput" value="' + esc(g.name) + '" aria-label="Group name" maxlength="60"><button class="btn small primary" data-act="grenameOk">Rename</button><button class="btn small quiet" data-act="grenameCancel">Cancel</button>' :
@@ -5705,11 +5856,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function renderTexts() {
     if (ui.bulk && !TextPick.count(ui.checked, mix.texts)) ui.bulk = false;
     var h = '', sel = selText();
-    if (sel && sel.group && TextPick.has(ui.groupsClosed, sel.group)) ui.groupsClosed = TextPick.set(ui.groupsClosed, sel.group, false);
-    TextGroup.listRows(mix.texts, mix.groups, function (tx) { return tx.start; }).forEach(function (rw) {
-      if (rw.kind === 'group') { h += groupRowHtml(TextGroup.find(mix.groups, rw.id)); return; }
-      var tx = findItem('texts', rw.id), grouped = !!(tx.group && TextGroup.find(mix.groups, tx.group));
-      if (grouped && TextPick.has(ui.groupsClosed, tx.group)) return;
+    rowUnits().forEach(function (u) {
+      if (u.kind === 'text') { textRow(findItem('texts', u.id), false); return; }
+      var g = TextGroup.find(mix.groups, u.id);
+      h += groupRowHtml(g);
+      u.members.forEach(function (id) { if (!g.closed || (sel && sel.id === id)) textRow(findItem('texts', id), true); });
+    });
+    function textRow(tx, grouped) {
       var sp = txSpan(tx), picked = sel && sel.id === tx.id, open = TextPick.has(ui.expanded, tx.id), checked = TextPick.has(ui.checked, tx.id);
       var label = (plainText(tx).split('\n')[0] || tx.ref || 'Text').slice(0, 60);
       h += '<li class="textrow' + (picked ? ' picked' : '') + (checked ? ' checked' : '') + (open ? ' open' : '') + (tx.hidden ? ' off' : '') + (grouped ? ' ingroup' : '') + '" data-text="' + tx.id + '">' +
@@ -5718,7 +5871,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         '<button class="btn small quiet eye" data-act="hide" aria-pressed="' + !!tx.hidden + '" aria-label="' + (tx.hidden ? 'Show: ' : 'Hide: ') + esc(label) + '">' + (tx.hidden ? ICON.eyeOff : ICON.eye) + '</button>' +
         '<button class="btn small quiet exp" data-act="expand" aria-expanded="' + open + '" aria-label="' + (open ? 'Show one line' : 'Show all of it') + '">' + CHEVRON + '</button></li>';
       if (picked) h += '<li class="edslot" data-slot="1"></li>';
-    });
+    }
     if (!h) h = '<li class="blank">No text of your own yet. Press Add text to put a message on screen at the playhead.</li>';
     keepEditorSteady(function () { placeTextEditor(h); });
     var gboxes = $('texts').querySelectorAll('[data-act="gcheck"]');
@@ -6036,7 +6189,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var g = { id: 'g' + nid(), name: TextGroup.nextName(mix.groups) };
     mix.groups.push(g);
     ids.forEach(function (id) { findItem('texts', id).group = g.id; });
-    ui.checked = {}; ui.groupsClosed = TextPick.set(ui.groupsClosed, g.id, false); ui.renamingGroup = g.id;
+    ui.checked = {}; ui.renamingGroup = g.id;
     refreshTexts();
     focusGroupName();
   }
@@ -6053,6 +6206,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!confirm('Remove the group “' + g.name + '” and its ' + (ids.length === 1 ? 'item' : ids.length + ' items') + '?')) return;
     mix.texts = TextPick.without(mix.texts, ids);
     changed();
+  }
+  // Saved with the playlist but never an Undo step, and it never touches playback or the preview.
+  function setGroupClosed(gid, closed) {
+    var g = TextGroup.find(mix.groups, gid); if (!g) return;
+    if (closed) g.closed = true; else delete g.closed;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { lsSet('hp.work', mix); }, 250);
+    renderTimeline(); renderTexts();
   }
   function duplicateGroup(gid) {
     var g = TextGroup.find(mix.groups, gid), ids = TextGroup.memberIds(mix.texts, gid); if (!g || !ids.length) return;
@@ -6954,6 +7115,54 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     // click empty space to play from there
     var tl = $('tl'), wrap = $('tlwrap'), drag = null;
     function timeAt(ev) { var r = tl.getBoundingClientRect(); return clamp((ev.clientX - r.left) / r.width, 0, 1) * ui.span; }
+    var PARTLY_GROUPED = 'Rows stay as they are when the ticked texts are partly inside a group. Tick the whole group, or only texts in one group.';
+    var CLOSED_MEMBER = 'This text is in a collapsed group. Drag the group’s bar to move its row, or expand the group to change the order inside it.';
+    // Which text rows a drag can move up or down, worked out once when the drag starts.
+    function rowPlan(ids, grabbedId) {
+      var rows0 = tidyRows(), units = TextRows.units(rows0, mix.texts, mix.groups), picked = {}, keys = [], parts = [], from = 0;
+      ids.forEach(function (id) { picked[id] = true; });
+      units.forEach(function (u, i) {
+        if (u.kind === 'text') { if (picked[u.id]) { keys.push(u.id); if (u.id === grabbedId) from = i; } return; }
+        var inside = u.members.filter(function (id) { return picked[id]; });
+        if (!inside.length) return;
+        if (inside.length === u.members.length) { keys.push('g:' + u.id); if (u.members.indexOf(grabbedId) >= 0) from = i; }
+        else parts.push({ unit: u, ids: inside });
+      });
+      var plan = { rows0: rows0, lay0: TextRows.display(units, groupsById(), ROW_H, CLOSED_H), top: textTopPx(), started: false };
+      if (!parts.length) { plan.ids = keys; plan.scope = 'top'; plan.from = from; return plan; }
+      if (parts.length > 1 || keys.length) return { why: PARTLY_GROUPED };
+      var g = TextGroup.find(mix.groups, parts[0].unit.id);
+      if (g.closed) return { why: CLOSED_MEMBER };
+      plan.ids = parts[0].ids; plan.scope = { group: g.id }; plan.from = Math.max(0, parts[0].unit.members.indexOf(grabbedId));
+      return plan;
+    }
+    // Stops a long drag from highlighting page text, while still taking focus out of a text box as a normal press does.
+    function holdPress(ev) {
+      ev.preventDefault();
+      var active = document.activeElement;
+      if (active && active !== document.body && active.blur) active.blur();
+    }
+    function useRowPlan(d, plan) { if (plan.ids) d.rows = plan; else d.rowWhy = plan.why; }
+    function dragRows(ev, allowed) {
+      var p = drag.rows;
+      if (!allowed) { if (p.started) { mix.textRows = p.rows0; p.started = false; } ui.rowDrop = null; return; }
+      var y = ev.clientY - tl.getBoundingClientRect().top - p.top, k = TextRows.dropIndex(p.lay0.rows, y, p.scope);
+      if (!p.started && k === p.from) return;
+      p.started = true;
+      mix.textRows = TextRows.move(p.rows0, mix.texts, mix.groups, p.ids, k, p.scope === 'top' ? null : p.scope);
+      ui.rowDrop = rowDropAt(p);
+    }
+    // The top edge of the moved rows in the new layout, where the drop line goes.
+    function rowDropAt(p) {
+      var want = {};
+      p.ids.forEach(function (key) { want[key] = true; });
+      var rows = rowLayout().rows;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i], key = r.kind === 'group' ? 'g:' + r.id : r.id;
+        if (p.scope === 'top' ? want[key] && !r.member : r.member && want[r.id]) return p.top + r.y;
+      }
+      return null;
+    }
     tl.addEventListener('pointerdown', function (ev) {
       if (ev.button !== 0) return;
       if (ui.fillPick) {
@@ -6961,9 +7170,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
         return;
       }
+      var toggle = ev.target.closest ? ev.target.closest('[data-gtoggle]') : null;
+      if (toggle) {
+        var tg = TextGroup.find(mix.groups, toggle.closest('[data-group]').getAttribute('data-group'));
+        holdPress(ev); drag = null;
+        if (tg) setGroupClosed(tg.id, !tg.closed);
+        return;
+      }
       var el = ev.target.closest ? ev.target.closest('.clip') : null;
       var grp = ev.target.closest ? ev.target.closest('.grp') : null;
       if (grp) {
+        holdPress(ev);
         var gid = grp.getAttribute('data-group'), members = TextGroup.memberIds(mix.texts, gid);
         if (ev.ctrlKey || ev.metaKey) {
           var on = members.some(function (id) { return !TextPick.has(ui.checked, id); });
@@ -6979,7 +7196,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           return;
         }
         var gw = TextGroup.find(mix.groups, gid).win;
-        drag = { x: ev.clientX, moved: false, sel: null, group: gid, batch: textBatch(members), span: groupBarSpan(gid), win0: gw ? clone(gw) : null };
+        drag = { x: ev.clientX, y: ev.clientY, moved: false, sel: null, group: gid, batch: textBatch(members), span: groupBarSpan(gid), win0: gw ? clone(gw) : null };
+        useRowPlan(drag, rowPlan(members, members[0]));
         try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
         return;
       }
@@ -6987,8 +7205,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         ui.checked = TextPick.toggle(ui.checked, el.getAttribute('data-id')); drag = null; checksChanged();
         return;
       }
-      drag = { x: ev.clientX, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: !!(ev.target.closest && ev.target.closest('[data-grip]')) };
+      drag = { x: ev.clientX, y: ev.clientY, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: !!(ev.target.closest && ev.target.closest('[data-grip]')) };
       if (drag.sel) {
+        holdPress(ev);
         drag.base = null;
         if (!ui.sel || ui.sel.id !== drag.sel.id) { ui.sel = drag.sel; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
         drag.base = drag.resize ? clipOf(drag.sel).c.len : selBase(drag.sel);
@@ -6996,6 +7215,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (drag.sel.lane === 'texts' && !drag.resize && TextPick.has(ui.checked, drag.sel.id) && TextPick.count(ui.checked, mix.texts) > 1) {
           drag.batch = textBatch(checkedIds());
           drag.span = { start: drag.start0, len: clipOf(drag.sel).c.len };
+        }
+        if (drag.sel.lane === 'texts' && !drag.resize) {
+          if (drag.batch) useRowPlan(drag, rowPlan(drag.batch.ids, drag.sel.id));
+          else if (el.hasAttribute('data-collapsed')) drag.rowWhy = CLOSED_MEMBER;
+          else useRowPlan(drag, rowPlan([drag.sel.id], drag.sel.id));
         }
         try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
       }
@@ -7030,16 +7254,27 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         return;
       }
       if (!drag || (!drag.sel && !drag.group)) return;
-      var dx = ev.clientX - drag.x;
-      if (!drag.moved && Math.abs(dx) > 4) {
-        if (drag.batch && !drag.batch.movable.length) { flashSel(TextBatch.stayedNote(0, drag.batch.stayed)); drag.sel = null; drag.group = null; drag.batch = null; return; }
+      var rawDx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      var axis = ev.shiftKey ? (Math.abs(rawDx) >= Math.abs(dy) ? 'x' : 'y') : null;
+      var dx = axis === 'y' ? 0 : rawDx;
+      if (drag.rowWhy && !drag.saidRow && Math.abs(dy) > ROW_H) { flashSel(drag.rowWhy); drag.saidRow = true; }
+      var travel = drag.rows ? Math.max(Math.abs(rawDx), Math.abs(dy)) : Math.abs(rawDx);
+      if (!drag.moved && travel > 4) {
+        if (drag.batch && !drag.batch.movable.length && !drag.rows) { flashSel(TextBatch.stayedNote(0, drag.batch.stayed)); drag.sel = null; drag.group = null; drag.batch = null; return; }
         var hit = drag.sel && clipOf(drag.sel);
         if (drag.sel && drag.sel.lane === 'items' && hit && hit.i === 0) { drag.sel = null; flashSel('The first recording always starts at 0:00.'); return; }
         drag.moved = true;
         if (Player.tag) Player.stop();
       }
       if (!drag.moved) return;
+      if (drag.rows) dragRows(ev, axis !== 'x');
+      if (Math.abs(dx) > 4) drag.timeOn = true;
+      if (drag.rows && !drag.timeOn) { live(); return; }
       if (drag.batch) {
+        if (!drag.batch.movable.length) {
+          if (Math.abs(dx) > 4 && !drag.saidFixed) { flashSel(TextBatch.stayedNote(0, drag.batch.stayed)); drag.saidFixed = true; }
+          live(); return;
+        }
         var dtb = dx / pxPerSec(); ui.snapT = null;
         if (!ev.shiftKey) {
           var sn0 = snapTo([drag.span.start + dtb, drag.span.start + drag.span.len + dtb], snapEdges(TextPick.all(drag.batch.ids.map(function (id) { return { id: id }; }))), 8 / pxPerSec());
@@ -7054,6 +7289,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       var dt = dx / pxPerSec(), hit2 = clipOf(drag.sel);
       ui.snapT = null;
+      var fixedWhy = drag.sel.lane === 'texts' && hit2 && !drag.resize ? textFixedWhy(hit2.t) : '';
+      if (fixedWhy) {
+        if (Math.abs(dx) > 4 && !drag.saidFixed) { flashSel(fixedWhy); drag.saidFixed = true; }
+        live(); return;
+      }
       if (hit2 && drag.sel.lane !== 'items' && !ev.shiftKey) {
         var thr = 8 / pxPerSec(), edges = snapEdges(TextPick.set({}, drag.sel.id, true)), sn;
         if (drag.resize) sn = snapTo([drag.start0 + drag.base + dt], edges, thr);
@@ -7081,6 +7321,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         return;
       }
       if (ui.snapT != null) { ui.snapT = null; }
+      ui.rowDrop = null;
+      if (d.rows && d.rows.started && ev.type === 'pointercancel') mix.textRows = d.rows.rows0;
       if (d.gedge) {
         if (!d.moved) {
           if (ev.type !== 'pointercancel') { ui.checked = TextPick.all(TextGroup.memberIds(mix.texts, d.group).map(function (id) { return { id: id }; })); checksChanged(); }
@@ -7129,6 +7371,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('zoomIn').onclick = function () { setZoom(ui.zoom * 2); };
     $('zoomOut').onclick = function () { setZoom(ui.zoom / 2); };
     $('zoomFit').onclick = function () { setZoom(1); };
+    $('sortRows').onclick = function () {
+      mix.textRows = TextRows.sortByStart(tidyRows(), mix.texts, mix.groups, shownStart);
+      changed();
+      flashSel('Text rows sorted by start. The video looks the same.');
+    };
     wrap.addEventListener('wheel', function (ev) {
       if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
@@ -7483,7 +7730,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (ga === 'gremove') { removeGroup(gid); return; }
         if (ga === 'greset') { resetGroup(gid); return; }
         if (ev.target.closest('input, select, label')) return;
-        ui.groupsClosed = TextPick.toggle(ui.groupsClosed, gid); renderTexts();
+        var tg = TextGroup.find(mix.groups, gid); if (tg) setGroupClosed(gid, !tg.closed);
         return;
       }
       var row = ev.target.closest('[data-text]'); if (!row) return;
@@ -7706,7 +7953,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var saved = lsGet('hp.saved') || {}, m = saved[this.value];
       if (!m) return;
       Player.stop();
-      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null;
+      mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.renamingGroup = null;
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
@@ -7726,7 +7973,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       clearTimeout(newArmed); newArmed = null; b.textContent = 'New';
       Player.stop();
       var o = mix.opts, t = mix.target;
-      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
+      mix = blankMix(); mix.opts = o; mix.target = t; ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.renamingGroup = null; ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
     };
@@ -8170,7 +8417,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
+    if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     resetHistory();
   }
@@ -8317,7 +8564,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('fileName').value = 'sacrament-' + nextSunday();
     addSamples();
     var work = lsGet('hp.work');
-    if (work && work.items && work.spoken && (work.items.length || work.spoken.length || (work.pictures && work.pictures.length))) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.groupsClosed = {}; ui.renamingGroup = null; }
+    if (work && work.items && work.spoken && (work.items.length || work.spoken.length || (work.pictures && work.pictures.length))) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }
     else mix = sampleMix();
     if (allFolders().indexOf(ui.folder) < 0) ui.folder = '';
     changed();
