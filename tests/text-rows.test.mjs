@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
@@ -216,4 +216,51 @@ test('dropIndex still uses the middle of a taller row', () => {
   const lay = TextRows.display(units, {}, 22, 34, { b: 20 });
   assert.equal(TextRows.dropIndex(lay.rows, 45, 'top'), 1);
   assert.equal(TextRows.dropIndex(lay.rows, 72, 'top'), 2);
+});
+
+describe('lanesBelow', () => {
+  const layout = (rows, texts, groups) => {
+    const byId = {};
+    groups.forEach((g) => { byId[g.id] = g; });
+    return TextRows.display(TextRows.units(rows, texts, groups), byId, 34, 34, {}).rows;
+  };
+
+  test('loose texts below each make their own lane', () => {
+    const texts = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['a', 'b', 'c'], texts, []), 'a'), [['b'], ['c']]);
+  });
+
+  test('an open group below skips its header and gives each member a lane', () => {
+    const texts = [{ id: 'a' }, { id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'c' }];
+    const groups = [{ id: 'gX', name: 'X' }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['a', 'm1', 'm2', 'c'], texts, groups), 'a'), [['m1'], ['m2'], ['c']]);
+  });
+
+  test('a collapsed group below is one lane holding every member in row order', () => {
+    const texts = [{ id: 'a' }, { id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'c' }];
+    const groups = [{ id: 'gX', name: 'X', closed: true }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['a', 'm2', 'm1', 'c'], texts, groups), 'a'), [['m2', 'm1'], ['c']]);
+  });
+
+  test('a member of a collapsed group starts the lanes after that collapsed row', () => {
+    const texts = [{ id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'b' }, { id: 'c' }];
+    const groups = [{ id: 'gX', name: 'X', closed: true }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['m1', 'm2', 'b', 'c'], texts, groups), 'm2'), [['b'], ['c']]);
+  });
+
+  test('a member of an open group gets the following members first, then later rows', () => {
+    const texts = [{ id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'm3', group: 'gX' }, { id: 'c' }];
+    const groups = [{ id: 'gX', name: 'X' }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['m1', 'm2', 'm3', 'c'], texts, groups), 'm1'), [['m2'], ['m3'], ['c']]);
+  });
+
+  test('the bottom row has no lanes below', () => {
+    const texts = [{ id: 'a' }, { id: 'b' }];
+    assert.deepEqual(TextRows.lanesBelow(layout(['a', 'b'], texts, []), 'b'), []);
+  });
+
+  test('an id that is not in the layout gives null', () => {
+    const texts = [{ id: 'a' }, { id: 'b' }];
+    assert.equal(TextRows.lanesBelow(layout(['a', 'b'], texts, []), 'gone'), null);
+  });
 });

@@ -2147,7 +2147,44 @@ var TextBatch = (function () {
     var start = round1(Math.min(Math.max(t, 0), maxStart));
     return { start: start, dur: Math.max(minLen, round1(end0 - start)), clamped: clamped };
   }
-  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction, startEdge: startEdge };
+  function round2(v) { return Math.round(v * 100) / 100; }
+  function lineUp(lanes, spans, fromEnd, all) {
+    var starts = {}, done = [], moved = 0, target = fromEnd;
+    var list = all ? lanes : lanes.slice(0, 1);
+    list.forEach(function (ids) {
+      var first = Math.min.apply(null, ids.map(function (id) { return spans[id].start; }));
+      var delta = round2(target - first), end = 0;
+      ids.forEach(function (id) {
+        var start = Math.max(0, round2(spans[id].start + delta));
+        starts[id] = start;
+        end = Math.max(end, start + spans[id].dur);
+      });
+      if (delta !== 0) moved++;
+      done.push({ ids: ids.slice(), delta: delta });
+      target = end;
+    });
+    return { starts: starts, lanes: done, moved: moved };
+  }
+  function lineUpState(state) {
+    if (state.recording) return { disabled: true, note: null };
+    if (state.whole) return { disabled: true, note: 'This text shows for the whole video, so nothing can start after it.' };
+    if (state.below === 0) return { disabled: true, note: 'No rows below this one.' };
+    return { disabled: false, note: null };
+  }
+  function lineUpNote(all, movedLanes, changes) {
+    if (movedLanes === 0) return 'The rows below are already lined up.';
+    var c = changes || {};
+    var note = all ? 'Lined up ' + movedLanes + (movedLanes === 1 ? ' row' : ' rows') + ' below.' : 'Pulled the next row up.';
+    if (c.locked > 0) note += ' ' + c.locked + ' locked ' + (c.locked === 1 ? 'text' : 'texts') + ' moved and ' + (c.locked === 1 ? 'is' : 'are') + ' still locked.';
+    var parts = [];
+    if (c.tied > 0) parts.push(c.tied + ' no longer tied to a recording');
+    if (c.whole > 0) parts.push(c.whole + ' no longer shows for the whole video');
+    if (c.start > 0) parts.push(c.start + ' no longer starts at 0:00');
+    if (c.linked > 0) parts.push(c.linked + ' no longer linked to the text before or after');
+    if (parts.length) note += ' Changed so they could move: ' + parts.join(', ') + '.';
+    return note;
+  }
+  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction, startEdge: startEdge, lineUp: lineUp, lineUpState: lineUpState, lineUpNote: lineUpNote };
 })();
 
 /* Named groups of texts. Pure functions; inputs are never changed. */
@@ -2376,7 +2413,21 @@ var TextRows = (function () {
     for (var i = 1; i < slots.length; i++) if (Math.abs(slots[i] - y) < Math.abs(slots[best] - y)) best = i;
     return best;
   }
-  return { tidy: tidy, units: units, display: display, move: move, sortByStart: sortByStart, isSorted: isSorted, dropIndex: dropIndex };
+  function lanesBelow(displayRows, textId) {
+    var at = -1;
+    for (var i = 0; i < displayRows.length; i++) {
+      var r = displayRows[i];
+      if ((r.kind === 'text' && r.id === textId) || (r.kind === 'group' && r.closed && r.members.indexOf(textId) >= 0)) { at = i; break; }
+    }
+    if (at < 0) return null;
+    var lanes = [];
+    displayRows.slice(at + 1).forEach(function (row) {
+      if (row.kind === 'text') lanes.push([row.id]);
+      else if (row.closed) lanes.push(row.members.slice());
+    });
+    return lanes;
+  }
+  return { tidy: tidy, units: units, display: display, move: move, sortByStart: sortByStart, isSorted: isSorted, dropIndex: dropIndex, lanesBelow: lanesBelow };
 })();
 
 /* Where on-screen text goes inside its box. Pure functions; measuring is passed in. */
@@ -6192,6 +6243,50 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (hit && sel.lane === 'items' && hit.i === 0) { flashSel('The first recording always starts at 0:00.'); return; }
     if (shiftClip(sel, selBase(sel), delta)) { changed(); revealSel(); }
   }
+  function freezeForLineUp(tx, sp, changes) {
+    var tied = !!(tx.during && elementSpan(tx.during));
+    var ownedLength = !!(tx.whole || tied || tx.untilNext || tx.toEnd);
+    if (tx.locked) changes.locked++;
+    if (tx.whole) changes.whole++;
+    else if (tied) changes.tied++;
+    else if (tx.fromStart) changes.start++;
+    if (!tx.whole && !tied && (tx.afterPrev || tx.untilNext || tx.toEnd)) changes.linked++;
+    tx.whole = false; tx.during = ''; tx.fromStart = false; tx.afterPrev = false; tx.xfIn = false; tx.untilNext = false; tx.xfOut = false; tx.toEnd = false;
+    if (ownedLength) { delete tx.ownLen; tx.readTime = false; tx.dur = Math.max(0.5, Math.round(sp.dur * 100) / 100); }
+  }
+  function needsFreeing(tx) {
+    return !!(tx.whole || (tx.during && elementSpan(tx.during)) || tx.fromStart || tx.afterPrev || tx.untilNext || tx.toEnd);
+  }
+  function closedGroupOf(ids) {
+    var first = findItem('texts', ids[0]), g = first && first.group ? TextGroup.find(mix.groups, first.group) : null;
+    if (!g || !g.closed) return null;
+    return ids.every(function (id) { var t = findItem('texts', id); return t && t.group === g.id; }) ? g : null;
+  }
+  function lineUpRows(all) {
+    var tx = selText();
+    if (!tx || TextPick.count(ui.checked, mix.texts)) return;
+    var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
+    var state = TextBatch.lineUpState({ below: lanes.length, whole: !!tx.whole, recording: !!ui.rec });
+    if (state.disabled) { flashSel(state.note || 'Stop recording first.'); return; }
+    if (Player.tag) Player.stop();
+    var ss = txSpan(tx), fromEnd = ss.start + ss.dur, spans = {};
+    lanes.forEach(function (ids) { ids.forEach(function (id) { spans[id] = txSpan(findItem('texts', id)); }); });
+    var out = TextBatch.lineUp(lanes, spans, fromEnd, all);
+    var ids = Object.keys(out.starts);
+    if (out.moved === 0 && !ids.some(function (id) { return needsFreeing(findItem('texts', id)); })) { flashSel(TextBatch.lineUpNote(all, 0, {})); return; }
+    var changes = { locked: 0, tied: 0, whole: 0, start: 0, linked: 0 };
+    ids.forEach(function (id) {
+      var t = findItem('texts', id);
+      freezeForLineUp(t, spans[id], changes);
+      t.start = out.starts[id];
+    });
+    out.lanes.forEach(function (lane) {
+      var g = closedGroupOf(lane.ids);
+      if (g && g.win && lane.delta !== 0) g.win = { start: Math.round((g.win.start + lane.delta) * 100) / 100, end: Math.round((g.win.end + lane.delta) * 100) / 100 };
+    });
+    changed();
+    flashSel(TextBatch.lineUpNote(all, out.moved, changes));
+  }
   function revealSel() {
     var hit = clipOf(ui.sel);
     if (!hit || ui.zoom <= 1) return;
@@ -6387,6 +6482,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       '<button class="btn small" data-selact="recline"' + (r.disabled ? ' disabled' : '') + '>' + esc(r.label) + '</button>' +
       (r.note !== null ? '<span class="note">' + esc(r.note) + '</span>' : '');
   }
+  function lineUpControls(tx) {
+    var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
+    var s = TextBatch.lineUpState({ below: lanes.length, whole: !!tx.whole, recording: !!ui.rec });
+    var off = s.disabled ? ' disabled' : '';
+    return '<button class="btn small" data-selact="pullrow"' + off + ' title="Move the row below so it starts where this ends">Pull next row up</button>' +
+      '<button class="btn small" data-selact="lineuprows"' + off + ' title="Line up every row below, one after another">Line up rows below</button>' +
+      (s.note !== null ? '<span class="note">' + esc(s.note) + '</span>' : '');
+  }
   function renderSel() {
     var bar = $('selbar'), hit = clipOf(ui.sel), h, picked = TextPick.count(ui.checked, mix.texts);
     if (picked) {
@@ -6419,7 +6522,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var fixed = selLane === 'items' && hit.i === 0;
     h += nudgeButtons(fixed) +
       '<button class="btn small" data-selact="play">' + ICON.play + ' Play from just before</button>' +
-      (selLane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' + lineRecordControls(hit.t) :
+      (selLane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' + lineUpControls(hit.t) + lineRecordControls(hit.t) :
       selLane === 'pictures' ? '<button class="btn small" data-selact="editpic">Edit picture</button><button class="btn small quiet" data-selact="rmpic">Remove</button>' :
       '<button class="btn small" data-selact="info">On-screen details</button>' +
       '<button class="btn small" data-selact="trim">Trim</button>' +
@@ -11357,6 +11460,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'hidechecked') { setHidden(checkedIds(), TextBatch.hideAction(mix.texts, checkedIds()) === 'hide'); return; }
       if (act === 'groupchecked') { groupChecked(); return; }
       if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
+      if (act === 'pullrow') { lineUpRows(false); return; }
+      if (act === 'lineuprows') { lineUpRows(true); return; }
       var hit = clipOf(ui.sel);
       if (!hit) return;
       var barSel = timelineSel(ui.sel);
