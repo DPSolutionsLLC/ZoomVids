@@ -61,6 +61,8 @@ To remove several at once, tick their rows (or **Select all**) and press **Remov
 
 **Moving several at once.** Tick the items, then drag any ticked block on the timeline, or use the arrow keys or the **‹ 1 s** / **0.1 ›** buttons. They all move by the same amount, so the gaps between them stay the same. Locked items, items shown for the whole video, items that start at 0:00 and items tied to a song or talk stay put, and the bar under the timeline says how many stayed and why. Nothing moves before 0:00.
 
+**Changing when a text starts.** Drag the left end of a text block to make it start earlier or later; its end stays where it is. Texts that are locked, show for the whole video, start at 0:00, are tied to a song or talk, or start right after the previous text have no left grip. One **Undo** puts it back.
+
 **Rows on the timeline.** Drag a text block or a group's bar up or down to put it on another row. The other rows shift to make room, and a line shows where it lands. Ctrl+click (⌘+click) several texts first to move them together; they land side by side. A group moves as one block. Inside an open group, dragging one of its texts up or down only reorders the group. Holding **Shift** while dragging locks the drag to one direction, rows only or time only, and also turns snapping off. Locked texts can still change rows; only their time is fixed. **Sort by start** (next to the zoom buttons) lines the rows up with the earliest start on top. Rows only change how the timeline and the list are laid out: which text is drawn on top in the video stays the same. One **Undo** reverses a row drag or a sort.
 
 **Editing several at once.** Tick the items and press **Edit selected** (above the list, or in the bar under the timeline). The settings open above the list, and only what you change is copied to all of them; everything else stays as it was on each item. Where the ticked items differ, the setting says **Mixed**. The text itself, **Starts at** and **Show during** are set one item at a time. Timing changes skip locked items, items shown for the whole video, items tied to a song or talk, and items where another setting already decides that timing, and a note says how many stayed and why. Look and box changes apply to all of them. Scripture settings are off when scriptures and plain text are ticked together. The **Tick:** buttons replace the ticks with **All scriptures**, **All my own text**, **Hidden**, **Showing**, or **Same look as the open one** (the same font, bold and italic, size, Fixed size, color and what's behind the text). One **Undo** reverts a whole bulk change.
@@ -160,6 +162,7 @@ To fix mistakes:
 - **On the timeline**, the selected slide's syllables show as small blocks under its row. Drag a block to move it, or drag either end to change it. Click a block, then use the arrow keys: 0.05 s, with Alt 0.01 s, with Shift 0.25 s. Esc lets go of it. A syllable never moves past its neighbours.
 - **In the word list**, type a start time (like `1:02.35`) or a length. Empty the start to clear that syllable's timing. Click a syllable to jump the playhead to it.
 - **Fit the slide to its words** shows up when words fall outside the slide's time on screen.
+- Dragging a slide's left end keeps its words where they are in the song; words that end up outside the slide show the Fit button.
 
 **Copying to repeats.** When other slides of the song have the same words (capitals and punctuation don't count), the slide offers **Copy this timing to them**. You can also pick one slide in **Copy timing to**. If the other slide's first syllable is already timed, the copy lines up on it. Otherwise it lands at the same place in that slide, and you drag the slide to line it up. Each copy is one Undo step.
 
@@ -229,7 +232,7 @@ Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** a
 
 ### Reading time
 
-Tick **Show for as long as it takes to read** on any text item to make it stay up just long enough to read: at least 4 seconds, plus its fades. Set how fast people read with **Reading speed for on-screen text** in Mix settings. Scriptures and tapped items use reading time automatically. Dragging the end of an item on the timeline switches reading time off for that item.
+Tick **Show for as long as it takes to read** on any text item to make it stay up just long enough to read: at least 4 seconds, plus its fades. Set how fast people read with **Reading speed for on-screen text** in Mix settings. Scriptures and tapped items use reading time automatically. Dragging either end of an item on the timeline switches reading time off for that item.
 
 ## Scripture text
 

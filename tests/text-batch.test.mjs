@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
@@ -56,4 +56,38 @@ test('hideAction offers show only when every listed text is hidden', () => {
 test('kindsText counts each kind in a fixed order', () => {
   assert.equal(TextBatch.kindsText(['locked', 'tied', 'locked']), '2 locked, 1 tied to a recording');
   assert.equal(TextBatch.kindsText([]), '');
+});
+
+describe('startEdge', () => {
+  function keepsEnd(result, end0) { assert.equal(Math.round((result.start + result.dur) * 10) / 10, end0); }
+
+  test('moves the start earlier and keeps the end', () => {
+    const result = TextBatch.startEdge(10, 20, 8, 0.5);
+    assert.deepEqual(result, { start: 8, dur: 12, clamped: false });
+    keepsEnd(result, 20);
+  });
+
+  test('moves the start later and rounds to a tenth', () => {
+    const result = TextBatch.startEdge(10, 20, 15.04, 0.5);
+    assert.deepEqual(result, { start: 15, dur: 5, clamped: false });
+    keepsEnd(result, 20);
+  });
+
+  test('stops at the minimum length', () => {
+    const result = TextBatch.startEdge(10, 20, 19.9, 0.5);
+    assert.deepEqual(result, { start: 19.5, dur: 0.5, clamped: true });
+    keepsEnd(result, 20);
+  });
+
+  test('stops at 0:00', () => {
+    const result = TextBatch.startEdge(2, 6, -3, 0.5);
+    assert.deepEqual(result, { start: 0, dur: 6, clamped: true });
+    keepsEnd(result, 6);
+  });
+
+  test('a very short block near 0:00 cannot get shorter', () => {
+    const result = TextBatch.startEdge(0, 0.5, 0.3, 0.5);
+    assert.deepEqual(result, { start: 0, dur: 0.5, clamped: true });
+    keepsEnd(result, 0.5);
+  });
 });

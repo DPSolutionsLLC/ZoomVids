@@ -95,11 +95,13 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.pair { box-shadow: inset 0 -3px 0 var(--brass); }
 .tl .clip.muted canvas { opacity: 0.12; }
-.tl .clip.textc { background: var(--msg); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
+.tl .clip.textc { background: var(--msg); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 10px; font-weight: 600; }
 .tl .clip.textc.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.picc { background: var(--accent); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
 .tl .clip.picc.sel { background: var(--sel); color: #1A1406; }
 .tl .clip .grip { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: rgba(255, 255, 255, 0.28); }
+.tl .clip.textc .grip { width: min(8px, 30%); }
+.tl .clip .grip.s { left: 0; right: auto; }
 .tl .duck { position: absolute; top: 20px; height: 52px; background: var(--brass); opacity: 0.16; pointer-events: none; }
 .tl .mark { position: absolute; top: 0; bottom: 0; z-index: 4; border-left: 2px dashed var(--warn); pointer-events: none; }
 .tl .mark b { position: absolute; top: 2px; right: 6px; font-size: 11px; color: var(--warn); white-space: nowrap; }
@@ -696,7 +698,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             </div>
             <p class="note" id="tapHint"></p>
           </div>
-          <p class="note">Messages you place yourself. Select one, then drag its box in the preview to move it, or drag the box’s edges to resize it. On the timeline, drag the block to move it, or drag its right edge to change how long it shows. Tick rows to remove several at once.</p>
+          <p class="note">Messages you place yourself. Select one, then drag its box in the preview to move it, or drag the box’s edges to resize it. On the timeline, drag the block to move it, drag its left edge to change when it starts, or its right edge to change when it ends. Tick rows to remove several at once.</p>
           <div class="btnrow" id="textBar" hidden>
             <label><input type="checkbox" id="textAll"> Select all</label>
             <button class="btn small" id="textRmChecked" disabled>Remove selected</button>
@@ -2101,7 +2103,12 @@ var TextBatch = (function () {
     var list = texts.filter(function (tx) { return ids.indexOf(tx.id) >= 0; });
     return list.length && list.every(function (tx) { return tx.hidden; }) ? 'show' : 'hide';
   }
-  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction };
+  function startEdge(start0, end0, t, minLen) {
+    var maxStart = Math.max(0, end0 - minLen), clamped = t < 0 || t > maxStart;
+    var start = round1(Math.min(Math.max(t, 0), maxStart));
+    return { start: start, dur: Math.max(minLen, round1(end0 - start)), clamped: clamped };
+  }
+  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction, startEdge: startEdge };
 })();
 
 /* Named groups of texts. Pure functions; inputs are never changed. */
@@ -5549,6 +5556,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (tx.during && elementSpan(tx.during)) return 'tied';
     return '';
   }
+  function startGripOff(tx) { return !!(textFixedKind(tx) || tx.afterPrev); }
   function textFixedWhy(tx) {
     return {
       locked: 'This text is locked. Uncheck “Lock it in place” to move it.',
@@ -5799,7 +5807,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
       var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '') + (TextPick.has(ui.checked, tx.id) ? ' checked' : '') + (tx.hidden ? ' hid' : '');
       var fixedEnd = tx.whole || during || tx.untilNext || tx.toEnd || tx.locked;
-      return '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '"' + (collapsed ? ' data-collapsed="1"' : '') + ' title="' + esc(plainText(tx)) + '" style="top:' + top + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
+      return '<div class="clip textc' + cls + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '"' + (collapsed ? ' data-collapsed="1"' : '') + ' title="' + esc(plainText(tx)) + '" style="top:' + top + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (startGripOff(tx) ? '' : '<i class="grip s" data-grip="start" title="Drag to change when it starts"></i>') + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
     }
     lay.rows.forEach(function (rw) {
       var top = textTop + rw.y;
@@ -9923,13 +9931,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         ui.checked = TextPick.toggle(ui.checked, el.getAttribute('data-id')); drag = null; checksChanged();
         return;
       }
-      drag = { x: ev.clientX, y: ev.clientY, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: !!(ev.target.closest && ev.target.closest('[data-grip]')) };
+      var gripEl = ev.target.closest && ev.target.closest('[data-grip]');
+      drag = { x: ev.clientX, y: ev.clientY, moved: false, sel: el ? { lane: el.getAttribute('data-lane'), id: el.getAttribute('data-id') } : null, resize: gripEl ? (gripEl.getAttribute('data-grip') === 'start' ? 'start' : 'end') : false };
       if (drag.sel) {
         holdPress(ev);
         drag.base = null;
         if (!ui.sel || ui.sel.id !== drag.sel.id) { ui.sel = drag.sel; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
         drag.base = drag.resize ? clipOf(drag.sel).c.len : selBase(drag.sel);
         drag.start0 = clipOf(drag.sel).c.start;
+        if (drag.resize === 'start') {
+          var sHit = clipOf(drag.sel);
+          drag.base = drag.start0;
+          drag.end0 = drag.start0 + sHit.c.len;
+          drag.lyric0 = sHit.t && sHit.t.lyric ? clone(sHit.t.lyric) : null;
+        }
         if (drag.sel.lane === 'texts' && !drag.resize && TextPick.has(ui.checked, drag.sel.id) && TextPick.count(ui.checked, mix.texts) > 1) {
           drag.batch = textBatch(checkedIds());
           drag.span = { start: drag.start0, len: clipOf(drag.sel).c.len };
@@ -10031,11 +10046,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       if (hit2 && drag.sel.lane !== 'items' && !ev.shiftKey) {
         var thr = 8 / pxPerSec(), edges = snapEdges(TextPick.set({}, drag.sel.id, true)), sn;
-        if (drag.resize) sn = snapTo([drag.start0 + drag.base + dt], edges, thr);
+        if (drag.resize === 'start') sn = snapTo([drag.start0 + dt], edges, thr);
+        else if (drag.resize) sn = snapTo([drag.start0 + drag.base + dt], edges, thr);
         else sn = snapTo([drag.base + dt, drag.base + dt + hit2.c.len], edges, thr);
         if (sn) { dt += sn.d; ui.snapT = sn.at; }
       }
-      if (drag.resize) {
+      if (drag.resize === 'start') {
+        var stx = drag.sel.lane === 'texts' && hit2 && hit2.t;
+        if (!stx || startGripOff(stx)) { drag.sel = null; return; }
+        var se = TextBatch.startEdge(drag.start0, drag.end0, drag.start0 + dt, 0.5);
+        if (se.clamped && !drag.saidMin) { flashSel(se.start <= 0 ? 'Text can’t start before 0:00.' : 'A text shows for at least 0.5 s.'); drag.saidMin = true; }
+        delete stx.ownLen; stx.readTime = false;
+        stx.start = se.start; stx.dur = se.dur;
+        if (drag.lyric0) stx.lyric = WordTiming.shift(drag.lyric0, -(se.start - drag.start0));
+      }
+      else if (drag.resize) {
         if (drag.sel.lane === 'pictures') { if (hit2) hit2.p.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
         else if (hit2 && hit2.t && !hit2.t.locked) { delete hit2.t.ownLen; hit2.t.readTime = false; hit2.t.dur = clamp(Math.round((drag.base + dt) * 10) / 10, 0.5, 3600); }
       }
