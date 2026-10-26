@@ -145,7 +145,27 @@ The slides land back to back from the playhead as one group named after the song
 
 **Parts.** Under the box, each word is a chip, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets a color, which you can change. **Show part names on screen for this song** prints "High: " before each run of words in that part. It's off to start with. Each of these is one step for Undo.
 
-Highlighting the words as they're sung, and timing each syllable, come in a later update.
+**Timing the words.** Open a slide and find **Word timing** under its lyrics. Each syllable gets its own time, so `Glo-ri-a` is three presses.
+
+- **Record this slide** plays from a few seconds before the slide. **Record the whole song** plays from the start of the song and moves from slide to slide by itself.
+- Hold **Space** while each syllable is sung, and let go when it ends. A quick tap counts as at least 0.15 s. The bar above the timeline shows the line, with the next syllable in bold.
+- **Backspace** takes back the last syllable and jumps back a moment. **Esc** (or the Stop button) stops and keeps what you've recorded.
+- Recording over a slide replaces its old timing as soon as you press its first syllable. One Undo puts back the whole recording.
+- **Speed** lets you record at 0.75× or 0.5×. Slower speeds sound lower, but the times still land right at full speed.
+- You hear whatever tracks are switched on. If the vocal track's sound is off, a note says so; turn it on in **Tracks** to hear the words.
+- After recording, each slide fits itself around its words: it starts 1 s before the first and ends 0.5 s after the last. Its reading time and links are turned off so it keeps that window.
+
+To fix mistakes:
+
+- **On the timeline**, the selected slide's syllables show as small blocks under its row. Drag a block to move it, or drag either end to change it. Click a block, then use the arrow keys: 0.05 s, with Alt 0.01 s, with Shift 0.25 s. Esc lets go of it. A syllable never moves past its neighbours.
+- **In the word list**, type a start time (like `1:02.35`) or a length. Empty the start to clear that syllable's timing. Click a syllable to jump the playhead to it.
+- **Fit the slide to its words** shows up when words fall outside the slide's time on screen.
+
+**Copying to repeats.** When other slides of the song have the same words (capitals and punctuation don't count), the slide offers **Copy this timing to them**. You can also pick one slide in **Copy timing to**. If the other slide's first syllable is already timed, the copy lines up on it. Otherwise it lands at the same place in that slide, and you drag the slide to line it up. Each copy is one Undo step.
+
+Dragging a slide or its group moves its words with it. **Fill**, **Reset** and stretching a group re-arrange its slides, so the words move with them too; Undo puts them back. Moving a song in Order of music doesn't move its slides.
+
+Highlighting the words as they're sung comes in a later update.
 
 ### Scripture collection
 

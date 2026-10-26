@@ -184,3 +184,36 @@ test('dropIndex inside a group only counts that group’s member rows', () => {
   assert.equal(TextRows.dropIndex(lay.rows, 77, { group: 'gO' }), 1);
   assert.equal(TextRows.dropIndex(lay.rows, 300, { group: 'gO' }), 2);
 });
+
+test('display with extra height makes a loose text row taller and moves later rows down', () => {
+  const units = [{ kind: 'text', id: 'a' }, { kind: 'text', id: 'b' }, { kind: 'text', id: 'c' }];
+  const lay = TextRows.display(units, {}, 22, 34, { b: 20 });
+  assert.deepEqual(lay.rows.map((r) => [r.id, r.y, r.h]), [['a', 0, 22], ['b', 22, 42], ['c', 64, 22]]);
+  assert.equal(lay.height, 86);
+});
+
+test('display with extra height works for a member of an open group', () => {
+  const units = [{ kind: 'group', id: 'gO', members: ['o1', 'o2'] }, { kind: 'text', id: 'b' }];
+  const lay = TextRows.display(units, { gO: { id: 'gO' } }, 22, 34, { o1: 20 });
+  assert.deepEqual(lay.rows.map((r) => [r.id, r.y, r.h]), [['gO', 0, 22], ['o1', 22, 42], ['o2', 64, 22], ['b', 86, 22]]);
+});
+
+test('display ignores extra height for a member of a collapsed group', () => {
+  const units = [{ kind: 'group', id: 'gC', members: ['c1', 'c2'] }, { kind: 'text', id: 'b' }];
+  const plain = TextRows.display(units, { gC: { id: 'gC', closed: true } }, 22, 34);
+  const withExtra = TextRows.display(units, { gC: { id: 'gC', closed: true } }, 22, 34, { c1: 20 });
+  assert.deepEqual(withExtra, plain);
+});
+
+test('display ignores extra height that is not a positive number', () => {
+  const units = [{ kind: 'text', id: 'a' }, { kind: 'text', id: 'b' }];
+  const lay = TextRows.display(units, {}, 22, 34, { a: -5, b: 'x' });
+  assert.deepEqual(lay.rows.map((r) => r.h), [22, 22]);
+});
+
+test('dropIndex still uses the middle of a taller row', () => {
+  const units = [{ kind: 'text', id: 'a' }, { kind: 'text', id: 'b' }, { kind: 'text', id: 'c' }];
+  const lay = TextRows.display(units, {}, 22, 34, { b: 20 });
+  assert.equal(TextRows.dropIndex(lay.rows, 45, 'top'), 1);
+  assert.equal(TextRows.dropIndex(lay.rows, 72, 'top'), 2);
+});

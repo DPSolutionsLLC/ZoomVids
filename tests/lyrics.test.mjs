@@ -215,6 +215,18 @@ describe('merge', () => {
     const out = L.merge(old, make('Peace', 'b'));
     assert.equal(out.lines[0].words[0].part, undefined);
   });
+  test('word timing on unchanged words survives an edit elsewhere in the slide', () => {
+    const old = make('Glo-ri-a in ex-cel-sis', 'a');
+    old.lines[0].words[0].syls[1].t = 1.5;
+    old.lines[0].words[0].syls[1].d = 0.4;
+    old.lines[0].words[2].syls[0].t = 3;
+    old.lines[0].words[2].syls[0].d = 0.2;
+    const out = L.merge(old, make('Glo-ri-a in high ex-cel-sis', 'b'));
+    assert.deepEqual(out.lines[0].words[0].syls[1], { id: old.lines[0].words[0].syls[1].id, text: 'ri', t: 1.5, d: 0.4 });
+    assert.equal(out.lines[0].words[3].syls[0].t, 3);
+    assert.equal(out.lines[0].words[3].syls[0].d, 0.2);
+    assert.equal(out.lines[0].words[2].syls[0].t, undefined);
+  });
   test('the inputs are not changed', () => {
     const old = make('Peace', 'a'), fresh = make('Peace', 'b');
     const before = JSON.stringify(fresh);
@@ -227,8 +239,10 @@ describe('reId', () => {
   test('every id changes, all are unique, and extra keys stay', () => {
     const s = parse('Glo-ri-a in\nex-cel-sis').slides[0];
     s.lines[0].words[0].syls[0].t = 4;
+    s.lines[0].words[0].syls[0].d = 0.25;
     s.song = 'song1';
     const out = L.reId(s, counter('n'));
+    assert.equal(out.lines[0].words[0].syls[0].d, 0.25);
     const before = new Set(ids(s).concat(sylIds(s)));
     const after = ids(out).concat(sylIds(out));
     assert.ok(after.every((id) => !before.has(id)));
@@ -276,11 +290,39 @@ describe('cleanSlide', () => {
       song: 's1',
       lines: [{ words: [
         { id: 'a', syls: [] },
-        { id: 'b', syls: [{ id: 'b1', text: 'Hi', t: 2 }, { id: 'b2', text: '' }] },
+        { id: 'b', syls: [{ id: 'b1', text: 'Hi', extra: 2 }, { id: 'b2', text: '' }] },
       ] }],
     });
-    assert.deepEqual(out, { song: 's1', lines: [{ words: [{ id: 'b', syls: [{ id: 'b1', text: 'Hi', t: 2 }] }] }] });
+    assert.deepEqual(out, { song: 's1', lines: [{ words: [{ id: 'b', syls: [{ id: 'b1', text: 'Hi', extra: 2 }] }] }] });
   });
+  const timedSlide = (syl) => ({ lines: [{ words: [{ id: 'w', syls: [Object.assign({ id: 's1', text: 'Peace' }, syl)] }] }] });
+  test('keeps valid word timing, rounded to milliseconds', () => {
+    const syl = L.cleanSlide(timedSlide({ t: 1.23456, d: 0.4 })).lines[0].words[0].syls[0];
+    assert.equal(syl.t, 1.235);
+    assert.equal(syl.d, 0.4);
+  });
+  test('keeps a negative start, which means the word is before the slide shows', () => {
+    const syl = L.cleanSlide(timedSlide({ t: -0.5, d: 0.3 })).lines[0].words[0].syls[0];
+    assert.equal(syl.t, -0.5);
+  });
+  for (const [label, bad] of [
+    ['t without d', { t: 1 }],
+    ['d without t', { d: 0.4 }],
+    ['d of 0', { t: 1, d: 0 }],
+    ['a negative d', { t: 1, d: -1 }],
+    ['a string t', { t: 'x', d: 0.4 }],
+    ['a NaN t', { t: NaN, d: 0.4 }],
+    ['an Infinity d', { t: 1, d: Infinity }],
+  ]) {
+    test('drops the timing when it has ' + label + ', but keeps the syllable', () => {
+      const out = L.cleanSlide(timedSlide(bad));
+      assert.ok(out, 'the slide is otherwise valid, so it must survive');
+      const syl = out.lines[0].words[0].syls[0];
+      assert.equal(syl.text, 'Peace');
+      assert.equal('t' in syl, false);
+      assert.equal('d' in syl, false);
+    });
+  }
   test('drops an invalid part and keeps a valid one', () => {
     const out = L.cleanSlide({ lines: [{ words: [
       { id: 'a', part: 'not ok', syls: [{ id: 'a1', text: 'x' }] },
