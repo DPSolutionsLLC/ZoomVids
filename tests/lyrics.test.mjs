@@ -354,11 +354,37 @@ describe('cleanSong', () => {
       { name: 'Low', color: 'red' },
       { name: 'bad name', color: '#111111' },
     ] });
-    assert.deepEqual(out, { showParts: true, parts: [{ name: 'High', color: '#123456' }, { name: 'Low', color: L.PALETTE[1] }] });
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#123456' }, { name: 'Low', color: L.PALETTE[1] }] }, L.SHOW_DEFAULTS));
   });
   test('showParts is only on when it is true', () => {
     assert.equal(L.cleanSong({ showParts: 'yes' }).showParts, false);
     assert.deepEqual(L.cleanSong({}).parts, []);
+  });
+  test('an empty song gets every display default', () => {
+    assert.deepEqual(L.cleanSong({}), Object.assign({ showParts: false, parts: [] }, L.SHOW_DEFAULTS));
+    assert.deepEqual(L.SHOW_DEFAULTS, { highlight: 'sweep', singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3 });
+  });
+  test('bad display values fall back to the defaults, one field at a time', () => {
+    const good = { showParts: true, parts: [], highlight: 'word', singColor: '#112233', countdown: 'bar', breakGap: 8, countLen: 4 };
+    const bad = { highlight: 'flash', singColor: 'red', countdown: 'lights', breakGap: 'x', countLen: null };
+    Object.keys(bad).forEach((key) => {
+      const raw = Object.assign({}, good, { [key]: bad[key] });
+      const out = L.cleanSong(raw);
+      assert.equal(out[key], L.SHOW_DEFAULTS[key], key);
+      Object.keys(bad).filter((k) => k !== key).forEach((k) => assert.equal(out[k], good[k], key + ' left ' + k + ' alone'));
+    });
+  });
+  test('numbers are clamped and rounded to their steps', () => {
+    assert.equal(L.cleanSong({ breakGap: 100 }).breakGap, 30);
+    assert.equal(L.cleanSong({ breakGap: 1 }).breakGap, 2);
+    assert.equal(L.cleanSong({ breakGap: 5.3 }).breakGap, 5.5);
+    assert.equal(L.cleanSong({ countLen: 0 }).countLen, 1);
+    assert.equal(L.cleanSong({ countLen: 2.6 }).countLen, 3);
+    assert.equal(L.cleanSong({ countLen: 50 }).countLen, 10);
+  });
+  test('valid display values are kept', () => {
+    const raw = { showParts: false, parts: [], highlight: 'word', singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7 };
+    assert.deepEqual(L.cleanSong(raw), raw);
   });
   test('non-object input gives null', () => {
     assert.equal(L.cleanSong(null), null);
@@ -375,7 +401,12 @@ describe('addParts', () => {
   test('existing parts are untouched and duplicates are skipped', () => {
     const base = { showParts: true, parts: [{ name: 'High', color: '#010203' }] };
     const out = L.addParts(base, ['high', 'Low', 'Low', 'bad name']);
-    assert.deepEqual(out, { showParts: true, parts: [{ name: 'High', color: '#010203' }, { name: 'Low', color: L.PALETTE[1] }] });
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#010203' }, { name: 'Low', color: L.PALETTE[1] }] }, L.SHOW_DEFAULTS));
     assert.equal(base.parts.length, 1);
+  });
+  test('keeps the song display settings', () => {
+    const out = L.addParts({ showParts: false, parts: [], highlight: 'word', countLen: 5 }, ['High']);
+    assert.equal(out.highlight, 'word');
+    assert.equal(out.countLen, 5);
   });
 });

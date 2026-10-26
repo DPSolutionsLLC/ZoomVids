@@ -165,7 +165,15 @@ To fix mistakes:
 
 Dragging a slide or its group moves its words with it. **Fill**, **Reset** and stretching a group re-arrange its slides, so the words move with them too; Undo puts them back. Moving a song in Order of music doesn't move its slides.
 
-Highlighting the words as they're sung comes in a later update.
+**Highlighting while it's sung.** Once a slide has word timing, its words light up as they're sung, in the preview and in the video. Open any slide of the song and find **While it's sung**. These settings are for the whole song.
+
+- **Highlight**: **Color sweep** fills each syllable with color from left to right while it's held. **Whole word** lights the whole word at once until its last syllable ends. Once a word is sung, it goes back to the normal text color.
+- A word in a part lights in that part's color. A word with no part uses **Color for words with no part** (yellow to start with).
+- When two parts sing at the same time on one line, they show on their own rows, one above the other.
+- Lines that haven't been reached yet are dimmed. On a slide's last line, the next slide's first line shows dimmed underneath. Room for it is always kept, so the text size doesn't jump.
+- **Countdown after a break** shows **Dots** (one goes out each second) or a **Bar** that shrinks to nothing, or **Off**. It shows after a break of at least **5 s** to start with, and counts down for **3 s**. It also shows before the first words if the song starts with at least that much music.
+
+Slides without word timing look as they did before.
 
 ### Scripture collection
 
