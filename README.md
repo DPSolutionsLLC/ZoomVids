@@ -121,6 +121,17 @@ Karaoke hides the parts that only make sense for sacrament meeting: the Hymn che
 
 You can have both open in two tabs at once. Each keeps its own work. Two tabs on the *same* side still share one working copy, as before.
 
+**Song tracks.** In karaoke, each song in **Order of music** can have two tracks that play together, usually the version with vocals and the instrumental. Press **Tracks** on a song to open its Tracks window. **Track 1** is the song you added. For **Track 2**, choose another file from your library under **Add a second track…** and press **Add**.
+
+- **Lining up.** Adding Track 2 lines it up with Track 1 automatically, usually to within about 20 ms. If it can't find a match, it says so and leaves the offset as it was. That can happen when the two files are different edits or in different keys. **Line up automatically** tries again at any time.
+- **Fine-tuning by ear.** Press **Play** and nudge Track 2 with **−0.1 s**, **−0.01 s**, **+0.01 s** and **+0.1 s**, or type the offset in seconds (such as `1.234` or `-0.5`) and press Enter. You hear each change straight away. The sentence under the offset says what it means, such as "Track 2 is moved 1.234 s earlier". **Hear** plays Both, Track 1 or Track 2, only in this window, and doesn't change the song.
+- **Waveforms.** Track 1 is drawn on top and Track 2 below, shifted by the offset, so matching beats line up. **Whole song**, **10 s** and **2 s** zoom in. Click the waveforms to listen from there.
+- **Each track has its own settings.** **Sound** turns its sound on or off, and **Volume** turns it up or down in dB. **Vocal / Instrumental / Not set** marks which is which. A file with "instrumental", "karaoke", "accompaniment", "backing" or "no vocals" in its name is marked for you. The marks will be used later for a music-only export.
+- **Music videos.** A video added to Order of music fills the screen behind the words. On a video track, **Show the picture** turns its picture on or off, and **Picture…** opens it in Pictures and video clips to move or resize it. If Track 1 already shows a picture, a video added as Track 2 starts with its picture off, so two full-screen pictures don't stack. You can show one track's picture while hearing only the other.
+- **Swap tracks** makes Track 2 the main track, so you can trim the song from that track's point of view. The song sounds the same after a swap.
+- The two tracks always move together. Moving the song, reordering, changing a crossfade, trimming and swapping all keep them in sync. On the timeline, a song with two tracks shows **+ 2** and a stripe along the bottom, and a song whose Track 1 sound is off looks faded.
+- Each change in the Tracks window is one step for Undo.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.

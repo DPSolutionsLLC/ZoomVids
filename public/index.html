@@ -93,6 +93,8 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip .lbl { position: relative; background: inherit; padding: 0 4px; margin-left: -4px; border-radius: 2px; }
 .tl .clip.voice { background: var(--brass); color: var(--bg); height: 20px; line-height: 20px; border-radius: 3px; padding: 0 4px 0 6px; }
 .tl .clip.sel { background: var(--sel); color: #1A1406; }
+.tl .clip.pair { box-shadow: inset 0 -3px 0 var(--brass); }
+.tl .clip.muted canvas { opacity: 0.12; }
 .tl .clip.textc { background: var(--msg); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
 .tl .clip.textc.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.picc { background: var(--accent); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
@@ -371,6 +373,17 @@ dialog .dl { display: flex; flex-direction: column; gap: 14px; }
 #trimWave { width: 100%; height: 130px; display: block; background: var(--sunk); border-radius: var(--r); cursor: pointer; touch-action: none; }
 .trimfields { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; }
 .trimfields input[type="text"] { width: 86px; }
+.tracksbody { display: flex; flex-direction: column; gap: 10px; }
+.trackblk { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.trackblk .headrow { justify-content: flex-start; }
+.trackblk h4 { margin: 0; font-size: 14px; }
+.trackblk .name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.trackblk .err { color: var(--bad); font-weight: 600; font-size: 13px; }
+.trackblk .vol { width: 64px; }
+.trackblk select { max-width: 100%; }
+.tracksline { display: flex; flex-direction: column; gap: 10px; }
+#tracksNote.err { color: var(--bad); }
+#tracksWave { width: 100%; height: 150px; display: block; background: var(--sunk); border-radius: var(--r); cursor: pointer; touch-action: none; }
 .fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; align-items: center; }
 .fields input[type="text"], .fields input[type="url"] { width: 100%; }
 @media (max-width: 520px) { .fields { grid-template-columns: minmax(0, 1fr); } }
@@ -818,6 +831,53 @@ html[data-workspace="karaoke"] [data-hymn-only] { display: none !important; }
   </div>
 </dialog>
 
+<dialog id="tracksDlg" aria-labelledby="tracksTitle" class="wide">
+  <div class="dl">
+    <div>
+      <h3 id="tracksTitle"></h3>
+      <p class="note">A song can have two tracks that play together, such as the version with vocals and the instrumental. They stay lined up when you move, crossfade, trim or swap them.</p>
+    </div>
+    <div class="tracksbody" id="tracksBody"></div>
+    <p class="note" id="tracksRoleNote" hidden></p>
+    <div class="tracksline" id="tracksLine" hidden>
+      <h4 class="edhead">Line up</h4>
+      <div class="btnrow">
+        <button class="btn" data-tact="align" id="tracksAlignBtn">Line up automatically</button>
+        <span class="note" id="tracksNote" role="status"></span>
+      </div>
+      <div class="btnrow">
+        <label>Offset <input type="text" id="tracksOffset" inputmode="decimal" style="width:90px"> s</label>
+        <button class="btn small" data-tact="nudge" data-d="-0.1" title="Move Track 2 0.1 s later">−0.1 s</button>
+        <button class="btn small" data-tact="nudge" data-d="-0.01" title="Move Track 2 0.01 s later">−0.01 s</button>
+        <button class="btn small" data-tact="nudge" data-d="0.01" title="Move Track 2 0.01 s earlier">+0.01 s</button>
+        <button class="btn small" data-tact="nudge" data-d="0.1" title="Move Track 2 0.1 s earlier">+0.1 s</button>
+      </div>
+      <p class="note" id="tracksOffsetText"></p>
+      <div class="btnrow" role="group" aria-label="Zoom">
+        <button class="btn small" data-tact="zoom" data-z="0">Whole song</button>
+        <button class="btn small" data-tact="zoom" data-z="10">10 s</button>
+        <button class="btn small" data-tact="zoom" data-z="2">2 s</button>
+        <span class="note">Click the waveforms to listen from there.</span>
+      </div>
+      <canvas id="tracksWave"></canvas>
+      <div class="btnrow">
+        <button class="btn" data-tact="play" id="tracksPlay"></button>
+        <span class="btnrow" role="radiogroup" aria-label="Hear">
+          <span class="note">Hear</span>
+          <label><input type="radio" name="tracksHear" value="both" data-tf="hear"> Both</label>
+          <label><input type="radio" name="tracksHear" value="main" data-tf="hear"> Track 1</label>
+          <label><input type="radio" name="tracksHear" value="pair" data-tf="hear"> Track 2</label>
+        </span>
+        <span class="note num" id="tracksNow"></span>
+      </div>
+      <p class="note">Hear is only for here. The song keeps its own Sound settings.</p>
+    </div>
+    <div class="btnrow" style="justify-content:flex-end">
+      <button class="btn primary" data-tact="done">Done</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="hymnDlg" aria-labelledby="hymnTitle" class="wide">
   <div class="dl">
     <div class="headrow">
@@ -993,14 +1053,20 @@ var Engine = (function () {
   // fades, and what gain it gets. `lib` maps a file key to its analysis.
   function layout(mix, lib) {
     var o = mix.opts, music = [], spoken = [], missing = [];
-    var i, it, meta, r;
+    var i, it, meta, r, entry, pairMeta;
 
     for (i = 0; i < mix.items.length; i++) {
       it = mix.items[i]; meta = lib[it.key];
       if (!meta) { missing.push(it.id); continue; }
       r = clipRange(it, meta, o.trimSilence);
       if (r[1] - r[0] < 0.05) continue;
-      music.push({ id: it.id, key: it.key, in: r[0], len: r[1] - r[0], want: it.xf != null ? it.xf : o.defaultXf, gainDb: it.gainDb || 0, meta: meta });
+      entry = { id: it.id, key: it.key, in: r[0], len: r[1] - r[0], want: it.xf != null ? it.xf : o.defaultXf, gainDb: it.gainDb || 0, mute: !!it.mute || !!meta.silent, meta: meta };
+      if (it.pair && it.pair.key) {
+        pairMeta = lib[it.pair.key];
+        if (pairMeta) entry.pair = { key: it.pair.key, offset: it.pair.offset || 0, gainDb: it.pair.gainDb || 0, mute: !!it.pair.mute || !!pairMeta.silent, meta: pairMeta };
+        else entry.pairMissing = true;
+      }
+      music.push(entry);
     }
     for (i = 0; i < mix.spoken.length; i++) {
       it = mix.spoken[i]; meta = lib[it.key];
@@ -1019,6 +1085,11 @@ var Engine = (function () {
         meta = music[i].meta;
         var reach = meta.lufs + gainToDb(PEAK_CAP / Math.max(meta.peak, 1e-4));
         if (reach < target) target = reach;
+        if (music[i].pair) {
+          meta = music[i].pair.meta;
+          reach = meta.lufs + gainToDb(PEAK_CAP / Math.max(meta.peak, 1e-4));
+          if (reach < target) target = reach;
+        }
       }
       target = Math.max(target, -26);
     }
@@ -1033,7 +1104,12 @@ var Engine = (function () {
       var c = music[i], next = music[i + 1];
       c.start = t;
       c.level = target != null ? levelGain(c.meta, target) : 1;
-      c.gain = c.level * dbToGain(c.gainDb);
+      c.gain = c.mute ? 0 : c.level * dbToGain(c.gainDb);
+      if (c.pair) {
+        c.pair.gain = c.pair.mute ? 0 : (target != null ? levelGain(c.pair.meta, target) : 1) * dbToGain(c.pair.gainDb);
+        c.pair.dur = c.pair.meta.duration;
+        delete c.pair.meta;
+      }
       c.xf = 0;
       if (next) {
         // positive overlaps the next recording; negative leaves a gap of silence
@@ -1078,7 +1154,12 @@ var Engine = (function () {
   // File keys a stretch of the plan needs decoded.
   function keysBetween(plan, t0, t1) {
     var out = {}, i, c;
-    for (i = 0; i < plan.music.length; i++) { c = plan.music[i]; if (c.start < t1 && c.start + c.len > t0) out[c.key] = 1; }
+    for (i = 0; i < plan.music.length; i++) {
+      c = plan.music[i];
+      if (!(c.start < t1 && c.start + c.len > t0)) continue;
+      if (!c.mute) out[c.key] = 1;
+      if (c.pair && !c.pair.mute) out[c.pair.key] = 1;
+    }
     for (i = 0; i < plan.spoken.length; i++) { c = plan.spoken[i]; if (!c.mute && c.start < t1 && c.start + c.len > t0) out[c.key] = 1; }
     return Object.keys(out);
   }
@@ -1137,17 +1218,32 @@ var Engine = (function () {
       cs = Math.round(c.start * SR); ce = cs + Math.round(c.len * SR);
       a = Math.max(cs, s0); b = Math.min(ce, s0 + n);
       if (a >= b) continue;
-      src = pcm(c.key);
       var inS = Math.round(c.in * SR), lenS = ce - cs;
       var fiS = Math.round(c.fi * SR), foS = Math.round(c.fo * SR), foStart = lenS - foS;
-      var c0 = src.ch0, c1 = src.ch1, srcLen = c0.length, g = c.gain;
-      for (k = a; k < b; k++) {
-        tau = k - cs; idx = inS + tau;
-        if (idx >= srcLen) break;
-        env = g;
-        if (tau < fiS) env *= Math.sin(HALF_PI * tau / fiS);
-        if (tau >= foStart) env *= Math.cos(HALF_PI * (tau - foStart) / foS);
-        L[k - s0] += c0[idx] * env; R[k - s0] += c1[idx] * env;
+      if (!c.mute) {
+        src = pcm(c.key);
+        var c0 = src.ch0, c1 = src.ch1, srcLen = c0.length, g = c.gain;
+        for (k = a; k < b; k++) {
+          tau = k - cs; idx = inS + tau;
+          if (idx >= srcLen) break;
+          env = g;
+          if (tau < fiS) env *= Math.sin(HALF_PI * tau / fiS);
+          if (tau >= foStart) env *= Math.cos(HALF_PI * (tau - foStart) / foS);
+          L[k - s0] += c0[idx] * env; R[k - s0] += c1[idx] * env;
+        }
+      }
+      if (c.pair && !c.pair.mute) {
+        src = pcm(c.pair.key);
+        var p0 = src.ch0, p1 = src.ch1, pSrcLen = p0.length, pg = c.pair.gain, pIn = Math.round((c.in + c.pair.offset) * SR);
+        for (k = a; k < b; k++) {
+          tau = k - cs; idx = pIn + tau;
+          if (idx < 0) continue;
+          if (idx >= pSrcLen) break;
+          env = pg;
+          if (tau < fiS) env *= Math.sin(HALF_PI * tau / fiS);
+          if (tau >= foStart) env *= Math.cos(HALF_PI * (tau - foStart) / foS);
+          L[k - s0] += p0[idx] * env; R[k - s0] += p1[idx] * env;
+        }
       }
     }
 
@@ -3343,6 +3439,206 @@ var Workspace = (function () {
   return { HYMN: HYMN, KARAOKE: KARAOKE, fromPath: fromPath, storageKey: storageKey, ownsKey: ownsKey };
 })();
 
+/* A karaoke song's second track: cleaning, role guesses, swapping and where it sounds. Pure functions. */
+var TrackPair = (function () {
+  var ROLES = ['vocal', 'instrumental'];
+  var MAX_OFFSET = 600;
+  var INSTRUMENTAL = /instrumental|karaoke|accomp|backing|minus[ -]?one|no[ -]?vocals?|music[ -]only|playback/i;
+  function finite(v) { return typeof v === 'number' && isFinite(v); }
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  function cleanRole(r) { return ROLES.indexOf(r) >= 0 ? r : null; }
+  function cleanOffset(v) {
+    var n = typeof v === 'string' ? parseFloat(v) : v;
+    if (!finite(n)) return 0;
+    var out = Math.round(clamp(n, -MAX_OFFSET, MAX_OFFSET) * 1000) / 1000;
+    return out === 0 ? 0 : out;
+  }
+  function cleanPair(p) {
+    if (!p || typeof p !== 'object' || typeof p.key !== 'string' || !p.key) return null;
+    var out = { key: p.key, name: String(p.name || p.key), offset: cleanOffset(p.offset), gainDb: finite(p.gainDb) ? clamp(p.gainDb, -24, 12) : 0 };
+    if (p.mute === true) out.mute = true;
+    var role = cleanRole(p.role);
+    if (role) out.role = role;
+    if (p.pic && typeof p.pic === 'object') out.pic = p.pic;
+    return out;
+  }
+  function cleanTrack(it) {
+    if (it.mute !== true) delete it.mute;
+    var role = cleanRole(it.role);
+    if (role) it.role = role; else delete it.role;
+    if ('pair' in it) {
+      var pair = cleanPair(it.pair);
+      if (pair) it.pair = pair; else delete it.pair;
+    }
+    return it;
+  }
+  function guessRole(name) { return INSTRUMENTAL.test(String(name || '')) ? 'instrumental' : null; }
+  function defaultRoles(mainName, pairName) {
+    var a = guessRole(mainName), b = guessRole(pairName);
+    if (a && !b) return { main: 'instrumental', pair: 'vocal' };
+    if (b && !a) return { main: 'vocal', pair: 'instrumental' };
+    return { main: null, pair: null };
+  }
+  function window(clipIn, clipLen, offset, pairDur) {
+    var srcStart = clipIn + offset;
+    var at = Math.max(0, -srcStart);
+    var srcIn = Math.max(0, srcStart);
+    var len = Math.min(clipLen - at, pairDur - srcIn);
+    return len < 0.05 ? null : { at: at, srcIn: srcIn, len: len };
+  }
+  function put(target, field, value) { if (value === undefined) delete target[field]; else target[field] = value; }
+  function swap(item, mainDur, pairDur) {
+    var p = item.pair, out = {}, k;
+    for (k in item) if (Object.prototype.hasOwnProperty.call(item, k)) out[k] = item[k];
+    var offset = p.offset || 0;
+    var pair = { key: item.key, name: item.name != null ? item.name : item.key, offset: cleanOffset(-offset), gainDb: item.gainDb || 0 };
+    put(pair, 'mute', item.mute);
+    put(pair, 'role', item.role);
+    put(pair, 'pic', item.pic);
+    out.key = p.key;
+    out.name = p.name;
+    put(out, 'gainDb', p.gainDb ? p.gainDb : undefined);
+    put(out, 'mute', p.mute);
+    put(out, 'role', p.role);
+    put(out, 'pic', p.pic);
+    out.pair = pair;
+    var inNew = clamp((item.in != null ? item.in : 0) + offset, 0, pairDur);
+    if (item.in != null) out.in = inNew;
+    if (item.out != null) out.out = clamp(item.out + offset, inNew + 0.2, pairDur);
+    return out;
+  }
+  function offsetText(offset) {
+    var v = cleanOffset(offset);
+    if (!v) return 'Both start together';
+    return 'Track 2 is moved ' + Math.abs(v).toFixed(3) + ' s ' + (v > 0 ? 'earlier' : 'later');
+  }
+  return {
+    ROLES: ROLES, MAX_OFFSET: MAX_OFFSET, cleanRole: cleanRole, cleanOffset: cleanOffset, cleanPair: cleanPair, cleanTrack: cleanTrack,
+    guessRole: guessRole, defaultRoles: defaultRoles, window: window, swap: swap, offsetText: offsetText
+  };
+})();
+
+/* Finds how far a song's second track is shifted from the first, by matching their onsets. Pure functions. */
+var TrackAlign = (function () {
+  var RATE = 100;
+  var FINE_RATE = 1000;
+  var MAX_LAG = 60;
+  var FINE_SPAN = 0.05;
+  var MIN_SCORE = 0.25;
+  var MIN_RATIO = 1.25;
+  var MIN_SECONDS = 3;
+
+  function envelope(ch0, ch1, sr, rate) {
+    var hop = Math.max(1, Math.round(sr / rate)), steps = Math.floor(ch0.length / hop);
+    var out = new Float32Array(steps);
+    var prev = 0, i, k;
+    for (i = 0; i < steps; i++) {
+      var sum = 0, end = (i + 1) * hop;
+      for (k = i * hop; k < end; k++) { var m = (ch0[k] + ch1[k]) / 2; sum += m * m; }
+      var e = Math.log(1e-6 + sum / hop);
+      out[i] = i ? Math.max(0, e - prev) : 0;
+      prev = e;
+    }
+    var mean = 0;
+    for (i = 0; i < steps; i++) mean += out[i];
+    mean = steps ? mean / steps : 0;
+    var variance = 0;
+    for (i = 0; i < steps; i++) variance += (out[i] - mean) * (out[i] - mean);
+    var sd = steps ? Math.sqrt(variance / steps) : 0;
+    if (!(sd > 0)) return new Float32Array(steps);
+    for (i = 0; i < steps; i++) out[i] = (out[i] - mean) / sd;
+    return out;
+  }
+
+  function fft(re, im, inverse) {
+    var n = re.length, i, j, len;
+    for (i = 1, j = 0; i < n; i++) {
+      var bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        var tr = re[i]; re[i] = re[j]; re[j] = tr;
+        var ti = im[i]; im[i] = im[j]; im[j] = ti;
+      }
+    }
+    for (len = 2; len <= n; len <<= 1) {
+      var angle = (inverse ? 2 : -2) * Math.PI / len, wRe = Math.cos(angle), wIm = Math.sin(angle), half = len >> 1;
+      for (i = 0; i < n; i += len) {
+        var curRe = 1, curIm = 0;
+        for (j = 0; j < half; j++) {
+          var aIdx = i + j, bIdx = aIdx + half;
+          var xRe = re[bIdx] * curRe - im[bIdx] * curIm, xIm = re[bIdx] * curIm + im[bIdx] * curRe;
+          re[bIdx] = re[aIdx] - xRe; im[bIdx] = im[aIdx] - xIm;
+          re[aIdx] += xRe; im[aIdx] += xIm;
+          var nextRe = curRe * wRe - curIm * wIm;
+          curIm = curRe * wIm + curIm * wRe; curRe = nextRe;
+        }
+      }
+    }
+    if (inverse) for (i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+
+  function energy(x) { var s = 0; for (var i = 0; i < x.length; i++) s += x[i] * x[i]; return s; }
+  function peakShift(left, mid, right) {
+    var denom = left - 2 * mid + right;
+    if (!denom) return 0;
+    return Math.max(-0.5, Math.min(0.5, 0.5 * (left - right) / denom));
+  }
+
+  function correlate(a, b, maxLagSteps, minGapSteps) {
+    var n = 1;
+    while (n < a.length + b.length) n <<= 1;
+    var aRe = new Float64Array(n), aIm = new Float64Array(n), bRe = new Float64Array(n), bIm = new Float64Array(n), i;
+    aRe.set(a); bRe.set(b);
+    fft(aRe, aIm, false); fft(bRe, bIm, false);
+    for (i = 0; i < n; i++) {
+      var re = bRe[i] * aRe[i] + bIm[i] * aIm[i];
+      var im = bIm[i] * aRe[i] - bRe[i] * aIm[i];
+      bRe[i] = re; bIm[i] = im;
+    }
+    fft(bRe, bIm, true);
+    var norm = Math.sqrt(energy(a) * energy(b)) || 1;
+    var lo = Math.max(-maxLagSteps, -(a.length - 1)), hi = Math.min(maxLagSteps, b.length - 1);
+    function at(lag) { return bRe[lag < 0 ? n + lag : lag]; }
+    var best = lo, bestValue = -Infinity, lag;
+    for (lag = lo; lag <= hi; lag++) { var v = at(lag); if (v > bestValue) { bestValue = v; best = lag; } }
+    var gap = minGapSteps != null ? minGapSteps : Math.round(0.5 * RATE), second = -Infinity;
+    for (lag = lo; lag <= hi; lag++) if (Math.abs(lag - best) >= gap) { var w = at(lag); if (w > second) second = w; }
+    var shift = best > lo && best < hi ? peakShift(at(best - 1), bestValue, at(best + 1)) : 0;
+    return { lag: best + shift, score: bestValue / norm, second: second === -Infinity ? 0 : second / norm };
+  }
+
+  function refine(a, b, centerLag, span) {
+    var lo = Math.round(centerLag - span), hi = Math.round(centerLag + span);
+    var values = [], best = 0, lag, idx;
+    for (lag = lo; lag <= hi; lag++) {
+      var sum = 0, start = Math.max(0, -lag), end = Math.min(a.length, b.length - lag);
+      for (var n = start; n < end; n++) sum += a[n] * b[n + lag];
+      values.push(sum);
+    }
+    for (idx = 1; idx < values.length; idx++) if (values[idx] > values[best]) best = idx;
+    var shift = best > 0 && best < values.length - 1 ? peakShift(values[best - 1], values[best], values[best + 1]) : 0;
+    var norm = Math.sqrt(energy(a) * energy(b)) || 1;
+    return { lag: lo + best + shift, score: values.length ? values[best] / norm : 0 };
+  }
+
+  function align(main, pair, sr) {
+    if (main.ch0.length < MIN_SECONDS * sr || pair.ch0.length < MIN_SECONDS * sr) return { ok: false, reason: 'too-short' };
+    var coarseMain = envelope(main.ch0, main.ch1, sr, RATE), coarsePair = envelope(pair.ch0, pair.ch1, sr, RATE);
+    var coarse = correlate(coarseMain, coarsePair, MAX_LAG * RATE);
+    if (coarse.score < MIN_SCORE || coarse.score / Math.max(coarse.second, 1e-6) < MIN_RATIO) return { ok: false, reason: 'no-match', score: coarse.score };
+    var fineMain = envelope(main.ch0, main.ch1, sr, FINE_RATE), finePair = envelope(pair.ch0, pair.ch1, sr, FINE_RATE);
+    var fine = refine(fineMain, finePair, coarse.lag * FINE_RATE / RATE, FINE_SPAN * FINE_RATE);
+    var offset = Math.round(fine.lag / FINE_RATE * 1000) / 1000;
+    return { ok: true, offset: offset === 0 ? 0 : offset, score: coarse.score };
+  }
+
+  return {
+    RATE: RATE, FINE_RATE: FINE_RATE, MAX_LAG: MAX_LAG, MIN_SCORE: MIN_SCORE, MIN_RATIO: MIN_RATIO,
+    envelope: envelope, fft: fft, correlate: correlate, refine: refine, align: align
+  };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -3451,6 +3747,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); });
+    (m.items || []).forEach(function (it) {
+      TrackPair.cleanTrack(it);
+      if (it.pic) it.pic = PictureBox.clean(it.pic, 'video');
+      if (it.pair && it.pair.pic) it.pair.pic = PictureBox.clean(it.pair.pic, 'video');
+    });
     tidyGroups(m);
     return m;
   }
@@ -4033,6 +4334,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var t = Player.now();
     if (isMixTag(Player.tag)) { $('now').textContent = fmt(t); placeHead(t, true); drawScreen(t); }
     if (Player.tag === 'trim') { Trim.cursor = Trim.base + t; drawTrim(); }
+    if (Player.tag === 'tracks') { Tracks.cursor = t; drawTracks(); }
     requestAnimationFrame(frame);
   }
   function pxPerSec() { return Math.max(1, $('tlwrap').clientWidth) * ui.zoom / ui.span; }
@@ -4056,6 +4358,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       els[i].innerHTML = (on ? ICON.stop : ICON.play) + (label ? ' ' + (on ? 'Stop' : label) : '');
     }
     $('trimPlay').innerHTML = tag === 'trim' ? ICON.stop + ' Stop' : ICON.play + ' Play the clip';
+    $('tracksPlay').innerHTML = tag === 'tracks' ? ICON.stop + ' Stop' : ICON.play + ' Play';
     if (!isMixTag(tag)) {
       $('now').textContent = fmt(ui.cursor);
       var h = $('tl').querySelector('.head');
@@ -4250,7 +4553,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     render();
   }
   function live() { relayout(); renderHead(); renderTimeline(); renderSel(); drawScreen(); }
-  function findItem(lane, id) { var a = mix[lane]; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
+  function findItem(lane, id) {
+    if (lane === 'pairs') { var song = findItem('items', id); return song && song.pair ? song.pair : null; }
+    var a = mix[lane]; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null;
+  }
+  // A song's second track is selected as lane 'pairs'; on the timeline it acts as its song.
+  function timelineSel(sel) { return sel && sel.lane === 'pairs' ? { lane: 'items', id: sel.id } : sel; }
+  function isSongLane(lane) { return lane === 'items' || lane === 'pairs'; }
   function clipOf(sel) {
     if (!sel) return null;
     if (sel.lane === 'texts') {
@@ -4267,7 +4576,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       return null;
     }
-    var list = sel.lane === 'items' ? plan.music : plan.spoken;
+    var list = isSongLane(sel.lane) ? plan.music : plan.spoken;
     for (var i = 0; i < list.length; i++) if (list[i].id === sel.id) return { c: list[i], i: i };
     return null;
   }
@@ -4275,8 +4584,84 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var e = lib[key];
     if (!e || e.kind === 'image' || (e.meta && e.meta.silent)) return;
     var it = { id: nid(), key: key, name: e.name };
+    if (WS.id === 'karaoke' && e.kind === 'video') it.pic = songVideoPic();
     if (at == null || at > mix.items.length) mix.items.push(it); else mix.items.splice(at, 0, it);
     changed();
+  }
+  // A music video fills the screen behind the words.
+  function songVideoPic() {
+    var pic = PictureBox.defaults('video');
+    pic.frame = clone(PictureBox.PRESETS.full); pic.round = false; pic.shadow = false;
+    return pic;
+  }
+  function trackOf(it, which) { return which === 'pair' ? it.pair : it; }
+  // Every change to a song's tracks ends here, so the Tracks audition restarts with it.
+  function tracksChanged() { changed(); tracksReplay(); }
+  function setPair(itemId, key) {
+    var it = findItem('items', itemId), e = lib[key];
+    if (!it || !e || !e.meta || e.kind === 'image' || key === it.key) return false;
+    it.pair = { key: key, name: e.name, offset: 0 };
+    if (e.meta.silent) it.pair.mute = true;
+    if (e.kind === 'video') { it.pair.pic = songVideoPic(); if (showsPicture(it)) it.pair.pic.show = false; }
+    if (!it.role) {
+      var roles = TrackPair.defaultRoles(lib[it.key] ? lib[it.key].name : it.name, e.name);
+      if (roles.main) it.role = roles.main;
+      if (roles.pair) it.pair.role = roles.pair;
+    }
+    tracksChanged();
+    alignTracks(itemId);
+    return true;
+  }
+  function removePair(itemId) {
+    var it = findItem('items', itemId);
+    if (!it || !it.pair) return;
+    delete it.pair;
+    tracksChanged();
+  }
+  function swapTracks(itemId) {
+    var it = findItem('items', itemId);
+    if (!it || !it.pair) return;
+    var mainMeta = lib[it.key] && lib[it.key].meta, pairMeta = lib[it.pair.key] && lib[it.pair.key].meta, c = clipOf({ lane: 'items', id: itemId });
+    if (!mainMeta || !pairMeta) { tracksSay('Both track files are needed to swap.', true); return; }
+    if (c && it.in == null) it.in = c.c.in;
+    if (c && it.out == null) it.out = c.c.in + c.c.len;
+    var swapped = TrackPair.swap(it, mainMeta.duration, pairMeta.duration);
+    Object.keys(it).forEach(function (k) { delete it[k]; });
+    Object.assign(it, swapped);
+    if (ui.sel && ui.sel.id === itemId && isSongLane(ui.sel.lane)) ui.sel = { lane: ui.sel.lane === 'items' ? 'pairs' : 'items', id: itemId };
+    tracksChanged();
+  }
+  function setOffset(itemId, seconds) {
+    var it = findItem('items', itemId);
+    if (!it || !it.pair) return;
+    it.pair.offset = TrackPair.cleanOffset(seconds);
+    tracksChanged();
+  }
+  function setTrackRole(itemId, which, role) {
+    var it = findItem('items', itemId), t = it && trackOf(it, which);
+    if (!t) return;
+    var clean = TrackPair.cleanRole(role);
+    if (clean) t.role = clean; else delete t.role;
+    tracksChanged();
+  }
+  function setTrackMute(itemId, which, muted) {
+    var it = findItem('items', itemId), t = it && trackOf(it, which);
+    if (!t) return;
+    if (muted) t.mute = true; else delete t.mute;
+    tracksChanged();
+  }
+  function setTrackGain(itemId, which, db) {
+    var it = findItem('items', itemId), t = it && trackOf(it, which);
+    if (!t) return;
+    t.gainDb = clamp(parseFloat(db) || 0, -24, 12);
+    tracksChanged();
+  }
+  function setTrackPicture(itemId, which, on) {
+    var it = findItem('items', itemId), t = it && trackOf(it, which);
+    if (!t) return;
+    if (!t.pic) t.pic = songVideoPic();
+    t.pic.show = !!on;
+    tracksChanged();
   }
   function addSpoken(key) {
     var e = lib[key];
@@ -4502,9 +4887,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function nudge(delta) {
     if (!ui.sel) return;
     if (Player.tag) Player.stop();
-    var hit = clipOf(ui.sel);
-    if (hit && ui.sel.lane === 'items' && hit.i === 0) { flashSel('The first recording always starts at 0:00.'); return; }
-    if (shiftClip(ui.sel, selBase(ui.sel), delta)) { changed(); revealSel(); }
+    var sel = timelineSel(ui.sel), hit = clipOf(sel);
+    if (hit && sel.lane === 'items' && hit.i === 0) { flashSel('The first recording always starts at 0:00.'); return; }
+    if (shiftClip(sel, selBase(sel), delta)) { changed(); revealSel(); }
   }
   function revealSel() {
     var hit = clipOf(ui.sel);
@@ -4524,6 +4909,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         renderAgain = false;
         renderHead(); renderTimeline(); renderSel(); renderLibrary(); renderOrder(); renderSpoken();
         renderScreenOpts(); renderCues(); renderTexts(); renderPictures(); renderCollection(); drawScreen(); renderSettings(); renderExportNote(); syncPlay(); renderSections();
+        if (Tracks.id) syncTracks();
       } while (renderAgain);
     } finally { rendering = false; }
   }
@@ -4576,8 +4962,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var sel = ui.sel || {};
     plan.music.forEach(function (c, i) {
       var fi = (c.fi / c.len * 100).toFixed(2), fo = (100 - c.fo / c.len * 100).toFixed(2);
-      h += '<div class="clip' + (i % 2 ? ' b' : '') + (sel.lane === 'items' && sel.id === c.id ? ' sel' : '') + '" data-lane="items" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:' + (22 + (i % 2) * 24) + 'px;left:' + pct(c.start) + ';width:' + pct(c.len) +
-        ';clip-path:polygon(' + fi + '% 0,' + fo + '% 0,100% 100%,0 100%)"><canvas data-k="' + esc(c.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas><span class="lbl">' + (i + 1) + ' · ' + esc(nameOf(c)) + '</span></div>';
+      var paired = !!(c.pair || c.pairMissing);
+      h += '<div class="clip' + (i % 2 ? ' b' : '') + (paired ? ' pair' : '') + (c.mute ? ' muted' : '') + (isSongLane(sel.lane) && sel.id === c.id ? ' sel' : '') + '" data-lane="items" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:' + (22 + (i % 2) * 24) + 'px;left:' + pct(c.start) + ';width:' + pct(c.len) +
+        ';clip-path:polygon(' + fi + '% 0,' + fo + '% 0,100% 100%,0 100%)"><canvas data-k="' + esc(c.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas><span class="lbl">' + (i + 1) + ' · ' + esc(nameOf(c)) + (paired ? ' + 2' : '') + '</span></div>';
     });
     plan.spoken.forEach(function (c) {
       var prefix = showsPicture(findItem('spoken', c.id)) ? 'Video · ' : '';
@@ -4693,25 +5080,26 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       setHTML(bar, '<span class="note">' + esc(selFlash || 'Click a recording on the timeline to select it, then drag it or use the arrow keys to move it. Click empty space to play from there. Hold Ctrl and scroll to zoom.') + '</span>');
       return;
     }
-    var c = hit.c, name = c.key ? esc(nameOf(c)) : '';
-    if (ui.sel.lane === 'texts') {
+    var c = hit.c, name = c.key ? esc(nameOf(c)) : '', selLane = timelineSel(ui.sel).lane;
+    if (selLane === 'texts') {
       h = '<span class="what">Text: ' + esc(plainText(hit.t).split('\n')[0] || 'empty') + '</span><span class="num">shows from ' + fmt1(c.start) + ' to ' + fmt1(c.start + c.len) + '</span>' + (linkSummary(hit.t) ? '<span class="note">' + esc(linkSummary(hit.t)) + '</span>' : '');
-    } else if (ui.sel.lane === 'pictures') {
+    } else if (selLane === 'pictures') {
       h = '<span class="what">Picture: ' + (name || esc(hit.p.name)) + '</span><span class="num">shows from ' + fmt1(c.start) + ' to ' + fmt1(c.start + c.len) + '</span>';
-    } else if (ui.sel.lane === 'items') {
+    } else if (selLane === 'items') {
       var rel = hit.i === 0 ? 'starts the mix' : (function () { var x = plan.music[hit.i - 1].xf; return x > 0.01 ? 'overlaps the one before by ' + secs(x) : x < -0.01 ? 'comes in ' + secs(-x) + ' after the one before ends' : 'comes in right as the one before ends'; })();
       h = '<span class="what">' + (hit.i + 1) + ' · ' + name + '</span><span class="num">starts at ' + fmt1(c.start) + ', ' + rel + '</span>';
     } else {
       h = '<span class="what">' + name + '</span><span class="num">comes in at ' + fmt1(c.start) + ', ends at ' + fmt1(c.start + c.len) + '</span>';
     }
-    var fixed = ui.sel.lane === 'items' && hit.i === 0;
+    var fixed = selLane === 'items' && hit.i === 0;
     h += nudgeButtons(fixed) +
       '<button class="btn small" data-selact="play">' + ICON.play + ' Play from just before</button>' +
-      (ui.sel.lane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' :
-      ui.sel.lane === 'pictures' ? '<button class="btn small" data-selact="editpic">Edit picture</button><button class="btn small quiet" data-selact="rmpic">Remove</button>' :
+      (selLane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' :
+      selLane === 'pictures' ? '<button class="btn small" data-selact="editpic">Edit picture</button><button class="btn small quiet" data-selact="rmpic">Remove</button>' :
       '<button class="btn small" data-selact="info">On-screen details</button>' +
       '<button class="btn small" data-selact="trim">Trim</button>' +
-      (ui.sel.lane === 'spoken' && isVideoKey(c.key) ? '<button class="btn small" data-selact="editpic">Picture</button>' : '')) +
+      (selLane === 'spoken' && isVideoKey(c.key) ? '<button class="btn small" data-selact="editpic">Picture</button>' : '') +
+      (selLane === 'items' && WS.id === 'karaoke' ? '<button class="btn small" data-selact="tracks">Tracks</button>' : '')) +
       '<button class="btn small quiet" data-selact="clear">Done</button>' +
       '<span class="note">' + esc(selFlash || (fixed ? 'The first recording always starts at 0:00.' : 'Arrow keys move it by 0.5 s. Hold Shift for 5 s, or Alt for 0.1 s.')) + '</span>';
     setHTML(bar, h);
@@ -4905,12 +5293,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var c = byId[it.id], name = lib[it.key] ? lib[it.key].name : it.name;
       h += '<li data-row="' + it.id + '">';
       if (c) {
-        h += '<div class="row' + (sel.lane === 'items' && sel.id === it.id ? ' picked' : '') + '" draggable="true" data-id="' + it.id + '"><div class="n" title="Drag to reorder">' + c.n + '</div>' +
-          '<div><div class="name" data-pick="items:' + it.id + '">' + esc(name) + '</div><div class="facts num"><span><b>' + fmt(c.len) + '</b> long</span><span>starts at ' + fmt(c.start) + '</span>' + levelText(c) + '</div>' + (infoOf(it.key, 'items').kind === 'talk' ? usedNote(it.key, c.in, c.in + c.len) : '') +
+        h += '<div class="row' + (isSongLane(sel.lane) && sel.id === it.id ? ' picked' : '') + '" draggable="true" data-id="' + it.id + '"><div class="n" title="Drag to reorder">' + c.n + '</div>' +
+          '<div><div class="name" data-pick="items:' + it.id + '">' + esc(name) + '</div>' + (WS.id === 'karaoke' ? tracksFacts(it, c) : '') + '<div class="facts num"><span><b>' + fmt(c.len) + '</b> long</span><span>starts at ' + fmt(c.start) + '</span>' + levelText(c) + '</div>' + (infoOf(it.key, 'items').kind === 'talk' ? usedNote(it.key, c.in, c.in + c.len) : '') +
           onscreenLine(it.key, 'items') +
           '<canvas data-wave="' + esc(it.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas></div>' +
           '<div class="acts">' + volInput('items', it) +
           '<button class="btn small" data-act="trim" data-lane="items" data-id="' + it.id + '">Trim</button>' +
+          (WS.id === 'karaoke' ? '<button class="btn small" data-act="tracks" data-id="' + it.id + '">Tracks</button>' : '') +
           '<button class="btn small" data-act="up" data-id="' + it.id + '" aria-label="Move up"' + (idx === 0 ? ' disabled' : '') + '>' + ICON.up + '</button>' +
           '<button class="btn small" data-act="down" data-id="' + it.id + '" aria-label="Move down"' + (idx === mix.items.length - 1 ? ' disabled' : '') + '>' + ICON.down + '</button>' +
           '<button class="btn small quiet" data-act="remove" data-lane="items" data-id="' + it.id + '">Remove</button></div></div>';
@@ -4933,6 +5322,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     setHTML($('order'), h);
     $('orderNote').textContent = plan.music.length ? plan.music.length + (plan.music.length === 1 ? ' recording, ' : ' recordings, ') + fmt(plan.musicEnd) : '';
     drawWaves();
+  }
+  // "Track 1: Vocal · Track 2: inst.wav, Instrumental" under a karaoke song's name.
+  function tracksFacts(it, c) {
+    function part(t, n, name) {
+      var bits = [];
+      if (name) bits.push(esc(name));
+      if (t.role) bits.push(ROLE_LABELS[t.role]);
+      if (t.mute) bits.push('sound off');
+      return 'Track ' + n + (bits.length ? ': ' + bits.join(', ') : '');
+    }
+    if (c.pairMissing) return '<div class="facts"><span class="err">Track 2 is missing: ' + esc(it.pair.name) + '</span></div>';
+    if (!it.pair) return '<div class="facts"><span>' + (it.role || it.mute ? part(it, 1, '') + ' · ' : '') + 'One track. Press Tracks to add the second.</span></div>';
+    return '<div class="facts"><span>' + part(it, 1, '') + ' · ' + part(it.pair, 2, lib[it.pair.key] ? lib[it.pair.key].name : it.pair.name) + '</span></div>';
   }
   function renderSpoken() {
     var byId = {}, h = '', sel = ui.sel || {};
@@ -5227,8 +5629,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!showsPicture(it)) return;
       list.push({ lane: 'spoken', id: c.id, key: c.key, start: c.start, dur: c.len, pic: PictureBox.clean(it.pic, 'video'), motion: 'none', strength: 'subtle', srcIn: c.in, kind: 'video' });
     });
+    plan.music.forEach(function (c) {
+      var it = findItem('items', c.id);
+      if (!it) return;
+      if (showsPicture(it)) list.push({ lane: 'items', id: c.id, key: c.key, start: c.start, dur: c.len, pic: PictureBox.clean(it.pic, 'video'), motion: 'none', strength: 'subtle', srcIn: c.in, kind: 'video' });
+      if (c.pair && it.pair && showsPicture(it.pair)) {
+        var w = TrackPair.window(c.in, c.len, c.pair.offset, c.pair.dur);
+        if (w) list.push({ lane: 'pairs', id: c.id, layerId: c.id + ':pair', key: c.pair.key, start: c.start + w.at, dur: w.len, pic: PictureBox.clean(it.pair.pic, 'video'), motion: 'none', strength: 'subtle', srcIn: w.srcIn, kind: 'video' });
+      }
+    });
     return PictureBox.order(list);
   }
+  // A song and its second track share an id, so fades and video players are keyed by this.
+  function layerKey(l) { return l.layerId || l.id; }
   function pictureSpans() { return mix.pictures.map(function (it) { return { id: it.id, start: it.start, end: it.start + it.dur }; }); }
   function picOf(lane, id) { var it = findItem(lane, id); return it && it.pic ? it.pic : null; }
   function roundPath(g, r, rad) {
@@ -5248,10 +5661,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function paintPictures(g, W, H, t, source, boxes) {
     var layers = pictureLayers();
     if (!layers.length) return;
-    var alphas = PictureBox.alphas(layers.map(function (l) { return { id: l.id, start: l.start, dur: l.dur, fadeIn: l.pic.fadeIn, fadeOut: l.pic.fadeOut, frame: l.pic.frame }; }), t);
-    var selId = boxes && ui.sel && (ui.sel.lane === 'pictures' || ui.sel.lane === 'spoken') ? ui.sel.id : null;
+    var alphas = PictureBox.alphas(layers.map(function (l) { return { id: layerKey(l), start: l.start, dur: l.dur, fadeIn: l.pic.fadeIn, fadeOut: l.pic.fadeOut, frame: l.pic.frame }; }), t);
+    var selId = boxes && ui.sel && ui.sel.lane !== 'texts' ? ui.sel.id : null;
     layers.forEach(function (l) {
-      var a = alphas[l.id] || 0, selected = l.id === selId, f = l.pic.frame;
+      var a = alphas[layerKey(l)] || 0, selected = l.id === selId && l.lane === ui.sel.lane, f = l.pic.frame;
       if (a <= 0 && !selected) return;
       var box = { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H };
       var src = a > 0 ? source(l, t) : null;
@@ -5353,22 +5766,22 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return vidIndex[key];
   }
   function requestClipFrame(layer, srcT) {
-    var cp = clipPlayers[layer.id];
-    if (!cp) cp = clipPlayers[layer.id] = { player: null, want: null, busy: false };
+    var id = layerKey(layer), cp = clipPlayers[id];
+    if (!cp) cp = clipPlayers[id] = { player: null, want: null, busy: false };
     cp.want = srcT;
     if (cp.busy) return;
     cp.busy = true;
     (async function () {
       try {
         var idx = await videoIndex(layer.key);
-        while (cp.want != null && clipPlayers[layer.id] === cp) {
+        while (cp.want != null && clipPlayers[id] === cp) {
           if (!cp.player) cp.player = new Media.ClipPlayer(idx);
           var w = cp.want; cp.want = null;
           await cp.player.frameAt(w);
           if (!mixPlaying()) drawScreen(ui.screenT, true);
         }
       } catch (err) {
-        if (clipPlayers[layer.id] === cp && !vidErr[layer.key]) {
+        if (clipPlayers[id] === cp && !vidErr[layer.key]) {
           vidErr[layer.key] = 'This video’s picture can’t be shown: ' + errText(err, 'the browser could not decode it');
           renderSpoken(); renderPictures();
         }
@@ -5384,13 +5797,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     if (vidErr[layer.key]) return null;
     if (fetch) requestClipFrame(layer, layer.srcIn + (t - layer.start));
-    var cp = clipPlayers[layer.id], f = cp && cp.player && cp.player.cur;
+    var cp = clipPlayers[layerKey(layer)], f = cp && cp.player && cp.player.cur;
     return f ? { img: f, w: f.displayWidth, h: f.displayHeight } : null;
   }
   // Free decoders for clips far from the time shown. Not part of Player.stop().
   function closeIdleClipPlayers(t) {
     var near = {};
-    pictureLayers().forEach(function (l) { if (l.kind === 'video' && t >= l.start - 2 && t <= l.start + l.dur + 2) near[l.id] = 1; });
+    pictureLayers().forEach(function (l) { if (l.kind === 'video' && t >= l.start - 2 && t <= l.start + l.dur + 2) near[layerKey(l)] = 1; });
     Object.keys(clipPlayers).forEach(function (id) {
       var cp = clipPlayers[id];
       if (near[id] || cp.busy) return;
@@ -6799,6 +7212,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!ui.sel) return null;
     if (ui.sel.lane === 'pictures') { var it = findItem('pictures', ui.sel.id); return it ? { lane: 'pictures', id: it.id, item: it, key: it.key, kind: 'image' } : null; }
     if (ui.sel.lane === 'spoken') { var sp = findItem('spoken', ui.sel.id); return sp && isVideoKey(sp.key) ? { lane: 'spoken', id: sp.id, item: sp, key: sp.key, kind: 'video' } : null; }
+    if (WS.id === 'karaoke' && isSongLane(ui.sel.lane)) {
+      var song = findItem('items', ui.sel.id), track = song && (ui.sel.lane === 'pairs' ? song.pair : song);
+      return track && isVideoKey(track.key) ? { lane: ui.sel.lane, id: song.id, item: track, key: track.key, kind: 'video' } : null;
+    }
     return null;
   }
   function pictureSize(sp) {
@@ -6814,6 +7231,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var it = findItem('spoken', c.id);
       if (it && it.pic && it.pic.show === false && isVideoKey(it.key)) rows.push({ lane: 'spoken', id: c.id, key: c.key, start: c.start, dur: c.len, kind: 'video', off: true });
     });
+    plan.music.forEach(function (c) {
+      var it = findItem('items', c.id);
+      if (!it) return;
+      if (it.pic && it.pic.show === false && isVideoKey(it.key)) rows.push({ lane: 'items', id: c.id, key: c.key, start: c.start, dur: c.len, kind: 'video', off: true });
+      if (it.pair && it.pair.pic && it.pair.pic.show === false && isVideoKey(it.pair.key)) rows.push({ lane: 'pairs', id: c.id, key: it.pair.key, start: c.start, dur: c.len, kind: 'video', off: true });
+    });
     return rows;
   }
   function picRowError(l) {
@@ -6825,7 +7248,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var sel = ui.sel || {}, h = '';
     picRows().forEach(function (l) {
       var picked = sel.lane === l.lane && sel.id === l.id, item = findItem(l.lane, l.id), name = lib[l.key] ? lib[l.key].name : item ? item.name : '';
-      var what = l.kind === 'image' ? motionLabel(l.motion) : l.off ? 'Video clip, picture off' : 'Video clip', err = picRowError(l);
+      var kindName = l.lane === 'items' ? 'Song track' : l.lane === 'pairs' ? 'Song track 2' : 'Video clip';
+      var what = l.kind === 'image' ? motionLabel(l.motion) : l.off ? kindName + ', picture off' : kindName, err = picRowError(l);
       h += '<li class="picrow' + (picked ? ' picked' : '') + (l.off ? ' off' : '') + '" data-plane="' + l.lane + '" data-pid="' + l.id + '"><span class="t">' + fmt1(l.start) + '–' + fmt1(l.start + l.dur) + '</span>' +
         '<span class="txt">' + esc(name) + (err ? '<span class="err">' + esc(err) + '</span>' : '') + '</span><span class="note">' + esc(what) + '</span></li>';
       if (picked) h += '<li class="edslot" data-slot="1"></li>';
@@ -6843,10 +7267,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function picEditorHtml(sp) {
     var name = lib[sp.key] ? lib[sp.key].name : sp.item.name, image = sp.kind === 'image', silent = !!(lib[sp.key] && lib[sp.key].meta && lib[sp.key].meta.silent);
-    var h = '<div class="btnrow"><span class="note">' + (image ? 'Picture' : 'Video clip') + ': ' + esc(name) + '</span><button class="btn small primary" data-pact="done" style="margin-left:auto">Done</button></div>';
+    var songTrack = isSongLane(sp.lane), what = image ? 'Picture' : sp.lane === 'items' ? 'Song track' : sp.lane === 'pairs' ? 'Song track 2' : 'Video clip';
+    var h = '<div class="btnrow"><span class="note">' + what + ': ' + esc(name) + '</span><button class="btn small primary" data-pact="done" style="margin-left:auto">Done</button></div>';
     if (!image) {
       h += '<div class="links"><label><input type="checkbox" data-pf="show"> Show the picture</label><label><input type="checkbox" data-pf="sound"> Play its sound</label></div>' +
-        (silent ? '<p class="note">This video has no sound.</p>' : '') + '<p class="note">Volume and trim are in Spoken clips over the music.</p>';
+        (silent ? '<p class="note">This video has no sound.</p>' : '') + '<p class="note">' + (songTrack ? 'Volume, trim and lining up are in Order of music → Tracks.' : 'Volume and trim are in Spoken clips over the music.') + '</p>';
       if (!sp.item.pic) return h;
     }
     h += '<h4 class="edhead">Where</h4><div class="btnrow presets">' + Object.keys(PictureBox.PRESETS).map(function (k) { return '<button class="btn small" data-preset="' + k + '">' + esc(PictureBox.PRESET_LABELS[k]) + '</button>'; }).join('') + '</div>' +
@@ -7044,7 +7469,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (!e) throw new Error('the picture “' + (lib[layer.key] ? lib[layer.key].name : layer.key) + '” was not ready');
         return { img: e.bmp, w: e.bmp.width, h: e.bmp.height };
       }
-      var fr = clipFrames[layer.id];
+      var fr = clipFrames[layerKey(layer)];
       return fr ? { img: fr, w: fr.displayWidth, h: fr.displayHeight } : null;
     }
     try {
@@ -7058,7 +7483,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           var idx;
           try { idx = await videoIndex(l.key); }
           catch (e) { throw new Error('the video “' + (lib[l.key] ? lib[l.key].name : l.key) + '” could not be read (' + errText(e, 'unknown problem') + ')'); }
-          clips[l.id] = { layer: l, player: new Media.ClipPlayer(idx) };
+          clips[layerKey(l)] = { layer: l, player: new Media.ClipPlayer(idx) };
         }
         var vcfg = { codec: how.vcodec, width: v.W, height: v.H, bitrate: v.bitrate, framerate: v.fps };
         if (how.vmux === 'avc') vcfg.avc = { format: 'avc' };
@@ -7272,6 +7697,195 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed();
   }
 
+  /* ---------- tracks dialog (karaoke) ---------- */
+  var Tracks = { id: null, cursor: 0, zoom: 10, busy: false, note: '', noteErr: false, hear: 'both' };
+  var ROLE_LABELS = { vocal: 'Vocal', instrumental: 'Instrumental' };
+  function tracksItem() { return Tracks.id ? findItem('items', Tracks.id) : null; }
+  // The song on its own, starting at 0. `hear` picks which tracks sound, whatever their own Sound ticks say.
+  function soloLayout(it, hear) {
+    var copy = clone(it);
+    delete copy.xf;
+    if (hear) {
+      delete copy.mute;
+      if (copy.pair) delete copy.pair.mute;
+      if (hear === 'main' && copy.pair) copy.pair.mute = true;
+      if (hear === 'pair' && copy.pair) copy.mute = true;
+    }
+    return E.layout({ opts: mix.opts, items: [copy], spoken: [] }, metaMap());
+  }
+  function tracksPlan() { return soloLayout(tracksItem(), Tracks.hear); }
+  function tracksPlay(from) {
+    if (!tracksItem()) return;
+    var pl = tracksPlan();
+    if (!pl.music.length) return;
+    Tracks.cursor = clamp(from, 0, Math.max(0, pl.total - 0.1));
+    Player.play(pl, Tracks.cursor, pl.total, 'tracks');
+  }
+  function tracksReplay() { if (Player.tag === 'tracks') tracksPlay(Player.now()); }
+  function tracksSay(text, isErr) { Tracks.note = text; Tracks.noteErr = !!isErr; if (Tracks.id) syncTracks(); }
+  function openTracks(id) {
+    if (WS.id !== 'karaoke') return;
+    var it = findItem('items', id);
+    if (!it || !lib[it.key] || !lib[it.key].meta) return;
+    Player.stop();
+    Tracks.id = id; Tracks.cursor = 0; Tracks.zoom = 10; Tracks.busy = false; Tracks.note = ''; Tracks.noteErr = false;
+    var dlg = $('tracksDlg');
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    syncTracks();
+    var keys = [it.key];
+    if (it.pair && lib[it.pair.key]) keys.push(it.pair.key);
+    Promise.all(keys.map(function (k) { return Pcm.get(k); })).then(function () {
+      if (Tracks.id === id) drawTracks();
+    }, function (err) {
+      if (Tracks.id === id) tracksSay('Couldn’t read a track: ' + errText(err, 'unknown problem') + '.', true);
+    });
+  }
+  function closeTracksDialog() { var d = $('tracksDlg'); if (d.close) d.close(); else { d.removeAttribute('open'); closeTracks(); } }
+  function closeTracks() {
+    if (!Tracks.id) return;
+    if (Player.tag === 'tracks') Player.stop();
+    Tracks.id = null; Tracks.busy = false;
+  }
+  async function alignTracks(id) {
+    var it = findItem('items', id);
+    if (!it || !it.pair) return;
+    var mainKey = it.key, pairKey = it.pair.key, text, isErr = false;
+    if (Tracks.id === id) { Tracks.busy = true; tracksSay('Lining up…'); }
+    try {
+      var both = await Promise.all([Pcm.get(mainKey), Pcm.get(pairKey)]);
+      await sleep(0);
+      var result = TrackAlign.align(both[0], both[1], SR), now = findItem('items', id);
+      if (!now || !now.pair || now.key !== mainKey || now.pair.key !== pairKey) {
+        text = 'The tracks changed while lining up. Press Line up automatically to try again.';
+      } else if (result.ok) {
+        setOffset(id, result.offset);
+        text = 'Lined up: ' + TrackPair.offsetText(result.offset) + ' (match ' + result.score.toFixed(2) + ').';
+      } else if (result.reason === 'too-short') {
+        text = 'A track is shorter than 3 seconds, so it can’t be lined up automatically. Line them up by ear below.';
+      } else {
+        text = 'Couldn’t find a match. These may be different edits or keys. Line them up by ear below.';
+      }
+    } catch (err) {
+      text = 'Couldn’t read a track: ' + errText(err, 'unknown problem') + '.';
+      isErr = true;
+    }
+    if (Tracks.id === id) { Tracks.busy = false; tracksSay(text, isErr); }
+  }
+  function trackBlockHtml(it, which) {
+    var t = trackOf(it, which), e = lib[t.key], n = which === 'pair' ? 2 : 1, video = isVideoKey(t.key), silent = !!(e && e.meta && e.meta.silent);
+    var attr = ' data-which="' + which + '"';
+    return '<div class="trackblk"><div class="headrow"><h4>Track ' + n + '</h4><span class="name">' + esc(e ? e.name : t.name) + '</span>' +
+      (video ? '<span class="tag">Video</span>' : '') + (e ? '' : '<span class="err">Missing from the library</span>') + '</div>' +
+      '<div class="btnrow" role="radiogroup" aria-label="Track ' + n + ' role"><span class="note">Role</span>' +
+      [['vocal', 'Vocal'], ['instrumental', 'Instrumental'], ['', 'Not set']].map(function (r) {
+        return '<label><input type="radio" name="trackRole-' + which + '" value="' + r[0] + '" data-tf="role"' + attr + '> ' + r[1] + '</label>';
+      }).join('') + '</div>' +
+      '<div class="btnrow"><label><input type="checkbox" data-tf="sound"' + attr + '> Sound</label>' +
+      '<label>Volume <input class="vol num" type="number" step="1" min="-24" max="12" data-tf="vol"' + attr + '> dB</label>' +
+      (video ? '<label><input type="checkbox" data-tf="show"' + attr + '> Show the picture</label><button class="btn small" data-tact="pic"' + attr + '>Picture…</button>' : '') +
+      (which === 'pair' ? '<button class="btn small quiet" data-tact="remove">Remove second track</button>' : '') + '</div>' +
+      (silent ? '<p class="note">This video has no sound.</p>' : '') + '</div>';
+  }
+  function addPairHtml(it) {
+    var keys = libOrder.filter(function (k) { return k !== it.key && lib[k] && lib[k].kind !== 'image' && lib[k].meta; });
+    keys.sort(function (a, b) { return lib[a].name.localeCompare(lib[b].name); });
+    return '<div class="trackblk"><div class="headrow"><h4>Track 2</h4></div><div class="btnrow">' +
+      '<label for="tracksAddSel" class="visually-hidden">Second track</label><select id="tracksAddSel"><option value="">Add a second track…</option>' +
+      keys.map(function (k) { return '<option value="' + esc(k) + '">' + esc(lib[k].name) + '</option>'; }).join('') + '</select>' +
+      '<button class="btn small" data-tact="add">Add</button></div>' +
+      '<p class="note">Pick the other version of this song, such as the instrumental. It lines up automatically.</p></div>';
+  }
+  function syncTracks() {
+    var it = tracksItem();
+    if (!it) { if (Tracks.id) closeTracksDialog(); return; }
+    $('tracksTitle').textContent = lib[it.key] ? lib[it.key].name : it.name;
+    var body = $('tracksBody');
+    setHTML(body, trackBlockHtml(it, 'main') +
+      '<div class="btnrow"><button class="btn small" data-tact="swap"' + (it.pair ? '' : ' disabled') + '>Swap tracks</button>' +
+      '<span class="note">' + (it.pair ? 'Track 1 sets the song’s length and trim.' : 'Add a second track to swap.') + '</span></div>' +
+      (it.pair ? trackBlockHtml(it, 'pair') : addPairHtml(it)));
+    body.querySelectorAll('[data-tf]').forEach(function (el) {
+      var t = trackOf(it, el.getAttribute('data-which')), f = el.getAttribute('data-tf');
+      if (!t) return;
+      var silent = !!(lib[t.key] && lib[t.key].meta && lib[t.key].meta.silent);
+      if (f === 'role') el.checked = el.value === (t.role || '');
+      else if (f === 'sound') { el.checked = !t.mute && !silent; el.disabled = silent; }
+      else if (f === 'vol') { if (document.activeElement !== el) el.value = t.gainDb || 0; }
+      else if (f === 'show') el.checked = showsPicture(t);
+    });
+    var same = it.pair && it.role && it.role === it.pair.role;
+    $('tracksRoleNote').hidden = !same;
+    $('tracksRoleNote').textContent = same ? 'Both tracks are marked ' + ROLE_LABELS[it.role] + '.' : '';
+    $('tracksLine').hidden = !it.pair;
+    if (it.pair) {
+      if (document.activeElement !== $('tracksOffset')) $('tracksOffset').value = (it.pair.offset || 0).toFixed(3);
+      $('tracksOffsetText').textContent = TrackPair.offsetText(it.pair.offset || 0);
+    }
+    $('tracksAlignBtn').disabled = Tracks.busy || !it.pair;
+    $('tracksNote').textContent = Tracks.note;
+    $('tracksNote').className = 'note' + (Tracks.noteErr ? ' err' : '');
+    document.querySelectorAll('#tracksDlg [data-tact="zoom"]').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-z') === Tracks.zoom); });
+    document.querySelectorAll('#tracksDlg input[name="tracksHear"]').forEach(function (r) { r.checked = r.value === Tracks.hear; });
+    drawTracks();
+  }
+  // The stretch of the song the waveforms show, in song time.
+  function tracksView(len) {
+    if (!Tracks.zoom || Tracks.zoom >= len) return { a: 0, b: Math.max(len, 0.1) };
+    var a = clamp(Tracks.cursor - Tracks.zoom / 2, 0, len - Tracks.zoom);
+    return { a: a, b: a + Tracks.zoom };
+  }
+  function drawTracks() {
+    var it = tracksItem(), cv = $('tracksWave');
+    if (!it || !it.pair || $('tracksLine').hidden) return;
+    var w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!w) return;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    var g = cv.getContext('2d'); g.scale(dpr, dpr);
+    var c = soloLayout(it, null).music[0];
+    $('tracksNow').textContent = 'At ' + fmt1(Tracks.cursor);
+    if (!c) return;
+    var view = tracksView(c.len), span = view.b - view.a, laneH = h / 2;
+    var lanes = [
+      { key: it.key, from: c.in, color: css('--accent'), muted: !!it.mute, label: 'Track 1' },
+      { key: it.pair.key, from: c.in + (it.pair.offset || 0), color: css('--brass'), muted: !!it.pair.mute, label: 'Track 2' }
+    ];
+    lanes.forEach(function (lane, li) {
+      var e = lib[lane.key], top = li * laneH;
+      if (!e || !e.meta) return;
+      var pcm = Pcm.peek(lane.key), dur = e.meta.duration, bins = e.meta.bins;
+      g.fillStyle = lane.color; g.globalAlpha = lane.muted ? 0.35 : 1;
+      for (var x = 0; x < w; x++) {
+        var t0 = lane.from + view.a + x / w * span, t1 = lane.from + view.a + (x + 1) / w * span;
+        if (t1 <= 0 || t0 >= dur) continue;
+        var v = 0;
+        if (pcm) {
+          var s0 = Math.max(0, Math.floor(t0 * SR)), s1 = Math.min(pcm.ch0.length, Math.max(s0 + 1, Math.floor(t1 * SR)));
+          var stride = Math.max(1, Math.floor((s1 - s0) / 200)), m = 0;
+          for (var k = s0; k < s1; k += stride) { var av = Math.abs(pcm.ch0[k]); if (av > m) m = av; }
+          v = Math.sqrt(m);
+        } else {
+          v = bins[Math.min(bins.length - 1, Math.max(0, Math.floor(t0 / dur * bins.length)))] / 255;
+        }
+        var bh = Math.max(1, v * (laneH - 8));
+        g.fillRect(x, top + (laneH - bh) / 2, 1, bh);
+      }
+      g.globalAlpha = 1;
+      g.fillStyle = css('--muted'); g.font = '600 11px ' + SANS;
+      g.fillText(lane.label + (lane.muted ? ' · sound off' : ''), 6, top + 14);
+    });
+    g.fillStyle = css('--line'); g.fillRect(0, laneH, w, 1);
+    var px = (Tracks.cursor - view.a) / span * w;
+    if (px >= 0 && px <= w) { g.fillStyle = css('--ink'); g.fillRect(px, 0, 1.5, h); }
+  }
+  function applyOffsetField() {
+    var it = tracksItem(), el = $('tracksOffset');
+    if (!it || !it.pair) return;
+    var v = parseFloat(String(el.value).replace(',', '.').replace('−', '-'));
+    if (!isFinite(v)) { el.value = (it.pair.offset || 0).toFixed(3); tracksSay('Type the offset in seconds, such as 1.234 or -0.5.', true); return; }
+    if (TrackPair.cleanOffset(v) !== (it.pair.offset || 0)) setOffset(it.id, v);
+    el.value = (it.pair.offset || 0).toFixed(3);
+  }
+
   /* ---------- on-screen details dialog ---------- */
   var infoKey = null, infoLane = null, infoTour = [], infoMoved = false, infoBaseline = '';
   function openInfo(key, lane) {
@@ -7369,7 +7983,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       return false;
     }
     document.addEventListener('keydown', function (ev) {
-      if ($('trimDlg').open || $('infoDlg').open) return;
+      if ($('trimDlg').open || $('infoDlg').open || $('tracksDlg').open) return;
       var mod = (ev.ctrlKey || ev.metaKey) && !ev.altKey, k = (ev.key || '').toLowerCase();
       if (mod && !isTyping(ev.target) && (k === 'z' || k === 'y')) {
         ev.preventDefault();
@@ -7681,9 +8295,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
       var hit = clipOf(ui.sel);
       if (!hit) return;
+      var barSel = timelineSel(ui.sel);
       if (act === 'play') playMix(Math.max(0, hit.c.start - 4));
-      else if (act === 'info') openInfo(hit.c.key, ui.sel.lane);
-      else if (act === 'trim') openTrim(ui.sel.lane, ui.sel.id);
+      else if (act === 'info') openInfo(hit.c.key, barSel.lane);
+      else if (act === 'trim') openTrim(barSel.lane, barSel.id);
+      else if (act === 'tracks') openTracks(barSel.id);
       else if (act === 'edittext') { revealTextEditor(); $('textBody').focus(); }
       else if (act === 'editpic') { renderPictures(); revealPicEditor(); }
       else if (act === 'rmpic') removePicture(ui.sel.id);
@@ -7813,6 +8429,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var id = b.getAttribute('data-id'), lane = b.getAttribute('data-lane'), act = b.getAttribute('data-act'), i;
       if (act === 'remove') { if (Player.tag) Player.stop(); mix[lane] = mix[lane].filter(function (x) { return x.id !== id; }); changed(); }
       else if (act === 'trim') openTrim(lane, id);
+      else if (act === 'tracks') openTracks(id);
       else if (act === 'info') openInfo(b.getAttribute('data-key'), lane);
       else if (act === 'editpic') { select({ lane: 'spoken', id: id }); revealPicEditor(); }
       else if (act === 'up' || act === 'down') { i = mix.items.findIndex(function (x) { return x.id === id; }); if (Player.tag) Player.stop(); moveItem(id, i + (act === 'up' ? -1 : 1)); }
@@ -8157,7 +8774,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if ((fr && fr.lane && fr.lane !== 'texts') || (!fr && b.kind === 'picture')) {
         var plane = fr ? fr.lane : b.lane, pid = fr ? fr.id : b.id, pic = picOf(plane, pid);
         if (!pic) { ui.holdT = null; return; }
-        if (!ui.sel || ui.sel.id !== pid) { ui.sel = { lane: plane, id: pid }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
+        if (!ui.sel || ui.sel.id !== pid || ui.sel.lane !== plane) { ui.sel = { lane: plane, id: pid }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); renderPictures(); }
         sd = { p: p, kind: 'pic', lane: plane, id: pid, handle: fr ? fr.handle : 'move', f0: clone(pic.frame) };
       } else if (fr || b.kind === 'text') {
         var tx = findItem('texts', fr ? fr.id : b.id);
@@ -8343,6 +8960,62 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('trimReset').onclick = function () { if (Player.tag === 'trim') Player.stop(); Trim.item.in = 0; Trim.item.out = Trim.dur; syncTrim(); };
     $('trimDone').onclick = function () { var d = $('trimDlg'); if (d.close) d.close(); else { d.removeAttribute('open'); closeTrim(); } };
     $('trimDlg').addEventListener('close', closeTrim);
+    $('tracksDlg').addEventListener('close', closeTracks);
+    $('tracksDlg').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-tact]'), it = tracksItem();
+      if (!b || !it) return;
+      var act = b.getAttribute('data-tact'), which = b.getAttribute('data-which');
+      if (act === 'done') closeTracksDialog();
+      else if (act === 'add') { var key = $('tracksAddSel').value; if (key) setPair(it.id, key); else tracksSay('Choose a file for the second track first.', true); }
+      else if (act === 'remove') removePair(it.id);
+      else if (act === 'swap') swapTracks(it.id);
+      else if (act === 'align') alignTracks(it.id);
+      else if (act === 'nudge' && it.pair) setOffset(it.id, (it.pair.offset || 0) + parseFloat(b.getAttribute('data-d')));
+      else if (act === 'zoom') { Tracks.zoom = +b.getAttribute('data-z'); syncTracks(); }
+      else if (act === 'play') { if (Player.tag === 'tracks') Player.stop(); else tracksPlay(Tracks.cursor); }
+      else if (act === 'pic') {
+        var id = it.id;
+        closeTracksDialog();
+        select({ lane: which === 'pair' ? 'pairs' : 'items', id: id });
+        revealPicEditor();
+      }
+    });
+    $('tracksDlg').addEventListener('input', function (ev) {
+      var el = ev.target, it = tracksItem();
+      if (!it || el.getAttribute('data-tf') !== 'vol') return;
+      var t = trackOf(it, el.getAttribute('data-which'));
+      if (!t) return;
+      t.gainDb = clamp(parseFloat(el.value) || 0, -24, 12);
+      live();
+    });
+    $('tracksDlg').addEventListener('change', function (ev) {
+      var el = ev.target, it = tracksItem();
+      if (!it) return;
+      if (el.id === 'tracksOffset') { applyOffsetField(); return; }
+      var f = el.getAttribute('data-tf'), which = el.getAttribute('data-which');
+      if (f === 'hear') { Tracks.hear = el.value; tracksReplay(); }
+      else if (f === 'role') setTrackRole(it.id, which, el.value);
+      else if (f === 'sound') setTrackMute(it.id, which, !el.checked);
+      else if (f === 'vol') setTrackGain(it.id, which, el.value);
+      else if (f === 'show') setTrackPicture(it.id, which, el.checked);
+    });
+    $('tracksDlg').addEventListener('keydown', function (ev) {
+      var t = ev.target.tagName;
+      if (ev.key === 'Enter' && ev.target.id === 'tracksOffset') { ev.preventDefault(); applyOffsetField(); return; }
+      if (ev.code === 'Space' && t !== 'BUTTON' && t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA') {
+        ev.preventDefault();
+        if (Player.tag === 'tracks') Player.stop(); else tracksPlay(Tracks.cursor);
+      }
+    });
+    $('tracksWave').addEventListener('pointerdown', function (ev) {
+      var it = tracksItem();
+      if (!it) return;
+      var c = soloLayout(it, null).music[0];
+      if (!c) return;
+      var r = this.getBoundingClientRect(), view = tracksView(c.len);
+      var t = view.a + clamp((ev.clientX - r.left) / r.width, 0, 1) * (view.b - view.a);
+      if (Player.tag === 'tracks') tracksPlay(t); else { Tracks.cursor = t; drawTracks(); }
+    });
 
     // redraw the canvases when the theme or the width changes
     var redraw = null;
