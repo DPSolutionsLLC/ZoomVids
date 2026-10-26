@@ -459,6 +459,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .wordlist input[data-wstart] { width: 7.5em; }
 .wordlist input[data-wlen] { width: 5.5em; }
 .lyricparts label { display: inline-flex; align-items: center; gap: 4px; }
+.lyricpart { display: inline-flex; align-items: center; gap: 8px; }
 #wsSwitch { text-decoration: none; }
 @media (prefers-reduced-motion: no-preference) { .bar i { transition: width 0.2s linear; } }
 </style>
@@ -649,7 +650,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <label><input type="checkbox" id="lyricKeepLit"> Keep sung words lit until the line ends</label>
             </div>
             <div class="btnrow">
-              <label>Color for words with no part <input type="color" id="lyricSingColor"></label>
+              <label>Highlight for words with no part <input type="color" id="lyricSingColor"></label>
               <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
             </div>
             <div id="lyricParts" class="btnrow lyricparts"></div>
@@ -4241,17 +4242,22 @@ var Lyrics = (function () {
     verses.sort(order);
     return { verses: verses.map(function (v) { return { id: v.id, lines: v.lines }; }), links: links };
   }
+  function defaultHi(base, singColor) {
+    return String(base).toLowerCase() === String(singColor).toLowerCase() ? '#FFFFFF' : singColor;
+  }
   function cleanSong(raw) {
     if (!isObject(raw)) return null;
+    var d = SHOW_DEFAULTS;
+    var singColor = COLOR_RE.test(raw.singColor) ? raw.singColor : d.singColor;
     var parts = [], seen = {};
     (Array.isArray(raw.parts) ? raw.parts : []).forEach(function (p) {
       if (!isObject(p) || typeof p.name !== 'string' || !PART_RE.test(p.name)) return;
       var key = p.name.toLowerCase();
       if (seen[key]) return;
       seen[key] = true;
-      parts.push({ name: p.name, color: COLOR_RE.test(p.color) ? p.color : PALETTE[parts.length % PALETTE.length] });
+      var color = COLOR_RE.test(p.color) ? p.color : PALETTE[parts.length % PALETTE.length];
+      parts.push({ name: p.name, color: color, hi: COLOR_RE.test(p.hi) ? p.hi : defaultHi(color, singColor) });
     });
-    var d = SHOW_DEFAULTS;
     function num(v, lo, hi, step, fallback) {
       if (typeof v !== 'number' || !isFinite(v)) return fallback;
       return Math.round(Math.min(hi, Math.max(lo, v)) / step) * step;
@@ -4260,7 +4266,7 @@ var Lyrics = (function () {
       showParts: raw.showParts === true, parts: parts,
       highlight: raw.highlight === 'word' ? 'word' : raw.highlight === 'syllable' || raw.highlight === 'sweep' ? 'syllable' : d.highlight,
       keepLit: raw.keepLit === true,
-      singColor: COLOR_RE.test(raw.singColor) ? raw.singColor : d.singColor,
+      singColor: singColor,
       countdown: raw.countdown === 'dots' || raw.countdown === 'bar' || raw.countdown === 'off' ? raw.countdown : d.countdown,
       breakGap: num(raw.breakGap, 2, 30, 0.5, d.breakGap),
       countLen: num(raw.countLen, 1, 10, 1, d.countLen),
@@ -4356,17 +4362,20 @@ var Lyrics = (function () {
   }
   function addParts(songLyrics, names) {
     var out = cleanSong(songLyrics) || cleanSong({});
+    var choices = PALETTE.filter(function (c) { return c.toLowerCase() !== out.singColor.toLowerCase(); });
     (names || []).forEach(function (name) {
       if (typeof name !== 'string' || !PART_RE.test(name)) return;
       var taken = out.parts.some(function (p) { return p.name.toLowerCase() === name.toLowerCase(); });
-      if (!taken) out.parts.push({ name: name, color: PALETTE[out.parts.length % PALETTE.length] });
+      if (taken) return;
+      var color = choices[out.parts.length % choices.length];
+      out.parts.push({ name: name, color: color, hi: defaultHi(color, out.singColor) });
     });
     return out;
   }
   return {
     PALETTE: PALETTE, PART_RE: PART_RE, SHOW_DEFAULTS: SHOW_DEFAULTS, KARAOKE_LOOK: KARAOKE_LOOK, splitWord: splitWord, tagName: tagName, wordText: wordText, parse: parse, display: display, markup: markup,
     merge: merge, reId: reId, partsOf: partsOf, setPart: setPart, joinSlides: joinSlides, wordCount: wordCount, syllableCount: syllableCount,
-    cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts,
+    cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts, defaultHi: defaultHi,
     cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord,
     LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines
   };
@@ -4447,6 +4456,7 @@ var WordTiming = (function () {
       if (k === on.length - 1) return;
       var j = on[k + 1], a = entries[i], b = entries[j], gap = b.first - a.last;
       if (gap >= lead + tail) { out[i].end = a.last + tail; out[j].start = b.first - lead; }
+      else if (gap < 0 && opts && opts.overlap) { out[i].end = a.last + tail; out[j].start = Math.max(a.first, b.first - lead); }
       else if (gap < 0) { var mid = a.last + gap / 2; out[i].end = mid; out[j].start = mid; }
       else {
         var split = a.last + gap * tail / (lead + tail), x = Math.min(b.fadeIn || 0, Math.max(0, gap));
@@ -4463,8 +4473,8 @@ var WordTiming = (function () {
   }
   // Places new blocks: timed ones around their words (like windows), untimed ones back to back after the previous block.
   // entries: [{ first, last, read, fadeIn }], first/last in mix time or null. Returns [{ start, dur }].
-  function placeAll(entries, from) {
-    var wins = windows(entries.map(function (e) { return isNum(e.first) && isNum(e.last) ? e : null; }));
+  function placeAll(entries, from, opts) {
+    var wins = windows(entries.map(function (e) { return isNum(e.first) && isNum(e.last) ? e : null; }), opts);
     var at = isNum(from) ? from : 0;
     return entries.map(function (e, i) {
       var start, end;
@@ -4734,14 +4744,36 @@ var RollView = (function () {
     (verses || []).forEach(function (v) { out[v.id] = v.label ? v.label : 'Verse ' + (++n); });
     return out;
   }
+  function covers(line, t) { return line.start <= t && t < line.end; }
+  function slot(lines, t) {
+    var list = [], i, j, n = lines.length;
+    for (i = 0; i < n; i++) {
+      if (!covers(lines[i], t)) continue;
+      var done = typeof lines[i].sung === 'number' && lines[i].sung <= t, later = false;
+      for (j = i + 1; done && j < n && !later; j++) later = covers(lines[j], t);
+      if (!(done && later)) list.push(i);
+    }
+    if (list.length) return { first: list[0], last: list[list.length - 1], list: list, active: true };
+    if (!n) return { first: -1, last: -1, list: [], active: false };
+    var index = n - 1;
+    for (i = 0; i < n; i++) if (lines[i].start > t) { index = i; break; }
+    return { first: index, last: index, list: [], active: false };
+  }
+  function changedAt(lines, t) {
+    if (!lines.length) return null;
+    var from = null, origin = lines[0].start;
+    lines.forEach(function (line) {
+      [line.start, line.end].forEach(function (e) {
+        if (e <= origin || e > t || (from !== null && e <= from)) return;
+        var a = slot(lines, e - 1e-6), b = slot(lines, e);
+        if (a.first !== b.first || a.last !== b.last) from = e;
+      });
+    });
+    return from;
+  }
   function current(lines, t) {
-    var n = lines.length, i, index = -1;
-    if (!n) return { index: -1, from: null, active: false };
-    for (i = n - 1; i >= 0; i--) if (lines[i].start <= t && t < lines[i].end) { index = i; break; }
-    if (index < 0) for (i = 0; i < n; i++) if (lines[i].start > t) { index = i; break; }
-    if (index < 0) index = n - 1;
-    var line = lines[index];
-    return { index: index, from: index === 0 ? null : Math.min(line.start, lines[index - 1].end), active: line.start <= t && t < line.end };
+    var s = slot(lines, t);
+    return { index: s.first, from: s.first < 0 ? null : changedAt(lines, t), active: s.active, first: s.first, last: s.last, list: s.list };
   }
   function tops(heights, gaps) {
     var y = [];
@@ -4765,21 +4797,22 @@ var RollView = (function () {
     var verseOf = [], v = -1;
     lines.forEach(function (line, i) { if (i === 0 || line.verseStart) v++; verseOf.push(v); });
     var pageOf = opts.move === 'page' ? pages(lines, opts.above + 1 + opts.below, opts.verses === 'screen') : null;
-    function win(i) {
-      var members = {};
+    function win(s) {
+      var members = {}, j;
+      for (j = s.first; j <= s.last; j++) members[j] = true;
       if (opts.move === 'page') {
         var first = -1;
-        for (var k = 0; k < n; k++) if (pageOf[k] === pageOf[i]) { members[k] = true; if (first < 0) first = k; }
+        for (var k = 0; k < n; k++) if (pageOf[k] === pageOf[s.first]) { members[k] = true; if (first < 0) first = k; }
         return { members: members, off: y[first] - gaps[first] };
       }
-      for (var j = Math.max(0, i - opts.above); j <= Math.min(n - 1, i + opts.below); j++) {
-        if (opts.verses === 'screen' && verseOf[j] !== verseOf[i]) continue;
+      for (j = Math.max(0, s.first - opts.above); j <= Math.min(n - 1, s.last + opts.below); j++) {
+        if (opts.verses === 'screen' && verseOf[j] !== verseOf[s.first]) continue;
         members[j] = true;
       }
-      return { members: members, off: y[i] - opts.above };
+      return { members: members, off: y[s.first] - opts.above };
     }
     var f = opts.motion === 'smooth' && cur.from !== null ? ease(clamp((t - cur.from) / SCROLL, 0, 1)) : 1;
-    var now = win(cur.index), before = f < 1 && cur.index > 0 ? win(cur.index - 1) : null;
+    var now = win(cur), before = f < 1 ? win(slot(lines, cur.from - 1e-6)) : null;
     var all = {};
     Object.keys(now.members).forEach(function (k) { all[k] = true; });
     if (before) Object.keys(before.members).forEach(function (k) { all[k] = true; });
@@ -4787,12 +4820,12 @@ var RollView = (function () {
     Object.keys(all).map(Number).sort(function (a, b) { return a - b; }).forEach(function (j) {
       var alpha = before ? lerp(before.members[j] ? 1 : 0, now.members[j] ? 1 : 0, f) : now.members[j] ? 1 : 0;
       if (alpha <= 0) return;
-      var state = j < cur.index ? 'sung' : j > cur.index ? 'upcoming' : cur.active ? 'current' : 'next';
+      var state = cur.list.indexOf(j) >= 0 ? 'current' : !cur.active && j === cur.first ? 'next' : lines[j].end <= t || (cur.active && j < cur.last) ? 'sung' : 'upcoming';
       shown.push({ index: j, y: y[j] - off, alpha: alpha, label: gaps[j] > 0, state: state });
     });
     return { cur: cur.index, active: cur.active, shown: shown };
   }
-  return { SCROLL: SCROLL, LABEL_ROWS: LABEL_ROWS, ease: ease, labels: labels, current: current, tops: tops, pages: pages, view: view };
+  return { SCROLL: SCROLL, LABEL_ROWS: LABEL_ROWS, ease: ease, labels: labels, current: current, slot: slot, changedAt: changedAt, tops: tops, pages: pages, view: view };
 })();
 
 
@@ -6853,15 +6886,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // Each piece is inked like any text; the sung part is filled again on top in the singing color, with no glow or shadow.
   // In the 'stroke' pass only the outlines are drawn, so there is no highlight.
   function paintLyricLines(g, lay, tx, alpha, lift, ink, pass) {
-    var k = lay.karaoke, px = lay.px, lh = lay.L.lh, song = tx.lyric.song;
+    var k = lay.karaoke, px = lay.px, lh = lay.L.lh, song = tx.lyric.song, colors = partColorMap(song), plain = tx.color || '#FFFFFF';
     k.lines.forEach(function (line) {
       var lineAlpha = line.preview ? (k.previewShown ? LyricView.DIM : 0) : k.states[line.row] === 'upcoming' ? LyricView.DIM : 1;
       if (lineAlpha <= 0) return;
       var y = line.y + lift;
       g.globalAlpha = alpha * lineAlpha;
       g.font = textFont(tx, px);
-      g.fillStyle = tx.color || '#FFFFFF';
-      line.pieces.forEach(function (p) { ink(p.text, line.x + p.dx, y); });
+      line.pieces.forEach(function (p) {
+        g.fillStyle = (p.part && colors[p.part] && colors[p.part].base) || plain;
+        ink(p.text, line.x + p.dx, y);
+      });
       if (line.preview || pass === 'stroke') return;
       paintLit(g, line.pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song);
     });
@@ -6897,7 +6932,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var x = x0 + p.dx;
       g.save();
       g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetX = 0; g.shadowOffsetY = 0;
-      g.fillStyle = (p.part && partColor(songId, p.part)) || show.singColor;
+      var pc = p.part ? partColors(songId, p.part) : null;
+      g.fillStyle = (pc && pc.hi) || show.singColor;
       if (f < 1) { g.beginPath(); g.rect(x, y - px * lh / 2, p.w * f, px * lh); g.clip(); }
       g.fillText(p.text, x, y);
       g.restore();
@@ -6931,8 +6967,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var rowList = LyricView.rows(tx.lyric);
         hit = rollWraps[tx.id] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, lyr.showParts, measure).lines, rowEnds: rowList.map(function (r) { return r.end; }) };
       }
-      var sp = txSpan(tx);
-      return { tx: tx, wrap: hit, start: sp.start, end: sp.start + sp.dur, h: Math.max(1, hit.rows.length), verse: tx.lyric.verse, verseStart: i === 0 || blocks[i - 1].lyric.verse !== tx.lyric.verse };
+      var sp = txSpan(tx), words = WordTiming.span(tx.lyric);
+      return { tx: tx, wrap: hit, start: sp.start, end: sp.start + sp.dur, sung: words ? sp.start + words.last : null, h: Math.max(1, hit.rows.length), verse: tx.lyric.verse, verseStart: i === 0 || blocks[i - 1].lyric.verse !== tx.lyric.verse };
     });
     var v = RollView.view(lines, t, { above: roll.above, below: roll.below, move: roll.move, motion: roll.motion, verses: roll.verses });
     var names = RollView.labels(songRecord(songId)), rowH = px * lh;
@@ -6957,7 +6993,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var selTx = selId ? findItem('texts', selId) : null;
     mix.items.forEach(function (it) {
       if (!it.lyrics || it.lyrics.view !== 'roll') return;
-      var songId = it.id, lay = layoutRoll(g, W, H, songId, t), show = songLyrics(songId);
+      var songId = it.id, lay = layoutRoll(g, W, H, songId, t), show = songLyrics(songId), colors = partColorMap(songId);
       var selected = !!(boxes && selTx && selTx.lyric && selTx.lyric.song === songId);
       if (lay && lay.alpha > 0 && lay.lines.length) {
         var lk = TextLook.resolve(lay.look), px = lay.px, lh = lay.lh, c = lay.content, labelPx = Math.max(6, Math.round(px * 0.55));
@@ -6980,9 +7016,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
               g.textAlign = 'left';
               inkLabel(ln.labelText, lay.align === 'left' ? lay.frame.x : lay.frame.x + (lay.frame.w - lw) / 2, ln.labelY, pass);
             }
-            g.globalAlpha = a; g.font = textFont(lay.look, px); g.fillStyle = lay.look.color; g.textAlign = 'left';
-            ln.rows.forEach(function (r) { r.pieces.forEach(function (p) { ink(p.text, r.x + p.dx, r.y, pass); }); });
-            if (pass === 'stroke' || ln.state !== 'current' || !lay.active) return;
+            g.globalAlpha = a; g.font = textFont(lay.look, px); g.textAlign = 'left';
+            ln.rows.forEach(function (r) {
+              r.pieces.forEach(function (p) {
+                g.fillStyle = (p.part && colors[p.part] && colors[p.part].base) || lay.look.color;
+                ink(p.text, r.x + p.dx, r.y, pass);
+              });
+            });
+            if (pass === 'stroke' || ln.state !== 'current') return;
             ln.rows.forEach(function (r) { paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId); });
           });
         };
@@ -7184,7 +7225,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var x = clamp(place.x, 0, Math.max(0, W - place.w)), y = clamp(place.y, place.h / 2, H - place.h / 2);
     g.save();
     g.globalAlpha = cd.alpha;
-    g.fillStyle = (piece.part && partColor(songId, piece.part)) || show.singColor;
+    var pc = piece.part ? partColors(songId, piece.part) : null;
+    g.fillStyle = (pc && pc.hi) || show.singColor;
     g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 0.2 * px;
     if (show.countdown === 'bar') g.fillRect(x, y - place.h / 2, place.w * cd.fraction, place.h);
     else {
@@ -7512,7 +7554,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function songOf(tx) { return tx.lyric ? findItem('items', tx.lyric.song) : null; }
   function songLyrics(songId) { var song = findItem('items', songId); return song && song.lyrics ? song.lyrics : Lyrics.cleanSong({}); }
   function partNames(songId) { return songLyrics(songId).parts.map(function (p) { return p.name; }); }
-  function partColor(songId, name) { var p = songLyrics(songId).parts.filter(function (x) { return x.name === name; })[0]; return p ? p.color : null; }
+  function partColorMap(songId) {
+    var map = {};
+    songLyrics(songId).parts.forEach(function (p) { map[p.name] = { base: p.color, hi: p.hi }; });
+    return map;
+  }
+  function partColors(songId, name) { return partColorMap(songId)[name] || null; }
   function songTitle(songId) { var song = findItem('items', songId); return song ? infoOf(song.key, 'items').title : ''; }
   function lyricText(slide, items) {
     var song = null;
@@ -7530,9 +7577,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return true;
   }
   function setShowParts(songId, on) { if (writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { showParts: !!on }))) changed(); }
-  function setPartColor(songId, name, color) {
+  function setPartColor(songId, name, key, color) {
+    if (key !== 'color' && key !== 'hi') return;
     var next = clone(songLyrics(songId));
-    next.parts.forEach(function (p) { if (p.name === name) p.color = color; });
+    next.parts.forEach(function (p) { if (p.name === name) p[key] = color; });
     if (writeSongLyrics(songId, next)) changed();
   }
   function addSongParts(songId, names) { if (writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), names))) changed(); }
@@ -8662,7 +8710,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var places = WordTiming.placeAll(pieces.map(function (p, i) {
       var w = WordTiming.span(Lyrics.fillSlide(p.slide, 0, sources));
       return { first: w ? w.first : null, last: w ? w.last : null, read: items[i].dur, fadeIn: items[i].fadeIn || 0 };
-    }), clip ? clip.start : 0);
+    }), clip ? clip.start : 0, { overlap: !!roll });
     var name = roll ? TextGroup.cleanName(title + ' lines', 'Lines') : TextGroup.cleanName(title, TextGroup.nextName(mix.groups, 'Lyrics'));
     var g = { id: 'g' + nid(), name: name, fill: 'packed' };
     mix.groups.push(g);
@@ -8866,7 +8914,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('lyricKeepLit').checked = lyr.keepLit;
     set('lyricSingColor', lyr.singColor);
     $('lyricShowParts').checked = !!lyr.showParts;
-    setHTML($('lyricParts'), lyr.parts.map(function (p) { return '<label>' + esc(p.name) + ' <input type="color" data-part="' + esc(p.name) + '" value="' + esc(p.color) + '"' + (has ? '' : ' disabled') + '></label>'; }).join(''));
+    setHTML($('lyricParts'), lyr.parts.map(function (p) {
+      function picker(kind, label, value) { return '<label>' + label + ' <input type="color" data-part="' + esc(p.name) + '" data-kind="' + kind + '" value="' + esc(value) + '"' + (has ? '' : ' disabled') + '></label>'; }
+      return '<span class="lyricpart"><b>' + esc(p.name) + '</b> ' + picker('color', 'Words', p.color) + ' ' + picker('hi', 'Highlight', p.hi) + '</span>';
+    }).join(''));
     set('lyricCountdown', lyr.countdown);
     set('lyricBreakGap', lyr.breakGap); set('lyricCountLen', lyr.countLen);
     $('lyricBreakGap').disabled = $('lyricCountLen').disabled = !has || lyr.countdown === 'off';
@@ -9004,8 +9055,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (target.id === 'lyricShowParts') { if (final) setShowParts(songId, target.checked); return; }
     if (SHOW_FIELDS.hasOwnProperty(target.id)) { if (final) editSongShow(songId, target); return; }
     if (target.hasAttribute('data-part')) {
-      var name = target.getAttribute('data-part');
-      if (final) { setPartColor(songId, name, target.value); return; }
+      var name = target.getAttribute('data-part'), kind = target.getAttribute('data-kind');
+      if (final) { setPartColor(songId, name, kind, target.value); return; }
+      if (kind !== 'color') return;
       $('lyricWords').querySelectorAll('[data-word]').forEach(function (b) { if (b.getAttribute('data-wpart') === name) b.style.setProperty('--part', target.value); });
       return;
     }
@@ -9038,7 +9090,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         v.lines.map(function (line, li) {
           return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + vi + ':' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
             line.words.map(function (w) {
-              var color = w.part ? partColor(songId, w.part) : null;
+              var pc = w.part ? partColors(songId, w.part) : null, color = pc ? pc.base : null;
               return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
                 w.syls.map(function (s) { return esc(s.text); }).join('<span class="dot" aria-hidden="true">·</span>') + '</button>';
             }).join('') + '</div>';
@@ -9280,7 +9332,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         return { tx: tx, shown: sp.start, first: w ? sp.start + w.first : null, last: w ? sp.start + w.last : null, fadeIn: tx.fadeIn || 0 };
       }).filter(function (e) { return e.first !== null; });
       entries.sort(function (a, b) { return a.first - b.first || a.shown - b.shown; });
-      var wins = WordTiming.windows(entries);
+      var wins = WordTiming.windows(entries, { overlap: songLyrics(songId).view === 'roll' });
       entries.forEach(function (e, i) {
         var w = wins[i], tx = e.tx;
         if (!w || !want[tx.id]) return;

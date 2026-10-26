@@ -14,6 +14,9 @@ function lines(count = 10, verseStarts = [0]) {
     return { start: 2 * i, end: 2 * i + 2, h: 1, verse: 'v' + verse, verseStart };
   });
 }
+const row = (start, end, verseStart = false) => ({ start, end, h: 1, verse: 'v', verseStart });
+// Line 2 (3 to 5) is sung while line 1 (2 to 6) is still going.
+const overlap = () => [row(0, 2, true), row(2, 6), row(3, 5), row(6, 8), row(8, 10), row(10, 12)];
 const opts = (more = {}) => Object.assign({ above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'none' }, more);
 const byIndex = (v) => Object.fromEntries(v.shown.map((s) => [s.index, s]));
 const near = (a, b) => Math.abs(a - b) < 1e-9;
@@ -25,18 +28,24 @@ describe('labels', () => {
 });
 
 describe('current', () => {
-  test('in an overlap the newest started line wins', () => {
+  test('in an overlap the earliest started line anchors and both are current', () => {
     const cur = R.current([{ start: 0, end: 3 }, { start: 2, end: 5 }], 2.5);
-    assert.equal(cur.index, 1);
-    assert.equal(cur.active, true);
-    assert.equal(cur.from, 2);
+    assert.deepEqual(cur, { index: 0, from: 2, active: true, first: 0, last: 1, list: [0, 1] });
   });
   test('in a gap the next line is current, not active, and became current when the previous one ended', () => {
     const cur = R.current([{ start: 0, end: 2 }, { start: 3, end: 5 }], 2.5);
-    assert.deepEqual(cur, { index: 1, from: 2, active: false });
+    assert.deepEqual(cur, { index: 1, from: 2, active: false, first: 1, last: 1, list: [] });
   });
   test('before the first line it is line 0 with no from', () => {
-    assert.deepEqual(R.current([{ start: 1, end: 2 }, { start: 3, end: 4 }], 0), { index: 0, from: null, active: false });
+    assert.deepEqual(R.current([{ start: 1, end: 2 }, { start: 3, end: 4 }], 0), { index: 0, from: null, active: false, first: 0, last: 0, list: [] });
+  });
+  test('without overlaps from is the same as the earlier of this start and the previous end', () => {
+    const list = [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 5, end: 7 }];
+    [1, 3, 4.5, 6, 9].forEach((t) => {
+      const cur = R.current(list, t);
+      const expected = cur.index === 0 ? null : Math.min(list[cur.index].start, list[cur.index - 1].end);
+      assert.equal(cur.from, expected, 'at ' + t);
+    });
   });
   test('after the last line the last line stays current', () => {
     const cur = R.current([{ start: 1, end: 2 }, { start: 3, end: 4 }], 10);
@@ -45,6 +54,65 @@ describe('current', () => {
   });
   test('no lines gives index -1', () => {
     assert.equal(R.current([], 1).index, -1);
+  });
+});
+
+describe('slot', () => {
+  test('two overlapping lines are both in the list', () => {
+    assert.deepEqual(R.slot([{ start: 0, end: 3 }, { start: 2, end: 5 }], 2.5), { first: 0, last: 1, list: [0, 1], active: true });
+  });
+  test('a line that already ended between two current lines is left out', () => {
+    const s = R.slot([{ start: 0, end: 10 }, { start: 2, end: 4 }, { start: 5, end: 8 }], 6);
+    assert.deepEqual(s.list, [0, 2]);
+    assert.equal(s.first, 0);
+    assert.equal(s.last, 2);
+  });
+  test('in a gap the slot is the next line and not active', () => {
+    assert.deepEqual(R.slot([{ start: 0, end: 2 }, { start: 3, end: 5 }], 2.5), { first: 1, last: 1, list: [], active: false });
+  });
+  test('no lines', () => {
+    assert.deepEqual(R.slot([], 1), { first: -1, last: -1, list: [], active: false });
+  });
+});
+
+describe('slot with sung times', () => {
+  test('a line whose words are all sung stops being current once a later line has started', () => {
+    const list = [{ start: 0, end: 3, sung: 2 }, { start: 2, end: 5, sung: 4.5 }];
+    assert.deepEqual(R.slot(list, 2.5), { first: 1, last: 1, list: [1], active: true });
+    assert.equal(R.changedAt(list, 2.5), 2);
+  });
+  test('a line still being sung stays current alongside the later one', () => {
+    const list = [{ start: 1.5, end: 6.45, sung: 5.95 }, { start: 3.5, end: 7.95, sung: 7.45 }];
+    assert.deepEqual(R.slot(list, 5).list, [0, 1]);
+    assert.deepEqual(R.slot(list, 6.1).list, [1]);
+  });
+  test('a finished line with no later line keeps the slot until its block ends', () => {
+    assert.deepEqual(R.slot([{ start: 0, end: 3, sung: 2 }], 2.5).list, [0]);
+  });
+  test('a crossfade overlap between back-to-back lines scrolls when the next line starts, as before', () => {
+    const list = [row(0, 2.04), row(2, 4.04), row(4, 6)].map((l, i) => Object.assign(l, { sung: 2 * i + 2 }));
+    const cur = R.current(list, 2.02);
+    assert.equal(cur.index, 1);
+    assert.equal(cur.from, 2);
+    const v = R.view(list, 2.02, opts({ motion: 'jump' }));
+    assert.deepEqual(v.shown.map((s) => s.state), ['sung', 'current', 'upcoming']);
+  });
+});
+
+describe('changedAt', () => {
+  test('across a gap it is the previous line end', () => {
+    assert.equal(R.changedAt([{ start: 0, end: 2 }, { start: 3, end: 5 }], 4), 2);
+  });
+  test('when a second line starts the slot grows at its start', () => {
+    assert.equal(R.changedAt([{ start: 0, end: 3 }, { start: 2, end: 5 }], 2.5), 2);
+  });
+  test('when the first line ends during an overlap it changes at that end', () => {
+    assert.equal(R.changedAt([{ start: 0, end: 3 }, { start: 2, end: 5 }], 4), 3);
+  });
+  test('before or on the first line it is null', () => {
+    const list = [{ start: 1, end: 2 }, { start: 3, end: 4 }];
+    assert.equal(R.changedAt(list, 0), null);
+    assert.equal(R.changedAt(list, 1.5), null);
   });
 });
 
@@ -134,6 +202,35 @@ describe('view', () => {
     list[1].h = 2;
     const v = byIndex(R.view(list, 1, opts({ motion: 'jump', above: 0, below: 3 })));
     assert.deepEqual([v[0].y, v[1].y, v[2].y, v[3].y], [0, 1, 3, 4]);
+  });
+  test('overlap, stay: both lines are current, the window grows around the pair, anchored on the first', () => {
+    const v = R.view(overlap(), 4, opts());
+    assert.equal(v.cur, 1);
+    assert.equal(v.active, true);
+    assert.deepEqual(v.shown.map((s) => s.index), [0, 1, 2, 3, 4]);
+    assert.deepEqual(v.shown.map((s) => s.state), ['sung', 'current', 'current', 'upcoming', 'upcoming']);
+    assert.equal(byIndex(v)[1].y, 1);
+    assert.ok(v.shown.every((s) => s.alpha === 1));
+  });
+  test('overlap, page: a current line on the next page still shows as current', () => {
+    const list = [row(0, 2), row(2, 4), row(4, 8), row(6, 9), row(9, 11), row(11, 13)];
+    const v = byIndex(R.view(list, 7, opts({ move: 'page', above: 1, below: 1, motion: 'jump' })));
+    assert.deepEqual(Object.keys(v).map(Number), [0, 1, 2, 3]);
+    assert.equal(v[2].state, 'current');
+    assert.equal(v[3].state, 'current');
+    assert.equal(v[0].y, 0);
+  });
+  test('overlap, fresh screen: a current line in the next verse still shows', () => {
+    const list = [row(0, 2), row(2, 4), row(4, 8), row(6, 9, true), row(9, 11)];
+    const v = byIndex(R.view(list, 7, opts({ verses: 'screen', above: 1, below: 1, motion: 'jump' })));
+    assert.deepEqual(Object.keys(v).map(Number), [1, 2, 3]);
+    assert.equal(v[3].state, 'current');
+  });
+  test('overlap, smooth: just after the slot shrinks a leaving line is half faded, and after the scroll every alpha is 0 or 1', () => {
+    const mid = byIndex(R.view(overlap(), 5.1, opts()));
+    assert.ok(mid[4].alpha > 0 && mid[4].alpha < 1, 'line 4 is fading out');
+    const done = R.view(overlap(), 5 + R.SCROLL, opts());
+    assert.ok(done.shown.every((s) => s.alpha === 0 || s.alpha === 1));
   });
   test('no lines shows nothing', () => {
     assert.deepEqual(R.view([], 1, opts()), { cur: -1, active: false, shown: [] });

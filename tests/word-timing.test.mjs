@@ -116,6 +116,21 @@ describe('windows', () => {
   test('lead and tail can be changed', () => {
     assert.deepEqual(W.windows([{ first: 5, last: 6 }], { lead: 2, tail: 1 }), [{ start: 3, end: 7 }]);
   });
+  test('with overlap on, lines whose words overlap keep their tail and lead, so both cover the overlap', () => {
+    const [wa, wb] = W.windows([{ first: 10, last: 12 }, { first: 11.6, last: 14 }], { overlap: true });
+    assert.equal(wa.end, 12.5);
+    assert.equal(wb.start, 10.6);
+    assert.ok(wb.start < wa.end);
+  });
+  test('with overlap on, the next block never starts before the earlier line’s first word', () => {
+    const [wa, wb] = W.windows([{ first: 10, last: 12 }, { first: 10.5, last: 14 }], { overlap: true });
+    assert.equal(wa.start, 9);
+    assert.equal(wb.start, 10);
+  });
+  test('with overlap on, lines that do not overlap are placed exactly as without it', () => {
+    const entries = [{ first: 10, last: 12 }, { first: 12.6, last: 14, fadeIn: 0.4 }, { first: 20, last: 22 }];
+    assert.deepEqual(W.windows(entries, { overlap: true }), W.windows(entries));
+  });
 });
 
 describe('move', () => {
@@ -250,6 +265,12 @@ describe('placeAll', () => {
     assert.deepEqual(out, [{ start: 19, dur: 3.5 }, { start: 29, dur: 4.5 }]);
     const wins = W.windows([timedAt(20, 22), timedAt(30, 33)]);
     out.forEach((p, i) => { assert.equal(p.start, wins[i].start); assert.equal(Math.round((p.start + p.dur) * 100) / 100, wins[i].end); });
+  });
+  test('passes overlap through to windows', () => {
+    const out = W.placeAll([timedAt(10, 12), timedAt(11.6, 14)], 0, { overlap: true });
+    assert.deepEqual(out, [{ start: 9, dur: 3.5 }, { start: 10.6, dur: 3.9 }]);
+    const split = W.placeAll([timedAt(10, 12), timedAt(11.6, 14)], 0);
+    assert.equal(split[0].start + split[0].dur, split[1].start);
   });
   test('an untimed entry after a timed one starts at that one’s end', () => {
     const out = W.placeAll([timedAt(20, 22), untimed(3)], 0);

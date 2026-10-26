@@ -358,7 +358,7 @@ describe('cleanSong', () => {
       { name: 'Low', color: 'red' },
       { name: 'bad name', color: '#111111' },
     ] });
-    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#123456' }, { name: 'Low', color: L.PALETTE[1] }] }, songDefaults()));
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#123456', hi: '#FFD54A' }, { name: 'Low', color: L.PALETTE[1], hi: '#FFD54A' }] }, songDefaults()));
   });
   test('showParts is only on when it is true', () => {
     assert.equal(L.cleanSong({ showParts: 'yes' }).showParts, false);
@@ -397,6 +397,27 @@ describe('cleanSong', () => {
     assert.equal(L.cleanSong({ highlight: 'flash' }).highlight, 'syllable');
     assert.equal(L.cleanSong({ highlight: 'sweep' }).keepLit, false);
     assert.equal(L.cleanSong({ highlight: 'word' }).keepLit, false);
+  });
+  test('an old part with no highlight gets the singing color', () => {
+    assert.equal(L.cleanSong({ parts: [{ name: 'High', color: '#4FC3F7' }] }).parts[0].hi, '#FFD54A');
+    assert.equal(L.cleanSong({ singColor: '#112233', parts: [{ name: 'High', color: '#4FC3F7' }] }).parts[0].hi, '#112233');
+  });
+  test('a part whose color equals the singing color highlights in white, in any case', () => {
+    assert.equal(L.cleanSong({ parts: [{ name: 'High', color: '#FFD54A' }] }).parts[0].hi, '#FFFFFF');
+    assert.equal(L.cleanSong({ parts: [{ name: 'High', color: '#ffd54a' }] }).parts[0].hi, '#FFFFFF');
+  });
+  test('a stored highlight is kept, and a later singing color change does not move it', () => {
+    const once = L.cleanSong({ parts: [{ name: 'High', color: '#4FC3F7' }] });
+    assert.equal(once.parts[0].hi, '#FFD54A');
+    const later = L.cleanSong(Object.assign({}, once, { singColor: '#112233' }));
+    assert.equal(later.parts[0].hi, '#FFD54A');
+    assert.equal(L.cleanSong({ parts: [{ name: 'High', color: '#4FC3F7', hi: '#ABCDEF' }] }).parts[0].hi, '#ABCDEF');
+  });
+  test('a bad highlight falls back to the default, never an empty string', () => {
+    ['red', '', 5, null].forEach((hi) => {
+      const part = L.cleanSong({ parts: [{ name: 'High', color: '#4FC3F7', hi }] }).parts[0];
+      assert.equal(part.hi, '#FFD54A', String(hi));
+    });
   });
   test('keepLit is on only for true', () => {
     assert.equal(L.cleanSong({ keepLit: true }).keepLit, true);
@@ -477,15 +498,37 @@ describe('slideStyle', () => {
   });
 });
 
+describe('defaultHi', () => {
+  test('the singing color when it differs from the base', () => {
+    assert.equal(L.defaultHi('#4FC3F7', '#FFD54A'), '#FFD54A');
+  });
+  test('white when the base is the singing color, in any case', () => {
+    assert.equal(L.defaultHi('#ffd54a', '#FFD54A'), '#FFFFFF');
+  });
+});
+
 describe('addParts', () => {
-  test('colors come in palette order and cycle after 6', () => {
+  test('colors come in palette order, skip the singing color, and cycle after 5', () => {
     const out = L.addParts(null, ['A', 'B', 'C', 'D', 'E', 'F', 'G']);
-    assert.deepEqual(out.parts.map((p) => p.color), L.PALETTE.concat([L.PALETTE[0]]));
+    const choices = L.PALETTE.slice(1);
+    assert.deepEqual(out.parts.map((p) => p.color), choices.concat([choices[0], choices[1]]));
+    assert.ok(out.parts.every((p) => p.hi === '#FFD54A'));
+  });
+  test('on a default song High gets blue and Low pink, both highlighting in the singing color', () => {
+    const high = L.addParts(null, ['High']);
+    const both = L.addParts(high, ['Low']);
+    assert.deepEqual(both.parts, [{ name: 'High', color: L.PALETTE[1], hi: '#FFD54A' }, { name: 'Low', color: L.PALETTE[2], hi: '#FFD54A' }]);
+    assert.notEqual(both.parts[0].color, both.parts[1].color);
+  });
+  test('with a blue singing color the palette skips blue instead', () => {
+    const out = L.addParts({ singColor: '#4FC3F7' }, ['High', 'Low']);
+    assert.deepEqual(out.parts.map((p) => p.color), [L.PALETTE[0], L.PALETTE[2]]);
+    assert.ok(out.parts.every((p) => p.hi === '#4FC3F7'));
   });
   test('existing parts are untouched and duplicates are skipped', () => {
     const base = { showParts: true, parts: [{ name: 'High', color: '#010203' }] };
     const out = L.addParts(base, ['high', 'Low', 'Low', 'bad name']);
-    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#010203' }, { name: 'Low', color: L.PALETTE[1] }] }, songDefaults()));
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#010203', hi: '#FFD54A' }, { name: 'Low', color: L.PALETTE[2], hi: '#FFD54A' }] }, songDefaults()));
     assert.equal(base.parts.length, 1);
   });
   test('keeps the song display settings', () => {

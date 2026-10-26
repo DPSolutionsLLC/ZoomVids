@@ -155,7 +155,7 @@ The slides land back to back as one group named after the song: from the playhea
 - The box, Update, Set part and Join are off while you're recording.
 - Projects made before this open with their lyrics already in Song settings, built from their slides. Nothing on screen or in the timing changes.
 
-**Parts.** Under the Lyrics box in Song settings, each word is a chip, grouped by slide, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets a color, which you can change in **Song settings**. Picking words waits until you've pressed Update. Each of these is one step for Undo.
+**Parts.** Under the Lyrics box in Song settings, each word is a chip, grouped by slide, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets two colors: one for its words and one for its highlight. You can change both in **Song settings**. A new part never starts with the same word color as **Highlight for words with no part**. Picking words waits until you've pressed Update. Each of these is one step for Undo.
 
 **Timing the words.** Open a slide and find **Word timing** in its editor. Each syllable gets its own time, so `Glo-ri-a` is three presses.
 
@@ -184,7 +184,8 @@ Dragging a slide or its group moves its words with it. **Fill**, **Reset** and s
 
 - **Highlight**: **Syllable by syllable** fills each syllable with color from left to right while it's held. **Whole word** lights each syllable all at once as it's sung, and the syllables build up until the word's last syllable ends, when the whole word goes back to the normal color (or stays lit to the end of the line with Keep sung words lit). A word timed with one press lights all at once. Older projects that used Color sweep open as Syllable by syllable.
 - **Keep sung words lit until the line ends** keeps what's been sung in the highlight color until the line is finished. With it off, a word goes back to the normal text color once it's sung.
-- A word in a part lights in that part's color. A word with no part uses **Color for words with no part** (yellow to start with). Change the part colors there too.
+- A word in a part shows in its part's **Words** color and lights in its part's **Highlight** color. Words with no part use the look's color and **Highlight for words with no part** (yellow to start with). Change the part colors there too.
+- Older projects keep each part's color for its words, and its highlight starts as the singing color (white if that's the same color).
 - **Show part names on screen** prints "High: " before each run of words in that part. It's off to start with.
 - When two parts sing at the same time on one line, they show on their own rows, one above the other.
 - Lines that haven't been reached yet are dimmed. On a slide's last line, the next slide's first line shows dimmed underneath. Room for it is always kept, so the text size doesn't jump.
@@ -196,7 +197,9 @@ Slides without word timing look as they did before.
 
 - **Look for the lines** (in Song settings) sets the font, size, color and Behind the text for every line. The size is exact; lines never shrink. **Line up** is Centered or Left.
 - **Lines above the current one** (0–4) and **Lines below** (0–6) set how many lines show. A line where two parts sing at once stacks on its own rows, as on slides, and still counts as one line.
-- **Move on**: **Current line stays put** keeps the current line in one place and moves the others past it. **Page by page** keeps a whole screen still while the highlight moves down, then changes to the next screen.
+- Lines that are sung at the same time are all current, lit together, and count as one line for Lines above and below. The box follows the one that started first. A line stops counting once all its words are sung and the next line has started.
+- When two lines' words overlap (High and Low singing together), each line's block covers all of its own words, so the two blocks overlap on the timeline. Slides still meet in the middle. Lines made before this change keep their old timing until you press **Fit the slide to its words** on each of the two lines.
+- **Move on**: **Current line stays put** keeps the current line in one place and moves the others past it. **Page by page** keeps a whole screen still while the highlight moves down, then changes to the next screen. Known limit: in Page by page, an overlapping current line that belongs to the next page shows under the page and can run past the box.
 - **Motion**: **Smooth scroll** slides to the next place over about 0.4 s. **Instant jump** changes at once.
 - **Verse starts**: **Show a label** puts "Verse 2" (or the name typed as `[Chorus]`) above the verse's first line. **Start a fresh screen** never mixes two verses on screen. **Nothing** runs the lines straight on.
 - The highlight, part colors and countdown settings under While it's sung work the same for slides and lines.
