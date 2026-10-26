@@ -164,6 +164,7 @@ The slides land back to back as one group named after the song: from the playhea
 - **Backspace** takes back the last syllable and jumps back a moment. **Esc** (or the Stop button) stops and keeps what you've recorded.
 - Recording over a slide replaces its old timing as soon as you press its first syllable. One Undo puts back the whole recording.
 - **Speed** lets you record at 0.75× or 0.5×. Slower speeds sound lower, but the times still land right at full speed.
+- When one lyric slide is selected on the timeline, the bar under the timeline also has **Speed** and **Record this line** (or **Record this slide**), so you can re-time it without opening its settings. Speed there is the same setting as in the slide's settings.
 - You hear whatever tracks are switched on. If the vocal track's sound is off, a note says so; turn it on in **Tracks** to hear the words.
 - After recording, each slide fits itself around its words: it starts 1 s before the first and ends 0.5 s after the last. Its reading time and links are turned off so it keeps that window.
 

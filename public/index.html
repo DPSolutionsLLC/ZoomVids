@@ -4572,10 +4572,20 @@ var WordTiming = (function () {
     });
     return out;
   }
+  function lineRecord(lyric, info) {
+    if (!info.karaoke || !lyric) return null;
+    if (info.recording) return { label: 'Stop', disabled: false, note: null };
+    var label = 'Record this ' + info.unit;
+    if (!list(lyric).length) return { label: label, disabled: true, note: 'This ' + info.unit + ' has no syllables to time.' };
+    if (!info.hasClip) return { label: label, disabled: true, note: 'Put this ' + info.unit + '’s song in Order of music to record.' };
+    if (info.stuck) return { label: label, disabled: true, note: 'Unlock this ' + info.unit + ' to record.' };
+    return { label: label, disabled: false, note: null };
+  }
   return {
     MIN_TAP: MIN_TAP, MIN_LEN: MIN_LEN, LEAD: LEAD, TAIL: TAIL, DEFAULT_LEN: DEFAULT_LEN,
     r3: r3, list: list, timedCount: timedCount, isTimed: isTimed, anyTimed: anyTimed, setTime: setTime, clearTime: clearTime, clearAll: clearAll,
-    shift: shift, span: span, tapLength: tapLength, windows: windows, placeAll: placeAll, move: move, edge: edge, outside: outside, norm: norm, sameWords: sameWords, copyTimes: copyTimes
+    shift: shift, span: span, tapLength: tapLength, windows: windows, placeAll: placeAll, move: move, edge: edge, outside: outside, norm: norm, sameWords: sameWords, copyTimes: copyTimes,
+    lineRecord: lineRecord
   };
 })();
 
@@ -6368,6 +6378,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       '<button class="btn small" data-nudge="0.1"' + off + ' aria-label="Later by a tenth of a second">0.1 ›</button>' +
       '<button class="btn small" data-nudge="1"' + off + ' aria-label="Later by 1 second">1 s ›</button></span>';
   }
+  function lineRecordControls(tx) {
+    var r = WordTiming.lineRecord(tx.lyric, { karaoke: WS.id === 'karaoke', hasClip: !!(tx.lyric && songClip(tx.lyric.song)), stuck: !!(tx.locked || tx.whole || tx.during), recording: !!ui.rec, unit: tx.lyric ? unitWord(tx.lyric.song) : 'slide' });
+    if (!r) return '';
+    var speed = ui.recSpeed || 1;
+    var options = REC_SPEEDS.map(function (v) { return '<option value="' + v + '"' + (v === speed ? ' selected' : '') + '>' + v + '×</option>'; }).join('');
+    return '<label>Speed <select data-selact="recspeed"' + (ui.rec ? ' disabled' : '') + '>' + options + '</select></label>' +
+      '<button class="btn small" data-selact="recline"' + (r.disabled ? ' disabled' : '') + '>' + esc(r.label) + '</button>' +
+      (r.note !== null ? '<span class="note">' + esc(r.note) + '</span>' : '');
+  }
   function renderSel() {
     var bar = $('selbar'), hit = clipOf(ui.sel), h, picked = TextPick.count(ui.checked, mix.texts);
     if (picked) {
@@ -6400,7 +6419,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var fixed = selLane === 'items' && hit.i === 0;
     h += nudgeButtons(fixed) +
       '<button class="btn small" data-selact="play">' + ICON.play + ' Play from just before</button>' +
-      (selLane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' :
+      (selLane === 'texts' ? '<button class="btn small" data-selact="edittext">Edit text</button>' + lineRecordControls(hit.t) :
       selLane === 'pictures' ? '<button class="btn small" data-selact="editpic">Edit picture</button><button class="btn small quiet" data-selact="rmpic">Remove</button>' :
       '<button class="btn small" data-selact="info">On-screen details</button>' +
       '<button class="btn small" data-selact="trim">Trim</button>' +
@@ -9367,13 +9386,22 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function onLyricEvent(ev, final) {
     var tx = selText(); if (!tx || !tx.lyric) return;
     var target = ev.target;
-    if (target.id === 'recSpeed') { if (final) ui.recSpeed = REC_SPEEDS.indexOf(parseFloat(target.value)) >= 0 ? parseFloat(target.value) : 1; return; }
+    if (target.id === 'recSpeed') { if (final) setRecSpeed(target.value); return; }
     if (target.id === 'copyTimingTo') return;
     if (target.hasAttribute('data-wstart') || target.hasAttribute('data-wlen')) { if (final) editWordTime(tx, target); return; }
   }
 
   /* ---------- word timing ---------- */
   var REC_SPEEDS = [1, 0.75, 0.5], finishingRec = false;
+  function setRecSpeed(value) {
+    if (ui.rec) return;
+    var v = parseFloat(value);
+    ui.recSpeed = REC_SPEEDS.indexOf(v) >= 0 ? v : 1;
+    var tx = selText();
+    if (tx && tx.lyric) renderWordTiming(tx);
+    renderSel();
+  }
+  function recSay(origin, text, isErr) { lyricSay(text, isErr); if (origin === 'bar' && text) flashSel(text); }
   function songClip(songId) { for (var i = 0; i < plan.music.length; i++) if (plan.music[i].id === songId) return plan.music[i]; return null; }
   function slidesForSong(songId) {
     return mix.texts.filter(function (tx) { return tx.lyric && tx.lyric.song === songId && !tx.hidden; })
@@ -9412,11 +9440,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function startRecording(scope) {
     if (WS.id !== 'karaoke' || ui.rec) return;
     var clip = songClip(scope.songId);
-    if (!plan.total || !clip) { lyricSay('This slide’s song is no longer in Order of music.', true); return; }
+    if (!plan.total || !clip) { recSay(scope.origin, 'This slide’s song is no longer in Order of music.', true); return; }
     var slides = scope.slideId ? [findItem('texts', scope.slideId)].filter(function (tx) { return tx && tx.lyric; }) : slidesForSong(scope.songId);
-    if (!slides.length) { lyricSay('There are no slides to record for this song.', true); return; }
+    if (!slides.length) { recSay(scope.origin, 'There are no slides to record for this song.', true); return; }
     var stuck = slides.filter(function (tx) { return tx.locked || tx.whole || tx.during; }).length;
-    if (stuck) { lyricSay(stuck === 1 ? '1 slide is locked or tied to a recording. Unlock it to record.' : stuck + ' slides are locked or tied to a recording. Unlock them to record.', true); return; }
+    if (stuck) { recSay(scope.origin, stuck === 1 ? '1 slide is locked or tied to a recording. Unlock it to record.' : stuck + ' slides are locked or tied to a recording. Unlock them to record.', true); return; }
     var queue = [];
     slides.forEach(function (tx) { WordTiming.list(tx.lyric).forEach(function (e) { queue.push({ txId: tx.id, sylId: e.sylId }); }); });
     if (!queue.length) return;
@@ -9427,7 +9455,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } else from = Math.max(0, clip.start - 0.5);
     if (Player.tag) Player.stop();
     flushHistory();
-    ui.rec = { songId: scope.songId, queue: queue, pos: 0, down: null, done: [], cleared: {}, speed: ui.recSpeed || 1, from: from, slides: slides.map(function (tx) { return tx.id; }) };
+    ui.rec = { songId: scope.songId, origin: scope.origin || 'editor', queue: queue, pos: 0, down: null, done: [], cleared: {}, speed: ui.recSpeed || 1, from: from, slides: slides.map(function (tx) { return tx.id; }) };
     var active = document.activeElement;
     if (active && active !== document.body && active.blur) active.blur();
     ui.sel = { lane: 'texts', id: slides[0].id }; ui.wordSel = null; ui.bulk = false;
@@ -9510,9 +9538,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var tx = selText();
       if (done && tx && tx.lyric && WordTiming.anyTimed(tx.lyric)) {
         var same = sameSlides(tx);
-        if (same.length) msg += ' Same words as ' + slideNames(same.map(slideNumber)) + ': you can copy the timing to ' + (same.length === 1 ? 'it' : 'them') + ' below.';
+        if (same.length) msg += ' Same words as ' + slideNames(same.map(slideNumber)) + ': you can copy the timing to ' + (same.length === 1 ? 'it' : 'them') + (rec.origin === 'bar' ? ' in the slide’s settings.' : ' below.');
       }
-      lyricSay(msg, false);
+      recSay(rec.origin, msg, false);
     } finally { finishingRec = false; }
   }
   function fitSlides(ids) {
@@ -11323,6 +11351,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var b = ev.target.closest('button'); if (!b) return;
       if (b.hasAttribute('data-nudge')) { var nv = parseFloat(b.getAttribute('data-nudge')); if (TextPick.count(ui.checked, mix.texts)) nudgeChecked(nv); else nudge(nv); return; }
       var act = b.getAttribute('data-selact');
+      if (act === 'recline') { if (ui.rec) { stopRecording('stopped'); return; } var rtx = selText(); if (rtx && rtx.lyric) startRecording({ songId: rtx.lyric.song, slideId: rtx.id, origin: 'bar' }); return; }
       if (act === 'rmchecked') { removeTexts(checkedIds()); return; }
       if (act === 'editchecked') { openBulk(); return; }
       if (act === 'hidechecked') { setHidden(checkedIds(), TextBatch.hideAction(mix.texts, checkedIds()) === 'hide'); return; }
@@ -11339,6 +11368,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       else if (act === 'editpic') { renderPictures(); revealPicEditor(); }
       else if (act === 'rmpic') removePicture(ui.sel.id);
       else if (act === 'clear') { ui.sel = null; render(); }
+    });
+    $('selbar').addEventListener('change', function (ev) {
+      var s = ev.target.closest('[data-selact="recspeed"]'); if (!s) return;
+      setRecSpeed(s.value);
+      s.blur();
     });
 
     // library

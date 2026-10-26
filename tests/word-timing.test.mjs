@@ -283,3 +283,43 @@ describe('placeAll', () => {
     assert.equal(W.placeAll([untimed(2)], -5)[0].start, 0);
   });
 });
+
+describe('lineRecord', () => {
+  const ready = { karaoke: true, hasClip: true, stuck: false, recording: false, unit: 'line' };
+  const withSyllables = () => slideOf('Glo-ri-a');
+  const noSyllables = { lines: [] };
+
+  test('hidden on the hymn page', () => {
+    assert.equal(W.lineRecord(withSyllables(), { ...ready, karaoke: false }), null);
+  });
+  test('hidden when the text is not a lyric slide', () => {
+    assert.equal(W.lineRecord(null, ready), null);
+  });
+  test('enabled when the slide can be recorded', () => {
+    assert.deepEqual(W.lineRecord(withSyllables(), ready), { label: 'Record this line', disabled: false, note: null });
+  });
+  test('label follows the unit word', () => {
+    assert.equal(W.lineRecord(withSyllables(), { ...ready, unit: 'slide' }).label, 'Record this slide');
+  });
+  test('reads Stop while recording, even when it could not start now', () => {
+    assert.deepEqual(W.lineRecord(withSyllables(), { ...ready, hasClip: false, recording: true }), { label: 'Stop', disabled: false, note: null });
+  });
+  test('the empty test slide really has no syllables', () => {
+    assert.equal(W.list(noSyllables).length, 0);
+  });
+  test('refused when the slide has no syllables', () => {
+    assert.deepEqual(W.lineRecord(noSyllables, ready), { label: 'Record this line', disabled: true, note: 'This line has no syllables to time.' });
+  });
+  test('refused when the song is not in Order of music', () => {
+    assert.deepEqual(W.lineRecord(withSyllables(), { ...ready, hasClip: false }), { label: 'Record this line', disabled: true, note: 'Put this line’s song in Order of music to record.' });
+  });
+  test('refused when the slide is locked or tied to a recording', () => {
+    assert.deepEqual(W.lineRecord(withSyllables(), { ...ready, stuck: true }), { label: 'Record this line', disabled: true, note: 'Unlock this line to record.' });
+  });
+  test('note is null, not an empty string, whenever enabled', () => {
+    [W.lineRecord(withSyllables(), ready), W.lineRecord(withSyllables(), { ...ready, unit: 'slide' })].forEach((r) => {
+      assert.equal(r.disabled, false);
+      assert.strictEqual(r.note, null);
+    });
+  });
+});
