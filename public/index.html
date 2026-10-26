@@ -413,6 +413,16 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
 [data-book].on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 html[data-workspace="karaoke"] [data-hymn-only] { display: none !important; }
+html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !important; }
+.lyricrow { display: flex; flex-direction: column; gap: 8px; }
+.lyricwords { display: flex; flex-direction: column; gap: 6px; max-height: 30vh; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: var(--r); }
+.lyricline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.lyricline .lline { padding: 1px 6px; font-size: 11px; color: var(--muted); }
+.lyricword { --part: transparent; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--part); border-radius: 999px; padding: 2px 9px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.lyricword:hover { border-color: var(--accent-mid); border-left-color: var(--part); }
+.lyricword[aria-pressed="true"] { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: 0; }
+.lyricword .dot { color: var(--muted); padding: 0 1px; }
+.lyricparts label { display: inline-flex; align-items: center; gap: 4px; }
 #wsSwitch { text-decoration: none; }
 @media (prefers-reduced-motion: no-preference) { .bar i { transition: width 0.2s linear; } }
 </style>
@@ -585,7 +595,10 @@ html[data-workspace="karaoke"] [data-hymn-only] { display: none !important; }
             <div class="btnrow" role="radiogroup" aria-label="What to add">
               <label><input type="radio" name="manyKind" value="scripture" checked> Scriptures</label>
               <label><input type="radio" name="manyKind" value="text"> My own text, one per line</label>
+              <label data-karaoke-only><input type="radio" name="manyKind" value="lyrics"> Song lyrics</label>
             </div>
+            <div class="btnrow" id="manySongRow" hidden><label>For song <select id="manySong"></select></label></div>
+            <p class="note" id="manyLyricHint" hidden>Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen. Start a line with High: or Low: to give it a part.</p>
             <label for="manyInput" class="visually-hidden">Scripture references or lines of text</label>
             <textarea id="manyInput" rows="4" placeholder="John 3:16, Moroni 10:4, D&amp;C 4:2"></textarea>
             <div class="btnrow" id="manyModeRow" role="radiogroup" aria-label="How a passage shows">
@@ -633,6 +646,21 @@ html[data-workspace="karaoke"] [data-hymn-only] { display: none !important; }
             <div id="textBodyRow" data-single>
               <label for="textBody" class="minor" style="font-size:14px">Text <span class="note" style="font-weight:400">Press Enter for a new line.</span></label>
               <textarea id="textBody" rows="3"></textarea>
+            </div>
+            <div id="lyricRow" class="lyricrow" data-single hidden>
+              <label for="lyricBody" class="minor" style="font-size:14px">Lyrics for <span id="lyricSong"></span></label>
+              <textarea id="lyricBody" rows="4"></textarea>
+              <p class="note">A blank line splits this into two slides. Glo-ri-a = syllables; well--known keeps a hyphen; High: sets a part.</p>
+              <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this slide"></div>
+              <div class="btnrow">
+                <label>Part <select id="lyricPart"></select></label>
+                <button class="btn small" id="lyricApply" disabled>Set part</button>
+                <span class="note" id="lyricPickNote"></span>
+              </div>
+              <label><input type="checkbox" id="lyricShowParts"> Show part names on screen for this song</label>
+              <div id="lyricParts" class="btnrow lyricparts"></div>
+              <div class="btnrow"><button class="btn small" id="lyricJoin">Join with next slide</button></div>
+              <p class="msg" id="lyricMsg" role="status"></p>
             </div>
             <div id="textRefRow" data-single hidden>
               <label for="textRef" class="minor" style="font-size:14px">Reference line</label>
@@ -3639,6 +3667,205 @@ var TrackAlign = (function () {
   };
 })();
 
+/* Song lyrics pasted as slides: syllables, parts, and keeping ids stable across edits. Pure functions; inputs are never changed. */
+var Lyrics = (function () {
+  var PART_RE = /^[A-Za-z][A-Za-z0-9]{0,14}$/;
+  var TAG_RE = /^([A-Za-z][A-Za-z0-9]{0,14}):$/;
+  var COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+  var PALETTE = ['#FFD54A', '#4FC3F7', '#F48FB1', '#A5D6A7', '#FFAB91', '#CE93D8'];
+  var HOLD = '\u0000';
+  function copy(o) { return JSON.parse(JSON.stringify(o)); }
+  function isObject(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
+  function splitWord(token) {
+    var s = String(token).split('--').join(HOLD), out = [], cur = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '-' && i > 0 && i < s.length - 1 && s.charAt(i - 1) !== '-' && s.charAt(i + 1) !== '-') {
+        if (cur) out.push(cur);
+        cur = '';
+      } else cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out.map(function (p) { return p.split(HOLD).join('-'); });
+  }
+  function tagName(token) {
+    if (token === '-:') return '';
+    var m = TAG_RE.exec(String(token));
+    return m ? m[1] : null;
+  }
+  function wordText(word) { return word.syls.map(function (s) { return s.text; }).join(''); }
+  function words(slide) {
+    var out = [];
+    slide.lines.forEach(function (line) { line.words.forEach(function (w) { out.push(w); }); });
+    return out;
+  }
+  function parse(text, makeId, knownParts) {
+    var canonical = {}, parts = [];
+    (knownParts || []).forEach(function (name) { if (PART_RE.test(name) && !canonical[name.toLowerCase()]) canonical[name.toLowerCase()] = { name: name, known: true }; });
+    function useTag(name, force) {
+      if (name === '') return '';
+      var entry = canonical[name.toLowerCase()];
+      if (!entry) {
+        if (!force) return null;
+        entry = canonical[name.toLowerCase()] = { name: name };
+      }
+      if (parts.indexOf(entry.name) < 0) parts.push(entry.name);
+      return entry.name;
+    }
+    var rows = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n'), slides = [], cur = null, slidePart = '';
+    function endSlide() { if (cur && cur.lines.length) slides.push(cur); cur = null; slidePart = ''; }
+    rows.forEach(function (row) {
+      var trimmed = row.trim();
+      if (!trimmed) { endSlide(); return; }
+      if (!cur) cur = { lines: [] };
+      var tokens = trimmed.split(/\s+/), part = slidePart, from = 0, lead = tagName(tokens[0]);
+      if (lead !== null) {
+        part = useTag(lead, true);
+        from = 1;
+        if (tokens.length === 1) { slidePart = part; return; }
+      }
+      var line = [];
+      for (var i = from; i < tokens.length; i++) {
+        var tag = tagName(tokens[i]);
+        if (tag !== null) {
+          var name = useTag(tag, false);
+          if (name !== null) { part = name; continue; }
+        }
+        var word = { id: makeId() };
+        if (part) word.part = part;
+        word.syls = splitWord(tokens[i]).map(function (t) { return { id: makeId(), text: t }; });
+        line.push(word);
+      }
+      if (line.length) cur.lines.push({ words: line });
+    });
+    endSlide();
+    return { slides: slides, parts: parts };
+  }
+  function display(slide, showParts) {
+    return slide.lines.map(function (line) {
+      var prev = '';
+      return line.words.map(function (w) {
+        var p = w.part || '', pre = showParts && p && p !== prev ? p + ': ' : '';
+        prev = p;
+        return pre + wordText(w);
+      }).join(' ');
+    }).join('\n');
+  }
+  function markup(slide) {
+    return slide.lines.map(function (line) {
+      var prev = '';
+      return line.words.map(function (w) {
+        var p = w.part || '', pre = p !== prev ? (p ? p + ': ' : '-: ') : '';
+        prev = p;
+        return pre + w.syls.map(function (s) { return s.text.split('-').join('--'); }).join('-');
+      }).join(' ');
+    }).join('\n');
+  }
+  function matchPairs(a, b) {
+    var n = a.length, m = b.length, table = [], i, j;
+    for (i = 0; i <= n; i++) { table.push([]); for (j = 0; j <= m; j++) table[i].push(0); }
+    for (i = n - 1; i >= 0; i--) for (j = m - 1; j >= 0; j--) table[i][j] = a[i] === b[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+    var pairs = [];
+    i = 0; j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { pairs.push([i, j]); i++; j++; }
+      else if (table[i + 1][j] >= table[i][j + 1]) i++;
+      else j++;
+    }
+    return pairs;
+  }
+  function sameTexts(x, y) {
+    if (x.length !== y.length) return false;
+    for (var i = 0; i < x.length; i++) if (x[i].text !== y[i].text) return false;
+    return true;
+  }
+  function merge(oldSlide, newSlide) {
+    var out = copy(newSlide), before = words(oldSlide), after = words(out);
+    matchPairs(before.map(wordText), after.map(wordText)).forEach(function (pair) {
+      var was = before[pair[0]], now = after[pair[1]];
+      Object.keys(was).forEach(function (k) { if (k !== 'syls' && k !== 'part') now[k] = copy(was[k]); });
+      if (sameTexts(was.syls, now.syls)) now.syls = copy(was.syls);
+      else now.syls = now.syls.map(function (s, k) { return was.syls[k] && was.syls[k].text === s.text ? copy(was.syls[k]) : s; });
+    });
+    if (typeof oldSlide.song === 'string') out.song = oldSlide.song;
+    return out;
+  }
+  function reId(slide, makeId) {
+    var out = copy(slide);
+    words(out).forEach(function (w) { w.id = makeId(); w.syls.forEach(function (s) { s.id = makeId(); }); });
+    return out;
+  }
+  function partsOf(slide) {
+    var out = [];
+    words(slide).forEach(function (w) { if (w.part && out.indexOf(w.part) < 0) out.push(w.part); });
+    return out;
+  }
+  function setPart(slide, wordIds, part) {
+    var out = copy(slide), pick = {};
+    (wordIds || []).forEach(function (id) { pick[id] = true; });
+    words(out).forEach(function (w) {
+      if (!pick[w.id]) return;
+      if (part) w.part = part; else delete w.part;
+    });
+    return out;
+  }
+  function joinSlides(a, b) {
+    var out = copy(a);
+    out.lines = out.lines.concat(copy(b.lines));
+    return out;
+  }
+  function wordCount(slide) { return words(slide).length; }
+  function syllableCount(slide) { return words(slide).reduce(function (sum, w) { return sum + w.syls.length; }, 0); }
+  function cleanSlide(raw) {
+    if (!isObject(raw) || !Array.isArray(raw.lines)) return null;
+    var lines = [];
+    raw.lines.forEach(function (line) {
+      if (!isObject(line) || !Array.isArray(line.words)) return;
+      var kept = [];
+      line.words.forEach(function (w) {
+        if (!isObject(w) || typeof w.id !== 'string' || !w.id || !Array.isArray(w.syls)) return;
+        var syls = w.syls.filter(function (s) { return isObject(s) && typeof s.id === 'string' && s.id && typeof s.text === 'string' && s.text; });
+        if (!syls.length) return;
+        var word = copy(w);
+        word.syls = copy(syls);
+        if (typeof word.part !== 'string' || !PART_RE.test(word.part)) delete word.part;
+        kept.push(word);
+      });
+      if (kept.length) lines.push({ words: kept });
+    });
+    if (!lines.length) return null;
+    var out = { lines: lines };
+    if (typeof raw.song === 'string') out.song = raw.song;
+    return out;
+  }
+  function cleanSong(raw) {
+    if (!isObject(raw)) return null;
+    var parts = [], seen = {};
+    (Array.isArray(raw.parts) ? raw.parts : []).forEach(function (p) {
+      if (!isObject(p) || typeof p.name !== 'string' || !PART_RE.test(p.name)) return;
+      var key = p.name.toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      parts.push({ name: p.name, color: COLOR_RE.test(p.color) ? p.color : PALETTE[parts.length % PALETTE.length] });
+    });
+    return { showParts: raw.showParts === true, parts: parts };
+  }
+  function addParts(songLyrics, names) {
+    var out = cleanSong(songLyrics) || { showParts: false, parts: [] };
+    (names || []).forEach(function (name) {
+      if (typeof name !== 'string' || !PART_RE.test(name)) return;
+      var taken = out.parts.some(function (p) { return p.name.toLowerCase() === name.toLowerCase(); });
+      if (!taken) out.parts.push({ name: name, color: PALETTE[out.parts.length % PALETTE.length] });
+    });
+    return out;
+  }
+  return {
+    PALETTE: PALETTE, PART_RE: PART_RE, splitWord: splitWord, tagName: tagName, wordText: wordText, parse: parse, display: display, markup: markup,
+    merge: merge, reId: reId, partsOf: partsOf, setPart: setPart, joinSlides: joinSlides, wordCount: wordCount, syllableCount: syllableCount,
+    cleanSlide: cleanSlide, cleanSong: cleanSong, addParts: addParts
+  };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -3751,6 +3978,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       TrackPair.cleanTrack(it);
       if (it.pic) it.pic = PictureBox.clean(it.pic, 'video');
       if (it.pair && it.pair.pic) it.pair.pic = PictureBox.clean(it.pair.pic, 'video');
+      if ('lyrics' in it) { var songLyr = Lyrics.cleanSong(it.lyrics); if (songLyr) it.lyrics = songLyr; else delete it.lyrics; }
+    });
+    m.queue.forEach(function (tx) { delete tx.lyric; });
+    m.texts.forEach(function (tx) {
+      if (!('lyric' in tx)) return;
+      var slide = Lyrics.cleanSlide(tx.lyric);
+      if (slide) { tx.lyric = slide; syncLyricText(tx, m.items || []); } else delete tx.lyric;
     });
     tidyGroups(m);
     return m;
@@ -6012,15 +6246,67 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function newQueuedTextItem(line) {
     return withLastLook({ id: nid(), text: line, readTime: true, start: 0, dur: 8, fadeIn: 3, fadeOut: 3, frame: { x: 0.1, y: 0.12, w: 0.8, h: 0.36 }, valign: 'top', size: 72, font: 'sans', align: 'center', color: '#FFFFFF' });
   }
+  function songOf(tx) { return tx.lyric ? findItem('items', tx.lyric.song) : null; }
+  function songLyrics(songId) { var song = findItem('items', songId); return song && song.lyrics ? song.lyrics : { showParts: false, parts: [] }; }
+  function partNames(songId) { return songLyrics(songId).parts.map(function (p) { return p.name; }); }
+  function partColor(songId, name) { var p = songLyrics(songId).parts.filter(function (x) { return x.name === name; })[0]; return p ? p.color : null; }
+  function songTitle(songId) { var song = findItem('items', songId); return song ? infoOf(song.key, 'items').title : ''; }
+  function lyricText(slide, items) {
+    var song = null;
+    for (var i = 0; i < items.length; i++) if (items[i].id === slide.song) song = items[i];
+    return Lyrics.display(slide, !!(song && song.lyrics && song.lyrics.showParts));
+  }
+  // The only writer of a lyric slide's text: it always follows the lyric and the song's settings.
+  function syncLyricText(tx, items) { if (tx.lyric) tx.text = lyricText(tx.lyric, items || mix.items); }
+  function syncSongSlides(songId) { mix.texts.forEach(function (tx) { if (tx.lyric && tx.lyric.song === songId) syncLyricText(tx); }); }
+  function writeSongLyrics(songId, next) {
+    var song = findItem('items', songId); if (!song) return false;
+    var clean = Lyrics.cleanSong(next);
+    if (clean) song.lyrics = clean; else delete song.lyrics;
+    syncSongSlides(songId);
+    return true;
+  }
+  function setShowParts(songId, on) { if (writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { showParts: !!on }))) changed(); }
+  function setPartColor(songId, name, color) {
+    var next = clone(songLyrics(songId));
+    next.parts.forEach(function (p) { if (p.name === name) p.color = color; });
+    if (writeSongLyrics(songId, next)) changed();
+  }
+  function addSongParts(songId, names) { if (writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), names))) changed(); }
+  function newLyricSlide(slide, songId) {
+    slide.song = songId;
+    var tx = withLastLook({ id: nid(), lyric: slide, text: '', start: 0, dur: 4, fadeIn: 0.3, fadeOut: 0.3, frame: { x: 0.06, y: 0.55, w: 0.88, h: 0.38 }, valign: 'middle', size: 72, font: 'sans', align: 'center', color: '#FFFFFF', lh: 1.25 });
+    syncLyricText(tx);
+    tx.dur = TextTiming.readSeconds(tx.text, mix.opts.wpm, tx.fadeIn, tx.fadeOut);
+    return tx;
+  }
   function manyKind() { return document.querySelector('input[name="manyKind"]:checked').value; }
   function manySay(text, isErr) { var m = $('manyMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
   function syncManyKind() {
-    var scripture = manyKind() === 'scripture';
+    var kind = manyKind(), scripture = kind === 'scripture', lyrics = kind === 'lyrics';
     $('manyModeRow').hidden = !scripture;
-    $('manyInput').placeholder = scripture ? 'John 3:16, Moroni 10:4, D&C 4:2' : 'One message per line';
+    $('manyGroupRow').hidden = lyrics;
+    $('manySongRow').hidden = $('manyLyricHint').hidden = !lyrics;
+    $('manyQueue').disabled = lyrics;
+    $('manyInput').placeholder = scripture ? 'John 3:16, Moroni 10:4, D&C 4:2' : lyrics ? 'Glo-ri-a in ex-cel-sis De-o\n\nHigh: Peace on earth\nLow: Good will to all' : 'One message per line';
+    if (lyrics) fillManySongs();
+  }
+  function fillManySongs() {
+    var select = $('manySong');
+    if (!plan.music.length) { setHTML(select, '<option value="" disabled selected>No songs in Order of music yet</option>'); return; }
+    var keep = select.value, under = plan.music.filter(function (c) { return ui.cursor >= c.start && ui.cursor < c.start + c.len; })[0];
+    setHTML(select, plan.music.map(function (c, i) { return '<option value="' + esc(c.id) + '">' + (i + 1) + '. ' + esc(infoOf(c.key, 'items').title) + '</option>'; }).join(''));
+    var pick = under ? under.id : plan.music.some(function (c) { return c.id === keep; }) ? keep : plan.music[0].id;
+    select.value = pick;
   }
   async function gatherMany() {
     var input = $('manyInput').value;
+    if (manyKind() === 'lyrics') {
+      var songId = $('manySong').value;
+      if (!songId || !findItem('items', songId)) return { items: [], errors: [], message: 'Add the song to Order of music first.' };
+      var parsed = Lyrics.parse(input, nid, partNames(songId));
+      return { items: parsed.slides.map(function (s) { return newLyricSlide(s, songId); }), errors: [], song: songId, parts: parsed.parts };
+    }
     if (manyKind() === 'scripture') {
       var mode = document.querySelector('input[name="manyMode"]:checked').value, found = await resolveRefs(input);
       return { items: found.items.map(function (p) { return newScriptureItem(p, mode); }), errors: found.errors };
@@ -6033,12 +6319,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     manySay('Looking up…', false);
     try {
       var result = await gatherMany();
+      if (result.message) { manySay(result.message, true); return; }
       var bad = result.errors.map(function (e) { return e.input + ': ' + e.error; });
       if (!result.items.length) {
-        manySay(bad.length ? bad.join('\n') : manyKind() === 'scripture' ? 'Type a reference, for example John 3:16.' : 'Type at least one line of text.', true);
+        var kind = manyKind();
+        manySay(bad.length ? bad.join('\n') : kind === 'scripture' ? 'Type a reference, for example John 3:16.' : kind === 'lyrics' ? 'Paste the song’s lyrics first.' : 'Type at least one line of text.', true);
         return;
       }
-      var done = use(result.items);
+      var done = use(result.items, result);
       if (bad.length) {
         manySay(done + ' These need fixing:\n' + bad.join('\n'), true);
         $('manyInput').value = result.errors.map(function (e) { return e.input; }).join('\n');
@@ -6049,12 +6337,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } catch (err) {
       manySay('That could not be added. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
     } finally {
-      $('manyPlace').disabled = $('manyQueue').disabled = false;
+      $('manyPlace').disabled = false;
+      $('manyQueue').disabled = manyKind() === 'lyrics';
     }
   }
-  function placeMany(items) {
+  function placeStart() {
     var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor > 0 ? ui.cursor : 5;
     if (Player.tag) Player.stop();
+    return t;
+  }
+  function placeLyrics(items, songId, parts) {
+    var song = findItem('items', songId), title = songTitle(songId);
+    song.lyrics = Lyrics.addParts(song.lyrics || { showParts: false, parts: [] }, parts);
+    items.forEach(function (tx) { syncLyricText(tx); });
+    var t = placeStart();
+    var g = { id: 'g' + nid(), name: TextGroup.cleanName(title, TextGroup.nextName(mix.groups, 'Lyrics')), fill: 'packed' };
+    mix.groups.push(g);
+    var starts = GroupFill.packed(items.map(function (tx) { return { len: textLen(tx), fadeIn: tx.fadeIn || 0 }; }), Math.round(t * 10) / 10);
+    items.forEach(function (tx, i) { tx.start = starts[i].start; tx.group = g.id; mix.texts.push(tx); });
+    ui.sel = { lane: 'texts', id: items[0].id };
+    changed(); revealSel();
+    return 'Added ' + items.length + (items.length === 1 ? ' slide' : ' slides') + ' for “' + title + '”.';
+  }
+  function placeMany(items, result) {
+    if (result && result.song) return placeLyrics(items, result.song, result.parts);
+    var t = placeStart();
     var asGroup = $('manyGroup').checked, g = null;
     if (asGroup) {
       var base = manyKind() === 'scripture' ? 'Scriptures' : 'Text';
@@ -6755,7 +7062,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     edId = tx.id;
     function set(id, v) { var el = $(id); if (fresh || document.activeElement !== el) el.value = v; }
     set('textBody', tx.text || '');
-    $('textBodyRow').hidden = !!tx.passage; $('textPassageRow').hidden = !tx.passage;
+    $('textBodyRow').hidden = !!tx.passage || !!tx.lyric; $('textPassageRow').hidden = !tx.passage;
+    renderLyricRow(tx, fresh, set);
     if (tx.passage) {
       document.querySelectorAll('input[name="textMode"]').forEach(function (r) { r.checked = r.value === tx.passage.mode; });
       document.querySelectorAll('input[name="textRefPos"]').forEach(function (r) { r.checked = r.value === (tx.passage.refPos || 'bottom'); });
@@ -6833,6 +7141,196 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (tx.passage && !tx.readTime && tx.passage.mode !== 'together') note += (note ? ' ' : '') + 'Verses that don’t fit in this length won’t show. Tick “Show for as long as it takes to read” for the full passage.';
     $('textLinkNote').textContent = note;
   }
+  /* ---------- song lyrics in the text editor ---------- */
+  function lyricSay(text, isErr) { var m = $('lyricMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
+  function lyricWordIds(slide) { var out = []; slide.lines.forEach(function (line) { line.words.forEach(function (w) { out.push(w.id); }); }); return out; }
+  function lyricPickFor(tx) {
+    if (!ui.lyricPick || ui.lyricPick.slide !== tx.id) ui.lyricPick = { slide: tx.id, ids: {}, last: null };
+    return ui.lyricPick;
+  }
+  function nextSlide(tx) {
+    var me = txSpan(tx).start, best = null, bestStart = Infinity;
+    mix.texts.forEach(function (other) {
+      if (other === tx || !other.lyric || other.lyric.song !== tx.lyric.song) return;
+      var s = txSpan(other).start;
+      if (s > me && s < bestStart) { best = other; bestStart = s; }
+    });
+    return best;
+  }
+  function renderLyricRow(tx, fresh, set) {
+    $('lyricRow').hidden = !tx.lyric;
+    if (!tx.lyric) return;
+    if (fresh) { ui.lyricPick = null; lyricSay('', false); }
+    lyricPickFor(tx);
+    set('lyricBody', Lyrics.markup(tx.lyric));
+    var song = songOf(tx), lyr = songLyrics(tx.lyric.song);
+    $('lyricSong').textContent = song ? '“' + songTitle(tx.lyric.song) + '”' : 'a song no longer in Order of music';
+    renderLyricWords(tx);
+    var partSel = $('lyricPart'), keep = partSel.value;
+    setHTML(partSel, '<option value="">No part</option>' + lyr.parts.map(function (p) { return '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>'; }).join('') + (song ? '<option value="__new">New part…</option>' : ''));
+    partSel.value = keep && keep !== '__new' && lyr.parts.some(function (p) { return p.name === keep; }) ? keep : '';
+    $('lyricShowParts').checked = !!lyr.showParts;
+    $('lyricShowParts').disabled = !song;
+    setHTML($('lyricParts'), lyr.parts.map(function (p) { return '<label>' + esc(p.name) + ' <input type="color" data-part="' + esc(p.name) + '" value="' + esc(p.color) + '"' + (song ? '' : ' disabled') + '></label>'; }).join(''));
+    $('lyricJoin').disabled = !nextSlide(tx);
+  }
+  function renderLyricWords(tx) {
+    var songId = tx.lyric.song;
+    setHTML($('lyricWords'), tx.lyric.lines.map(function (line, li) {
+      return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
+        line.words.map(function (w) {
+          var color = w.part ? partColor(songId, w.part) : null;
+          return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
+            w.syls.map(function (s) { return esc(s.text); }).join('<span class="dot" aria-hidden="true">·</span>') + '</button>';
+        }).join('') + '</div>';
+    }).join(''));
+    syncLyricPick(tx);
+  }
+  function syncLyricPick(tx) {
+    var pick = lyricPickFor(tx).ids, count = 0;
+    $('lyricWords').querySelectorAll('[data-word]').forEach(function (b) {
+      var on = !!pick[b.getAttribute('data-word')];
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on) count++;
+    });
+    $('lyricApply').disabled = !count;
+    $('lyricPickNote').textContent = count ? count + (count === 1 ? ' word picked' : ' words picked') : 'Pick words or a line, then choose a part.';
+  }
+  function pickLyricWords(ev) {
+    var tx = selText(); if (!tx || !tx.lyric) return;
+    var pick = lyricPickFor(tx), lineBtn = ev.target.closest('[data-act="lline"]');
+    if (lineBtn) {
+      var line = tx.lyric.lines[parseInt(lineBtn.getAttribute('data-line'), 10)]; if (!line) return;
+      var lineIds = line.words.map(function (w) { return w.id; }), all = lineIds.every(function (id) { return pick.ids[id]; });
+      lineIds.forEach(function (id) { if (all) delete pick.ids[id]; else pick.ids[id] = true; });
+      syncLyricPick(tx);
+      return;
+    }
+    var b = ev.target.closest('[data-word]'); if (!b) return;
+    var id = b.getAttribute('data-word'), order = lyricWordIds(tx.lyric);
+    if (ev.shiftKey && pick.last && order.indexOf(pick.last) >= 0) {
+      var from = order.indexOf(pick.last), to = order.indexOf(id);
+      order.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(function (x) { pick.ids[x] = true; });
+    } else if (pick.ids[id]) delete pick.ids[id];
+    else pick.ids[id] = true;
+    pick.last = id;
+    syncLyricPick(tx);
+  }
+  function applyLyricPart() {
+    var tx = selText(); if (!tx || !tx.lyric) return;
+    var songId = tx.lyric.song, partSel = $('lyricPart'), name = partSel.value, pick = lyricPickFor(tx).ids;
+    var ids = lyricWordIds(tx.lyric).filter(function (id) { return pick[id]; });
+    if (!ids.length) return;
+    if (name === '__new') {
+      var typed = prompt('Name for the new part (one word, like High or Boys)');
+      if (typed == null) { partSel.value = ''; return; }
+      typed = typed.trim();
+      if (!Lyrics.PART_RE.test(typed)) { lyricSay('A part name is one word of letters and numbers, up to 15 characters.', true); partSel.value = ''; return; }
+      var existing = partNames(songId).filter(function (n) { return n.toLowerCase() === typed.toLowerCase(); })[0];
+      name = existing || typed;
+      if (!existing && !writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), [name]))) { lyricSay('This slide’s song is no longer in Order of music, so a new part can’t be added.', true); partSel.value = ''; return; }
+    }
+    tx.lyric = Lyrics.setPart(tx.lyric, ids, name || null);
+    syncLyricText(tx);
+    ui.lyricPick.ids = {};
+    lyricSay('', false);
+    changed();
+    $('lyricPart').value = name || '';
+  }
+  function joinNextSlide() {
+    var tx = selText(); if (!tx || !tx.lyric) return;
+    var next = nextSlide(tx); if (!next) return;
+    if (next.locked) { lyricSay('The next slide is locked.', true); return; }
+    var mine = txSpan(tx), theirs = txSpan(next);
+    tx.lyric = Lyrics.joinSlides(tx.lyric, next.lyric);
+    tx.dur = Math.round((theirs.start + theirs.dur - mine.start) * 10) / 10;
+    tx.readTime = false;
+    delete tx.ownLen;
+    mix.texts = mix.texts.filter(function (other) { return other !== next; });
+    syncLyricText(tx);
+    changed();
+    $('lyricBody').value = Lyrics.markup(tx.lyric);
+    lyricSay('Joined with the next slide.', false);
+  }
+  // Split pieces share the slide's own time, in proportion to reading time, so they never land on the next slide.
+  // A slot too short for that gives each piece its reading time instead.
+  function splitLengths(pieces, slotLength, tx) {
+    var reads = pieces.map(function (piece) { return TextTiming.readSeconds(Lyrics.display(piece, false), mix.opts.wpm, tx.fadeIn, tx.fadeOut); });
+    if (slotLength < pieces.length) return reads;
+    var total = reads.reduce(function (a, b) { return a + b; }, 0), used = 0;
+    return reads.map(function (r, i) {
+      var len = i === reads.length - 1 ? Math.round((slotLength - used) * 10) / 10 : Math.round(slotLength * r / total * 10) / 10;
+      used += len;
+      return len;
+    });
+  }
+  function oneSlideText(text) { return String(text).split(/\r?\n/).filter(function (ln) { return ln.trim(); }).join('\n'); }
+  function editLyric(tx, final) {
+    var songId = tx.lyric.song, text = $('lyricBody').value;
+    if (!final) {
+      var live = Lyrics.parse(oneSlideText(text), nid, partNames(songId));
+      if (!live.slides.length) return;
+      tx.lyric = Lyrics.merge(tx.lyric, live.slides[0]);
+      syncLyricText(tx);
+      persistMix();
+      resolveTexts();
+      renderTimeline(); renderSel(); drawScreen(); syncTextDisabled(tx);
+      var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = FIT_FLAG + textRowLabel(tx);
+      showTextFit(tx.id);
+      renderLyricWords(tx);
+      return;
+    }
+    var parsed = Lyrics.parse(text, nid, partNames(songId));
+    if (!parsed.slides.length) {
+      var before = ui.lyricBefore && ui.lyricBefore.id === tx.id ? ui.lyricBefore.lyric : null;
+      if (before) { tx.lyric = clone(before); syncLyricText(tx); }
+      changed();
+      $('lyricBody').value = Lyrics.markup(tx.lyric);
+      lyricSay('A slide needs at least one word. Use Remove this text to delete it.', true);
+      return;
+    }
+    if (parsed.parts.length && songOf(tx)) writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), parsed.parts));
+    var all = { lines: [] };
+    parsed.slides.forEach(function (s) { all.lines = all.lines.concat(s.lines); });
+    var merged = Lyrics.merge(tx.lyric, all), at = 0;
+    var pieces = parsed.slides.map(function (s) {
+      var piece = { song: songId, lines: merged.lines.slice(at, at + s.lines.length) };
+      at += s.lines.length;
+      return piece;
+    });
+    var slot = txSpan(tx), lengths = splitLengths(pieces, slot.dur, tx);
+    tx.lyric = pieces[0];
+    syncLyricText(tx);
+    if (pieces.length > 1) { tx.readTime = false; tx.dur = lengths[0]; delete tx.ownLen; }
+    var at = slot.start + lengths[0], index = mix.texts.indexOf(tx);
+    pieces.slice(1).forEach(function (piece, i) {
+      var copy = clone(tx);
+      copy.id = nid(); copy.lyric = piece;
+      copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
+      delete copy.ownLen;
+      syncLyricText(copy);
+      copy.readTime = false;
+      copy.dur = lengths[i + 1];
+      copy.start = Math.round(at * 10) / 10;
+      at += copy.dur;
+      mix.texts.splice(index + 1 + i, 0, copy);
+    });
+    ui.lyricBefore = { id: tx.id, lyric: clone(tx.lyric) };
+    changed();
+    $('lyricBody').value = Lyrics.markup(tx.lyric);
+    if (pieces.length > 1) lyricSay('Split into ' + pieces.length + ' slides.', false);
+  }
+  function onLyricEvent(ev, final) {
+    var tx = selText(); if (!tx || !tx.lyric) return;
+    var target = ev.target;
+    if (target.id === 'lyricBody') { editLyric(tx, final); return; }
+    if (target.id === 'lyricShowParts') { if (final) setShowParts(tx.lyric.song, target.checked); return; }
+    if (target.hasAttribute('data-part')) {
+      var name = target.getAttribute('data-part');
+      if (final) { setPartColor(tx.lyric.song, name, target.value); return; }
+      $('lyricWords').querySelectorAll('[data-word]').forEach(function (b) { if (b.getAttribute('data-wpart') === name) b.style.setProperty('--part', target.value); });
+    }
+  }
   function addText() {
     var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor > 0 ? ui.cursor : 5;
     if (Player.tag) Player.stop();
@@ -6890,7 +7388,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (g.fill) copy.fill = g.fill;
     if (g.win) copy.win = clone(g.win);
     var last = mix.texts.indexOf(findItem('texts', ids[ids.length - 1]));
-    var copies = ids.map(function (id) { var c = clone(findItem('texts', id)); c.id = nid(); c.group = copy.id; return c; });
+    var copies = ids.map(function (id) { var c = clone(findItem('texts', id)); c.id = nid(); c.group = copy.id; if (c.lyric) c.lyric = Lyrics.reId(c.lyric, nid); return c; });
     mix.texts.splice.apply(mix.texts, [last + 1, 0].concat(copies));
     mix.groups.splice(mix.groups.indexOf(g) + 1, 0, copy);
     ids.forEach(function (id) { findItem('texts', id).hidden = true; });
@@ -7000,7 +7498,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var pm = document.querySelector('input[name="textMode"]:checked'), pr = document.querySelector('input[name="textRefPos"]:checked');
       if (pm) tx.passage.mode = pm.value;
       if (pr) tx.passage.refPos = pr.value;
-    } else tx.text = $('textBody').value;
+    } else if (!tx.lyric) tx.text = $('textBody').value;
     if (!$('textRefRow').hidden) { var ref = $('textRef').value.trim(); if (ref) tx.ref = ref; else delete tx.ref; }
     tx.readTime = $('textRead').checked;
     tx.size = parseFloat($('textSize').value) || 72; $('textSizeOut').textContent = Math.round(tx.size) + ' px';
@@ -8672,14 +9170,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     $('textEd').addEventListener('input', function (ev) {
       if (ev.target.closest('#fontAdd')) return;
+      if (ev.target.closest('#lyricRow')) { onLyricEvent(ev, false); return; }
       if (bulkOn()) { editChecked(ev.target, false); return; }
       if (ev.target.id !== 'textStart') editText(false, ev.target);
     });
     $('textEd').addEventListener('change', function (ev) {
       if (ev.target.closest('#fontAdd')) return;
+      if (ev.target.closest('#lyricRow')) { onLyricEvent(ev, true); return; }
       if (bulkOn()) { editChecked(ev.target, true); return; }
       editText(true, ev.target);
     });
+    $('lyricBody').addEventListener('focus', function () { var tx = selText(); if (tx && tx.lyric) ui.lyricBefore = { id: tx.id, lyric: clone(tx.lyric) }; });
+    $('lyricWords').addEventListener('click', pickLyricWords);
+    $('lyricApply').onclick = applyLyricPart;
+    $('lyricJoin').onclick = joinNextSlide;
     $('fontAddGo').onclick = function () { addGoogleFont($('fontAddName').value); };
     $('fontAddName').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addGoogleFont(this.value); } });
     $('fontAddClose').onclick = closeFontAdd;
@@ -8698,6 +9202,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textDup').onclick = function () {
       var tx = selText(); if (!tx) return;
       var sp = txSpan(tx), copy = clone(tx);
+      if (copy.lyric) copy.lyric = Lyrics.reId(copy.lyric, nid);
       copy.id = nid(); copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
       copy.start = Math.round((sp.start + sp.dur) * 10) / 10; copy.dur = Math.round(sp.dur * 10) / 10;
       mix.texts.splice(mix.texts.indexOf(tx) + 1, 0, copy);

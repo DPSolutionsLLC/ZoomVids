@@ -132,6 +132,21 @@ You can have both open in two tabs at once. Each keeps its own work. Two tabs on
 - The two tracks always move together. Moving the song, reordering, changing a crossfade, trimming and swapping all keep them in sync. On the timeline, a song with two tracks shows **+ 2** and a stripe along the bottom, and a song whose Track 1 sound is off looks faded.
 - Each change in the Tracks window is one step for Undo.
 
+**Song lyrics.** In karaoke, you can paste a whole song's words at once and get one slide per verse or chunk. Press **Add scriptures or a list**, choose **Song lyrics**, and pick the song under **For song**. It lists the songs in Order of music and starts on the one under the playhead. Then paste the words and press **Put on the timeline**. A few simple marks shape the slides:
+
+- A **blank line** starts a new slide. A single line break stays a new line on the same slide.
+- **`Glo-ri-a`** splits a word into syllables. On screen it still reads "Gloria". The syllables will be used later to time and highlight the words.
+- **`well--known`** (two hyphens) keeps a real hyphen: "well-known". A hyphen at the start or end of a word, or on its own, stays as you typed it.
+- **`High:`** at the start of a line puts that line's words in the part "High". A part name is one word of letters and numbers, up to 15 characters. A tag on a line by itself, such as `Low:`, covers the lines under it until the slide ends. In the middle of a line, `Low:` switches part only when the song already has a part called Low, and **`-:`** means "no part" from there on.
+
+The slides land back to back from the playhead as one group named after the song. Each starts as long as it takes to read. Drag each slide to where it's sung, or stretch it to fit.
+
+**Editing a slide.** Click a slide to open it. Its words are in the **Lyrics** box with the same marks. Typing a blank line in the box and clicking away splits it into two slides, the second starting where the first ends. **Join with next slide** puts the next slide of the same song back into this one. Words you didn't change keep their place, so timing added later isn't lost when you fix a typo.
+
+**Parts.** Under the box, each word is a chip, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets a color, which you can change. **Show part names on screen for this song** prints "High: " before each run of words in that part. It's off to start with. Each of these is one step for Undo.
+
+Highlighting the words as they're sung, and timing each syllable, come in a later update.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.
