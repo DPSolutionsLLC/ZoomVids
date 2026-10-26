@@ -4330,17 +4330,6 @@ var LyricView = (function () {
         add('syl', { text: s.text, part: part, wordId: w.id, sylId: s.id, t: on ? s.t : null, d: on ? s.d : null, wordStart: sp ? sp.start : null, wordEnd: sp ? sp.end : null });
       });
     });
-    var extents = {};
-    list.forEach(function (p) {
-      if (p.kind !== 'syl') return;
-      var e = extents[p.wordId] || (extents[p.wordId] = { from: p.dx, to: p.dx + p.w });
-      e.from = Math.min(e.from, p.dx); e.to = Math.max(e.to, p.dx + p.w);
-    });
-    list.forEach(function (p) {
-      if (p.kind !== 'syl') return;
-      var e = extents[p.wordId];
-      p.wordDx = e.from; p.wordW = e.to - e.from;
-    });
     return { row: rowIndex, w: measure(text, px), pieces: list };
   }
   function wrap(rowList, maxW, px, showParts, measure) {
@@ -4389,20 +4378,17 @@ var LyricView = (function () {
   }
   // How much of a piece shows in the singing color: 0 to 1, or null when it isn't lit.
   // opts: { highlight: 'syllable' | 'word', keepLit, rowEnd }.
+  // Syllable by syllable sweeps each syllable over its held time. Whole word lights each syllable
+  // fully from its own start (untimed ones from the word's start) and holds until the word's last syllable ends.
   function lit(piece, t, opts) {
     var o = opts || {};
     if (!piece || piece.kind !== 'syl' || !isNum(piece.wordStart) || !isNum(piece.wordEnd)) return null;
     var byWord = o.highlight === 'word', ownTime = isNum(piece.t) && isNum(piece.d) && piece.d > 0;
-    var start = !byWord && ownTime ? piece.t : piece.wordStart, end = !byWord && ownTime ? piece.t + piece.d : piece.wordEnd;
+    var start = ownTime ? piece.t : piece.wordStart, end = !byWord && ownTime ? piece.t + piece.d : piece.wordEnd;
     if (t < start) return null;
     if (t >= end) return o.keepLit && isNum(o.rowEnd) && t < o.rowEnd ? 1 : null;
-    var done = end > start ? (t - start) / (end - start) : 1;
-    if (!byWord) return done;
-    var wordDx = isNum(piece.wordDx) ? piece.wordDx : piece.dx, wordW = isNum(piece.wordW) ? piece.wordW : piece.w;
-    var into = wordW * done - (piece.dx - wordDx);
-    if (!(piece.w > 0)) return into > 0 ? 1 : null;
-    var f = Math.min(1, Math.max(0, into / piece.w));
-    return f > 0 ? f : null;
+    if (byWord) return 1;
+    return end > start ? (t - start) / (end - start) : 1;
   }
   function countdown(syls, songStart, t, opts) {
     if (!opts || opts.style === 'off') return null;

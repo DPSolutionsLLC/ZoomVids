@@ -169,7 +169,7 @@ Dragging a slide or its group moves its words with it. **Fill**, **Reset** and s
 
 **Highlighting while it's sung.** Once a slide has word timing, its words light up as they're sung, in the preview and in the video. These settings are under **While it's sung** in Song settings.
 
-- **Highlight**: **Syllable by syllable** fills each syllable with color from left to right while it's held. **Whole word** fills the whole word from left to right, from its first syllable's start to its last syllable's end. Older projects that used Color sweep open as Syllable by syllable.
+- **Highlight**: **Syllable by syllable** fills each syllable with color from left to right while it's held. **Whole word** lights each syllable all at once as it's sung, and the syllables build up until the word's last syllable ends, when the whole word goes back to the normal color (or stays lit to the end of the line with Keep sung words lit). A word timed with one press lights all at once. Older projects that used Color sweep open as Syllable by syllable.
 - **Keep sung words lit until the line ends** keeps what's been sung in the highlight color until the line is finished. With it off, a word goes back to the normal text color once it's sung.
 - A word in a part lights in that part's color. A word with no part uses **Color for words with no part** (yellow to start with). Change the part colors there too.
 - **Show part names on screen** prints "High: " before each run of words in that part. It's off to start with.
