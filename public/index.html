@@ -871,6 +871,14 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <p class="note" id="lenNote" style="width:100%"></p>
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
+          <fieldset class="btnrow" id="versionsRow" data-karaoke-only style="border:0;padding:0;margin:0">
+            <legend class="note" style="width:100%;padding:0;margin-bottom:4px">Versions</legend>
+            <label><input type="radio" name="vexp" id="vexpBoth" value="both"> Both, as two files</label>
+            <label><input type="radio" name="vexp" id="vexpVocals" value="vocals"> With vocals</label>
+            <label><input type="radio" name="vexp" id="vexpMusic" value="music"> Music only</label>
+            <p class="note" id="versionsNote" style="width:100%"></p>
+            <p class="note" id="versionsLast" style="width:100%"></p>
+          </fieldset>
           <label data-hymn-only><input type="checkbox" id="markUsed"> Mark these recordings and scriptures as used on <input type="date" id="usedDate"></label>
           <div class="btnrow">
             <label for="fileName" class="visually-hidden">File name</label>
@@ -3599,6 +3607,88 @@ var TrackPair = (function () {
   };
 })();
 
+/* Karaoke export versions: with vocals, music only, and the project's last-export note. Pure functions. */
+var VocalExport = (function () {
+  var PICKS = ['both', 'vocals', 'music'];
+  var VERSIONS = ['vocals', 'music'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function cleanPick(p) { return PICKS.indexOf(p) >= 0 ? p : 'both'; }
+  function versionsFor(pick) {
+    var p = cleanPick(pick);
+    return p === 'both' ? ['vocals', 'music'] : [p];
+  }
+  function applyRule(track, version) {
+    if (version === 'vocals') {
+      if (track.role === 'vocal') delete track.mute;
+    } else {
+      if (track.role === 'vocal') track.mute = true;
+      else if (track.role === 'instrumental') delete track.mute;
+    }
+  }
+  function forVersion(items, version) {
+    if (VERSIONS.indexOf(version) < 0) throw new Error('unknown version ' + version);
+    return items.map(function (it) {
+      var copy = JSON.parse(JSON.stringify(it));
+      applyRule(copy, version);
+      if (copy.pair) applyRule(copy.pair, version);
+      return copy;
+    });
+  }
+  function hasVocal(it) { return it.role === 'vocal' || !!(it.pair && it.pair.role === 'vocal'); }
+  function songName(it) { return it.name || it.key; }
+  function check(items) {
+    var music = forVersion(items, 'music');
+    var silent = [], unmarked = [];
+    items.forEach(function (it, i) {
+      var m = music[i];
+      if (hasVocal(it) && m.mute && (!m.pair || m.pair.mute)) silent.push(songName(it));
+      if (it.pair && !hasVocal(it)) unmarked.push(songName(it));
+    });
+    return { available: items.some(hasVocal), silent: silent, unmarked: unmarked };
+  }
+  function fileBase(base, version) { return base + (version === 'vocals' ? '-with-vocals' : '-music-only'); }
+  function label(version) { return version === 'vocals' ? 'with vocals' : 'music only'; }
+  function cleanMade(made) {
+    if (!Array.isArray(made) || !made.length) return null;
+    var order = made.map(function (v) { return VERSIONS.indexOf(v); });
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] < 0 || (i && order[i] <= order[i - 1])) return null;
+    }
+    return made.slice();
+  }
+  function cleanLast(last) {
+    if (!last || typeof last !== 'object') return null;
+    if (typeof last.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(last.date)) return null;
+    if (typeof last.time !== 'string' || !/^\d{2}:\d{2}$/.test(last.time)) return null;
+    var made = cleanMade(last.made);
+    return made ? { date: last.date, time: last.time, made: made } : null;
+  }
+  function clean(raw) {
+    var out = { pick: cleanPick(raw && raw.pick) };
+    var last = cleanLast(raw && raw.last);
+    if (last) out.last = last;
+    return out;
+  }
+  function withPick(state, pick) {
+    var out = { pick: cleanPick(pick) };
+    if (state && state.last) out.last = state.last;
+    return out;
+  }
+  function withExport(state, made, date, time) {
+    return { pick: cleanPick(state && state.pick), last: { date: date, time: time, made: made.slice() } };
+  }
+  function noteText(last) {
+    if (!last) return null;
+    var parts = last.date.split('-');
+    var dayText = parseInt(parts[2], 10) + ' ' + MONTHS[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+    return 'Last exported ' + dayText + ' at ' + last.time + ': ' + last.made.map(label).join(' and ') + '.';
+  }
+  return {
+    PICKS: PICKS, cleanPick: cleanPick, versionsFor: versionsFor, forVersion: forVersion, check: check,
+    fileBase: fileBase, label: label, clean: clean, withPick: withPick, withExport: withExport, noteText: noteText
+  };
+})();
+
 /* Finds how far a song's second track is shifted from the first, by matching their onsets. Pure functions. */
 var TrackAlign = (function () {
   var RATE = 100;
@@ -4387,6 +4477,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var slide = Lyrics.cleanSlide(tx.lyric);
       if (slide) { tx.lyric = slide; syncLyricText(tx, m.items || []); } else delete tx.lyric;
     });
+    if ('vocalExport' in m) m.vocalExport = VocalExport.clean(m.vocalExport);
     tidyGroups(m);
     return m;
   }
@@ -5098,7 +5189,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
   // Collapsing a group is a view choice and the name is a file choice, so neither is an Undo step.
-  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && k === 'name') ? undefined : v; }); }
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport')) ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
     undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
@@ -5133,6 +5224,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (audioChanged && Player.tag) Player.stop();
     after.groups = TextGroup.keepClosed(after.groups || [], mix.groups);
     after.name = mix.name;
+    if (mix.vocalExport) after.vocalExport = mix.vocalExport; else delete after.vocalExport;
     mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
@@ -8787,7 +8879,26 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var bitrate = smooth ? (H === 1080 ? 5e6 : 3e6) : (H === 1080 ? 1.5e6 : 1e6);
     return { W: W, H: H, fps: fps, bitrate: bitrate, motion: !!motion, smooth: smooth };
   }
+  function quotedNames(names) { return names.map(function (n) { return '“' + n + '”'; }).join(', '); }
+  function renderVersions() {
+    var st = VocalExport.clean(mix.vocalExport), ck = VocalExport.check(mix.items);
+    var radios = { both: 'vexpBoth', vocals: 'vexpVocals', music: 'vexpMusic' };
+    Object.keys(radios).forEach(function (p) { $(radios[p]).checked = st.pick === p; $(radios[p]).disabled = !ck.available; });
+    var note = [];
+    if (!ck.available) note.push('Mark a song\'s vocal track as Vocal in Tracks to export a music-only version too.');
+    else {
+      if (ck.silent.length) note.push('In the music-only version, ' + quotedNames(ck.silent) + (ck.silent.length === 1 ? ' has' : ' have') + ' no sound, because only the vocal track is on.');
+      if (ck.unmarked.length) {
+        var one = ck.unmarked.length === 1;
+        note.push(quotedNames(ck.unmarked) + (one ? ' has' : ' have') + ' two tracks but neither is marked Vocal, so ' + (one ? 'it sounds' : 'they sound') + ' the same in both versions.');
+      }
+    }
+    $('versionsNote').textContent = note.join(' ');
+    $('versionsLast').textContent = VocalExport.noteText(st.last) || '';
+  }
+  function twoFiles() { return WS.id === 'karaoke' && VocalExport.check(mix.items).available && VocalExport.clean(mix.vocalExport).pick === 'both'; }
   function renderExportNote() {
+    if (WS.id === 'karaoke') renderVersions();
     var mp3ok = typeof lamejs !== 'undefined';
     $('fmtMp3').disabled = !mp3ok; $('fmtWebm').disabled = !canWebm; $('fmtVideo').disabled = !canVideo;
     if ((ui.format === 'mp3' && !mp3ok) || (ui.format === 'webm' && !canWebm) || (ui.format === 'video' && !canVideo)) ui.format = 'wav';
@@ -8813,7 +8924,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         : ' Building it takes a few minutes for a full mix.';
       if (mix.opts.bg === 'motion' && !ui.motion) extra += ' Choose the motion background first, or it will use your Color background.';
     }
-    say(fmt(exportLen()) + ', about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB.' + extra);
+    say(fmt(exportLen()) + ', about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + (twoFiles() ? ' MB each, two files.' : ' MB.') + extra);
   }
   // When the file stops before the mix does, fade the sound out over the
   // last 3 seconds instead of cutting it off.
@@ -8828,7 +8939,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function u8(view) { return new Uint8Array(view.buffer, view.byteOffset, view.byteLength); }
   function progress(done, total, verb) { $('barFill').style.width = (done * 100).toFixed(1) + '%'; say(verb + ' ' + fmt(total * done) + ' of ' + fmt(total) + '…'); }
-  async function encodeAudioFile(pl, fmtNow, len) {
+  async function encodeAudioFile(pl, fmtNow, len, verb) {
+    verb = verb || 'Mixing';
     var N = Math.round(len * SR), block = 10 * SR, parts = [], enc = fmtNow === 'mp3' ? new lamejs.Mp3Encoder(2, SR, 192) : null;
     for (var s = 0; s < N; s += block) {
       var n = Math.min(block, N - s);
@@ -8841,7 +8953,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           if (o % 115200 === 0) await sleep(0);
         }
       } else parts.push(u8(E.interleave(l, r)));
-      progress((s + n) / N, len, 'Mixing');
+      progress((s + n) / N, len, verb);
       await sleep(0);
     }
     if (enc) { var tail = enc.flush(); if (tail.length) parts.push(u8(tail)); }
@@ -8865,18 +8977,28 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (await ok({ codec: 'vp8', width: v.W, height: v.H, bitrate: v.bitrate, framerate: v.fps })) out.push({ container: 'webm', vcodec: 'vp8', vmux: 'V_VP8', acodec: 'opus', amux: 'A_OPUS' });
     return out;
   }
-  async function encodeMedia(pl, withVideo, how, len) {
-    var v = videoShape(), err = null, sink = new Media.Sink(), bgp = null;
+  function makeMuxer(how, withVideo, v, sink) {
     var target = new (how.container === 'mp4' ? Mp4Muxer : WebMMuxer).StreamTarget({ onData: function (d, pos) { sink.write(d, pos); }, chunked: true });
-    var muxer = how.container === 'mp4'
+    return how.container === 'mp4'
       ? new Mp4Muxer.Muxer({ target: target, fastStart: false, firstTimestampBehavior: 'offset',
           video: withVideo ? { codec: how.vmux, width: v.W, height: v.H, frameRate: v.fps } : undefined,
           audio: { codec: how.amux, sampleRate: SR, numberOfChannels: 2 } })
       : new WebMMuxer.Muxer({ target: target, firstTimestampBehavior: 'offset',
           video: withVideo ? { codec: how.vmux, width: v.W, height: v.H, frameRate: v.fps } : undefined,
           audio: { codec: how.amux, sampleRate: SR, numberOfChannels: 2 } });
-    var ae = new AudioEncoder({ output: function (c, m) { muxer.addAudioChunk(c, m); }, error: function (e) { err = e; } });
-    ae.configure({ codec: how.acodec, sampleRate: SR, numberOfChannels: 2, bitrate: 160000 });
+  }
+  // One picture, one or more soundtracks: every plan gets its own file,
+  // and the video is drawn and encoded once and added to all of them.
+  async function encodeMedia(pls, withVideo, how, len) {
+    var v = videoShape(), err = null, bgp = null;
+    var sinks = pls.map(function () { return new Media.Sink(); });
+    var muxers = sinks.map(function (sink) { return makeMuxer(how, withVideo, v, sink); });
+    var aes = muxers.map(function (muxer) {
+      var ae = new AudioEncoder({ output: function (c, m) { muxer.addAudioChunk(c, m); }, error: function (e) { err = e; } });
+      ae.configure({ codec: how.acodec, sampleRate: SR, numberOfChannels: 2, bitrate: 160000 });
+      return ae;
+    });
+    function audioBusy() { return aes.some(function (ae) { return ae.encodeQueueSize > 4; }); }
     var ve = null, cv = null, g = null, clips = {}, clipFrames = {};
     function exportSource(layer) {
       if (layer.kind === 'image') {
@@ -8902,7 +9024,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         }
         var vcfg = { codec: how.vcodec, width: v.W, height: v.H, bitrate: v.bitrate, framerate: v.fps };
         if (how.vmux === 'avc') vcfg.avc = { format: 'avc' };
-        ve = new VideoEncoder({ output: function (c, m) { muxer.addVideoChunk(c, m); }, error: function (e) { err = e; } });
+        ve = new VideoEncoder({ output: function (c, m) { muxers.forEach(function (mx) { mx.addVideoChunk(c, m); }); }, error: function (e) { err = e; } });
         ve.configure(vcfg);
         cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(v.W, v.H) : Object.assign(document.createElement('canvas'), { width: v.W, height: v.H });
         g = cv.getContext('2d');
@@ -8911,11 +9033,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var N = Math.round(len * SR), block = 10 * SR, f = 0, frames = Math.ceil(len * v.fps), key = v.fps * 2;
       for (var s = 0; s < N; s += block) {
         var n = Math.min(block, N - s);
-        await Pcm.ensure(E.keysBetween(pl, s / SR, (s + n) / SR));
-        var blk = cutFade(E.renderBlock(pl, s, n, Pcm.peek), s, len, pl), data = new Float32Array(n * 2);
-        data.set(blk.L, 0); data.set(blk.R, n);
-        var ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(s / SR * 1e6), data: data });
-        ae.encode(ad); ad.close();
+        var keys = [];
+        pls.forEach(function (p) { E.keysBetween(p, s / SR, (s + n) / SR).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); }); });
+        await Pcm.ensure(keys);
+        pls.forEach(function (p, pi) {
+          var blk = cutFade(E.renderBlock(p, s, n, Pcm.peek), s, len, p), data = new Float32Array(n * 2);
+          data.set(blk.L, 0); data.set(blk.R, n);
+          var ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(s / SR * 1e6), data: data });
+          aes[pi].encode(ad); ad.close();
+        });
         if (withVideo) {
           var until = Math.min(frames, Math.ceil((s + n) / SR * v.fps));
           for (; f < until; f++) {
@@ -8934,23 +9060,23 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
             if (f % 15 === 0) { progress(f / frames, len, 'Building the video'); await sleep(0); }
           }
         }
-        while (ae.encodeQueueSize > 4) await sleep(5);
+        while (audioBusy()) await sleep(5);
         if (err) throw err;
         progress((s + n) / N, len, withVideo ? 'Building the video' : 'Mixing');
         await sleep(0);
       }
       if (ve) await ve.flush();
-      await ae.flush();
+      for (var ai = 0; ai < aes.length; ai++) await aes[ai].flush();
       if (err) throw err;
-      muxer.finalize();
+      muxers.forEach(function (mx) { mx.finalize(); });
     } finally {
       if (bgp) bgp.close();
       Object.keys(clips).forEach(function (id) { clips[id].player.close(); });
       PicCache.pinned = [];
       try { if (ve && ve.state !== 'closed') ve.close(); } catch (e) { /* fine */ }
-      try { if (ae.state !== 'closed') ae.close(); } catch (e) { /* fine */ }
+      aes.forEach(function (ae) { try { if (ae.state !== 'closed') ae.close(); } catch (e) { /* fine */ } });
     }
-    return { blob: sink.blob(how.container === 'mp4' ? 'video/mp4' : 'video/webm'), ext: how.container };
+    return sinks.map(function (sink) { return { blob: sink.blob(how.container === 'mp4' ? 'video/mp4' : 'video/webm'), ext: how.container }; });
   }
   // Every face the video draws must be loaded first, or the frames would use a fallback font.
   async function loadExportFonts() {
@@ -8964,6 +9090,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!got || !got.length) throw new Error('the font “' + (list[i].match(/"([^"]+)"/) || [0, 'unknown'])[1] + '” could not be loaded (check the internet connection)');
     }
   }
+  function setVocalExport(next) { mix.vocalExport = next; saveSoon(); }
   async function exportMix() {
     if (ui.exporting || !plan.total) return;
     Player.stop();
@@ -8973,17 +9100,35 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('saveAgain').hidden = true; $('bar').hidden = false; $('barFill').style.width = '0%'; $('exportBtn').disabled = true;
     try { if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch (e) { lock = null; }
     try {
-      var res;
+      var vst = VocalExport.clean(mix.vocalExport);
+      var useVersions = WS.id === 'karaoke' && VocalExport.check(mix.items).available;
+      var versions = useVersions ? VocalExport.versionsFor(vst.pick) : [null];
+      var outs = versions.map(function (v) {
+        return { version: v, base: v ? VocalExport.fileBase(base, v) : base,
+          plan: v ? E.layout(Object.assign({}, mix, { items: VocalExport.forVersion(mix.items, v) }), metaMap()) : pl };
+      });
+      if (outs.some(function (o) { return Math.abs(o.plan.total - pl.total) > 0.001; })) throw new Error('the two versions came out different lengths');
+      var res = [];
       if (fmtNow === 'video' || fmtNow === 'webm') {
-        var withVideo = fmtNow === 'video', plans = withVideo ? await videoPlans(videoShape()) : [{ container: 'webm', acodec: 'opus', amux: 'A_OPUS' }];
-        if (!plans.length) throw new Error('this browser cannot make video files');
+        var withVideo = fmtNow === 'video', ways = withVideo ? await videoPlans(videoShape()) : [{ container: 'webm', acodec: 'opus', amux: 'A_OPUS' }];
+        if (!ways.length) throw new Error('this browser cannot make video files');
         if (withVideo) await loadExportFonts();
-        for (var i = 0; i < plans.length; i++) {
-          try { res = await encodeMedia(pl, withVideo, plans[i], len); break; }
-          catch (e) { if (i === plans.length - 1) throw e; say('Trying another way to build the video…'); }
+        for (var i = 0; i < ways.length; i++) {
+          try { res = await encodeMedia(outs.map(function (o) { return o.plan; }), withVideo, ways[i], len); break; }
+          catch (e) { if (i === ways.length - 1) throw e; say('Trying another way to build the video…'); }
         }
-      } else res = await encodeAudioFile(pl, fmtNow, len);
-      ui.lastExport = { base: base, ext: res.ext, blob: res.blob, parts: res.parts, video: fmtNow === 'video' };
+      } else {
+        for (var oi = 0; oi < outs.length; oi++) {
+          var verb = outs.length > 1 ? 'Mixing ' + VocalExport.label(outs[oi].version) : 'Mixing';
+          res.push(await encodeAudioFile(outs[oi].plan, fmtNow, len, verb));
+        }
+      }
+      ui.lastExport = { files: outs.map(function (o, i) { return { base: o.base, ext: res[i].ext, blob: res[i].blob, parts: res[i].parts }; }), video: fmtNow === 'video' };
+      if (useVersions) {
+        var now = new Date();
+        setVocalExport(VocalExport.withExport(vst, versions, ymd(now), pad(now.getHours()) + ':' + pad(now.getMinutes())));
+        renderExportNote();
+      }
       if ($('markUsed').checked && $('usedDate').value) {
         markUsed(pl, $('usedDate').value);
         var end = exportLen(), ranges = mix.texts.filter(function (tx) { return tx.passage && !tx.hidden && txSpan(tx).start < end; }).map(passageRange).filter(Boolean);
@@ -8998,39 +9143,55 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (lock) { try { lock.release(); } catch (e) { /* fine */ } }
     ui.exporting = false; $('bar').hidden = true; $('exportBtn').disabled = !plan.total;
   }
+  function downloadNow(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }
   async function deliver() {
     var x = ui.lastExport;
     if (!x) return;
-    var file = x.base + '.' + x.ext, direct = x.ext === 'webm' || x.ext === 'mp4';
+    var files = x.files, one = files.length === 1, direct = files[0].ext === 'webm' || files[0].ext === 'mp4';
+    function fileName(f) { return f.base + '.' + f.ext; }
+    function saveName(f) { return direct ? fileName(f) : f.base + '.zip'; }
     if (!window.claude) { // opened as a plain file: the browser saves it directly
-      var url = URL.createObjectURL(x.blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = file; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-      say('Saved ' + file + ' to your downloads folder. Point the OBS Media Source at it.');
+      for (var i = 0; i < files.length; i++) {
+        if (i) await sleep(400);
+        downloadNow(files[i].blob, fileName(files[i]));
+      }
+      say(one ? 'Saved ' + fileName(files[0]) + ' to your downloads folder. Point the OBS Media Source at it.'
+        : 'Saved ' + files.map(fileName).join(' and ') + ' to your downloads folder. If Chrome asks about downloading several files, choose Allow.');
       $('saveAgain').hidden = false;
       return;
     }
     // A long export can outlast the click that started it, so the save
     // window may not open by itself. The button always works.
+    var button = one ? 'Save ' + saveName(files[0]) : 'Save both files';
     $('saveAgain').hidden = false;
-    $('saveAgain').textContent = 'Save ' + (direct ? file : x.base + '.zip');
-    say('The file is ready. A save window should open now. If it does not, press Save ' + (direct ? file : x.base + '.zip') + '.');
+    $('saveAgain').textContent = button;
+    say((one ? 'The file is ready.' : 'The files are ready.') + ' A save window should open now. If it does not, press ' + button + '.');
     var dl = await downloadsReady;
     if (!dl) { say('This view cannot save files. Open the page from your Claude artifacts and export there.', true); return; }
     await sleep(0);
-    if (!direct && !x.zip) x.zip = new Blob(E.zipOne(file, x.parts), { type: 'application/zip' });
+    files.forEach(function (f) { if (!direct && !f.zip) f.zip = new Blob(E.zipOne(fileName(f), f.parts), { type: 'application/zip' }); });
+    var saved = [];
     try {
-      await dl.save({ filename: direct ? file : x.base + '.zip', data: direct ? x.blob : x.zip });
-      say(direct ? 'Saved ' + file + '. Point the OBS Media Source at it.' + (mix.opts.bg === 'green' && x.video ? ' Add a Chroma Key filter to it and place it above your graphic.' : '') : 'Saved ' + x.base + '.zip. Unzip it, then point the OBS Media Source at ' + file + ' inside.');
+      for (var k = 0; k < files.length; k++) {
+        await dl.save({ filename: saveName(files[k]), data: direct ? files[k].blob : files[k].zip });
+        saved.push(saveName(files[k]));
+      }
+      var f = files[0];
+      if (one) say(direct ? 'Saved ' + fileName(f) + '. Point the OBS Media Source at it.' + (mix.opts.bg === 'green' && x.video ? ' Add a Chroma Key filter to it and place it above your graphic.' : '') : 'Saved ' + f.base + '.zip. Unzip it, then point the OBS Media Source at ' + fileName(f) + ' inside.');
+      else say('Saved ' + saved.join(' and ') + '.' + (direct ? ' Point the OBS Media Source at the one you want.' : ' Unzip them, then point the OBS Media Source at the file inside the one you want.'));
       $('saveAgain').hidden = false;
     } catch (err) {
       $('saveAgain').hidden = false;
-      var code = err && err.code;
-      if (code === 'declined') say('The ' + (x.video ? 'video' : 'mix') + ' is ready. Press Save the file when you want it.');
-      else if (code === 'rate_limited') say('A save prompt is already open. Answer it, or press Save the file in a moment.');
-      else if (code === 'too_large') say('That file is too large to save from here. Try 720p, or MP3 or WebM audio.', true);
-      else say('This view could not save the file. Open the page from your Claude artifacts and export there.', true);
+      var code = err && err.code, before = saved.length ? 'Saved ' + saved.join(' and ') + '. ' : '';
+      if (code === 'declined') say(before + 'The ' + (x.video ? 'video' : 'mix') + ' is ready. Press Save the file when you want it.');
+      else if (code === 'rate_limited') say(before + 'A save prompt is already open. Answer it, or press Save the file in a moment.');
+      else if (code === 'too_large') say(before + 'That file is too large to save from here. Try 720p, or MP3 or WebM audio.', true);
+      else say(before + 'This view could not save the file. Open the page from your Claude artifacts and export there.', true);
     }
   }
 
@@ -10409,6 +10570,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ['fmtMp3', 'fmtWav', 'fmtWebm', 'fmtVideo'].forEach(function (id) {
       $(id).onchange = function () { ui.format = this.value; lsSet('hp.format', ui.format); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); };
     });
+    ['vexpBoth', 'vexpVocals', 'vexpMusic'].forEach(function (id) { $(id).onchange = function () { setVocalExport(VocalExport.withPick(VocalExport.clean(mix.vocalExport), this.value)); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); }; });
     $('exportBtn').onclick = exportMix;
     $('saveAgain').onclick = deliver;
     $('usedDate').addEventListener('change', function () {
