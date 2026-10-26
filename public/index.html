@@ -355,6 +355,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .swatches .swatchlabel { color: var(--muted); font-size: 12px; margin-right: 2px; }
 .swatch { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; padding: 0; }
+.swatch.keyswatch { display: inline-block; cursor: default; flex: none; }
+.swatch.keyswatch[hidden] { display: none; }
+.keyamount { display: flex; align-items: center; gap: 8px; }
+.keyamount input[type=range] { flex: 1; }
 .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #screen { touch-action: none; }
 .talkshare { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; }
@@ -2551,7 +2555,7 @@ var TextLayout = (function () {
 /* Picture boxes: where an image or a video clip shows on screen, how it fits, fades and stacks. Pure functions; inputs are never changed. */
 var PictureBox = (function () {
   var IMAGE_EXT = /\.(jpe?g|png|webp)$/i, VIDEO_EXT = /\.(mp4|m4v|mov|webm)$/i, AUDIO_EXT = /\.(mp3|wav|wave|m4a|aac|flac|ogg|oga|opus)$/i;
-  var MIN_W = 0.08, MIN_H = 0.06;
+  var MIN_W = 0.08, MIN_H = 0.06, MIN_CROP = 0.05, HEX = /^#[0-9a-fA-F]{6}$/;
   var MOTIONS = ['none', 'zoomIn', 'zoomOut', 'driftLeft', 'driftRight', 'driftUp', 'zoomDrift', 'turn'];
   var PRESETS = {
     full: { x: 0, y: 0, w: 1, h: 1 },
@@ -2591,6 +2595,17 @@ var PictureBox = (function () {
     var w = round4(clamp(src.w, MIN_W, 1)), h = round4(clamp(src.h, MIN_H, 1));
     return { x: round4(clamp(src.x, 0, 1 - w)), y: round4(clamp(src.y, 0, 1 - h)), w: w, h: h };
   }
+  function cleanCrop(c) {
+    if (!c || typeof c !== 'object' || !(num(c.x) && num(c.y) && num(c.w) && num(c.h))) return null;
+    var w = clamp(c.w, MIN_CROP, 1), h = clamp(c.h, MIN_CROP, 1);
+    var out = { x: round4(clamp(c.x, 0, 1 - w)), y: round4(clamp(c.y, 0, 1 - h)), w: round4(w), h: round4(h) };
+    if (out.x <= 0.002 && out.y <= 0.002 && out.w >= 0.998 && out.h >= 0.998) return null;
+    return out;
+  }
+  function cleanKey(k) {
+    if (!k || typeof k !== 'object' || typeof k.color !== 'string' || !HEX.test(k.color)) return null;
+    return { color: k.color.toUpperCase(), amount: num(k.amount) ? clamp(Math.round(k.amount), 0, 100) : 40 };
+  }
   function clean(pic, kind) {
     var d = defaults(kind), p = pic && typeof pic === 'object' ? pic : {};
     var out = {
@@ -2602,6 +2617,8 @@ var PictureBox = (function () {
       fadeOut: num(p.fadeOut) ? clamp(p.fadeOut, 0, 10) : d.fadeOut
     };
     if (kind === 'video') out.show = p.show !== false;
+    var crop = cleanCrop(p.crop); if (crop) out.crop = crop;
+    var key = cleanKey(p.key); if (key) out.key = key;
     return out;
   }
   function cleanItem(item) {
@@ -2628,13 +2645,32 @@ var PictureBox = (function () {
     if (h > 1) { w = w / h; h = 1; }
     return placeOnScreen(frame.x + frame.w / 2, frame.y + frame.h / 2, w, h);
   }
-  function fitRect(box, srcW, srcH, fit) {
+  function cropSource(srcW, srcH, crop) {
+    if (!crop) return { x: 0, y: 0, w: srcW, h: srcH };
+    return { x: crop.x * srcW, y: crop.y * srcH, w: crop.w * srcW, h: crop.h * srcH };
+  }
+  function croppedSize(srcW, srcH, crop) {
+    var c = cropSource(srcW, srcH, crop);
+    return { w: c.w, h: c.h };
+  }
+  function fitRect(box, srcW, srcH, fit, crop) {
+    var part = cropSource(srcW, srcH, crop || null), pw = part.w, ph = part.h;
     if (fit === 'contain') {
-      var k = Math.min(box.w / srcW, box.h / srcH), dw = srcW * k, dh = srcH * k;
-      return { sx: 0, sy: 0, sw: srcW, sh: srcH, dx: box.x + (box.w - dw) / 2, dy: box.y + (box.h - dh) / 2, dw: dw, dh: dh };
+      var k = Math.min(box.w / pw, box.h / ph), dw = pw * k, dh = ph * k;
+      return { sx: part.x, sy: part.y, sw: pw, sh: ph, dx: box.x + (box.w - dw) / 2, dy: box.y + (box.h - dh) / 2, dw: dw, dh: dh };
     }
-    var c = Math.max(box.w / srcW, box.h / srcH), sw = box.w / c, sh = box.h / c;
-    return { sx: (srcW - sw) / 2, sy: (srcH - sh) / 2, sw: sw, sh: sh, dx: box.x, dy: box.y, dw: box.w, dh: box.h };
+    var c = Math.max(box.w / pw, box.h / ph), sw = box.w / c, sh = box.h / c;
+    return { sx: part.x + (pw - sw) / 2, sy: part.y + (ph - sh) / 2, sw: sw, sh: sh, dx: box.x, dy: box.y, dw: box.w, dh: box.h };
+  }
+  function resizeCrop(c0, handle, dx, dy) {
+    var f0 = c0 || { x: 0, y: 0, w: 1, h: 1 };
+    if (handle === 'move') return { x: round4(clamp(f0.x + dx, 0, 1 - f0.w)), y: round4(clamp(f0.y + dy, 0, 1 - f0.h)), w: f0.w, h: f0.h };
+    var left = f0.x, top = f0.y, right = f0.x + f0.w, bottom = f0.y + f0.h;
+    if (handle.indexOf('n') >= 0) top = clamp(top + dy, 0, bottom - MIN_CROP);
+    if (handle.indexOf('s') >= 0) bottom = clamp(bottom + dy, top + MIN_CROP, 1);
+    if (handle.indexOf('w') >= 0) left = clamp(left + dx, 0, right - MIN_CROP);
+    if (handle.indexOf('e') >= 0) right = clamp(right + dx, left + MIN_CROP, 1);
+    return { x: round4(left), y: round4(top), w: round4(right - left), h: round4(bottom - top) };
   }
   function alphaRaw(t, start, dur, fadeIn, fadeOut) {
     if (!(dur > 0) || t < start || t > start + dur) return 0;
@@ -2691,9 +2727,9 @@ var PictureBox = (function () {
     return Math.round(t * 10) / 10;
   }
   return {
-    IMAGE_EXT: IMAGE_EXT, VIDEO_EXT: VIDEO_EXT, AUDIO_EXT: AUDIO_EXT, PRESETS: PRESETS, PRESET_LABELS: PRESET_LABELS, MIN_W: MIN_W, MIN_H: MIN_H,
-    fileKind: fileKind, isMedia: isMedia, isFull: isFull, defaults: defaults, applyPreset: applyPreset, clean: clean, cleanItem: cleanItem,
-    shapeFrame: shapeFrame, fitRect: fitRect, alphaRaw: alphaRaw, contains: contains, alphas: alphas, order: order, rows: rows, placeAt: placeAt
+    IMAGE_EXT: IMAGE_EXT, VIDEO_EXT: VIDEO_EXT, AUDIO_EXT: AUDIO_EXT, PRESETS: PRESETS, PRESET_LABELS: PRESET_LABELS, MIN_W: MIN_W, MIN_H: MIN_H, MIN_CROP: MIN_CROP,
+    fileKind: fileKind, isMedia: isMedia, isFull: isFull, defaults: defaults, applyPreset: applyPreset, clean: clean, cleanItem: cleanItem, cleanCrop: cleanCrop, cleanKey: cleanKey,
+    shapeFrame: shapeFrame, fitRect: fitRect, cropSource: cropSource, croppedSize: croppedSize, resizeCrop: resizeCrop, alphaRaw: alphaRaw, contains: contains, alphas: alphas, order: order, rows: rows, placeAt: placeAt
   };
 })();
 
@@ -2731,6 +2767,57 @@ var PictureMotion = (function () {
     return { scale: m.scale * coverScale(id, strength, boxW, boxH), dx: m.dx, dy: m.dy, rot: m.rot };
   }
   return { PRESETS: PRESETS, STRENGTHS: STRENGTHS, isPreset: isPreset, at: at, coverScale: coverScale, transform: transform };
+})();
+
+/* Makes one chosen color see-through, with soft edges. Pure functions. */
+var ChromaKey = (function () {
+  var COLORFUL = 40, BAND = 24;
+  function hex2(v) { var h = Math.round(Math.min(255, Math.max(0, v))).toString(16).toUpperCase(); return h.length < 2 ? '0' + h : h; }
+  function parseHex(hex) {
+    var n = parseInt(String(hex).slice(1), 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function chroma(r, g, b) {
+    return { y: 0.299 * r + 0.587 * g + 0.114 * b, cb: 128 - 0.168736 * r - 0.331264 * g + 0.5 * b, cr: 128 + 0.5 * r - 0.418688 * g - 0.081312 * b };
+  }
+  function prepare(hex, amount) {
+    var rgb = parseHex(hex), c = chroma(rgb.r, rgb.g, rgb.b), sat = Math.sqrt((c.cb - 128) * (c.cb - 128) + (c.cr - 128) * (c.cr - 128));
+    var lo = amount * 1.2;
+    return { y: c.y, cb: c.cb, cr: c.cr, sat: sat, lo: lo, hi: lo + BAND, wy: sat >= COLORFUL ? 0.25 : 1, off: !(amount > 0) };
+  }
+  function smoothstep(lo, hi, v) {
+    var u = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+    return u * u * (3 - 2 * u);
+  }
+  function alphaFor(r, g, b, key) {
+    if (key.off) return 1;
+    var c = chroma(r, g, b), dcb = c.cb - key.cb, dcr = c.cr - key.cr, dy = key.wy * (c.y - key.y);
+    return smoothstep(key.lo, key.hi, Math.sqrt(dcb * dcb + dcr * dcr + dy * dy));
+  }
+  function apply(data, key) {
+    if (key.off) return;
+    for (var i = 0; i < data.length; i += 4) {
+      var r = data[i], g = data[i + 1], b = data[i + 2], a = alphaFor(r, g, b, key);
+      data[i + 3] = Math.round(data[i + 3] * a);
+      if (a > 0 && a < 1) {
+        var gray = 0.299 * r + 0.587 * g + 0.114 * b, k = 1 - a;
+        data[i] = Math.round(r + (gray - r) * k);
+        data[i + 1] = Math.round(g + (gray - g) * k);
+        data[i + 2] = Math.round(b + (gray - b) * k);
+      }
+    }
+  }
+  function sample(data, w, h, cx, cy, radius) {
+    var x0 = Math.max(0, Math.round(cx) - radius), x1 = Math.min(w - 1, Math.round(cx) + radius);
+    var y0 = Math.max(0, Math.round(cy) - radius), y1 = Math.min(h - 1, Math.round(cy) + radius);
+    var r = 0, g = 0, b = 0, n = 0;
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) { var i = (y * w + x) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+    }
+    if (!n) return null;
+    return '#' + hex2(r / n) + hex2(g / n) + hex2(b / n);
+  }
+  return { parseHex: parseHex, chroma: chroma, prepare: prepare, alphaFor: alphaFor, apply: apply, sample: sample };
 })();
 
 /* What is drawn behind on-screen text: nothing, a soft shadow, a soft outline, a solid outline or a dark box. Pure functions. */
@@ -5029,7 +5116,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -5733,6 +5820,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function playMix(from, to, tag) {
     if (!plan.total) return;
     from = clamp(from, 0, Math.max(0, plan.total - 0.2));
+    if (ui.picTool) endPicTool();
     Player.play(plan, from, to == null ? plan.total : Math.min(to, plan.total), tag || 'mix');
   }
   function toggle(tag, start) { if (Player.tag === tag) Player.stop(); else start(); }
@@ -5833,7 +5921,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     after.groups = TextGroup.keepClosed(after.groups || [], mix.groups);
     after.name = mix.name;
     if (mix.vocalExport) after.vocalExport = mix.vocalExport; else delete after.vocalExport;
-    mix = upgradeMix(after); ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
+    mix = upgradeMix(after); ui.picTool = null; ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
     $('undoNote').textContent = verb + ': ' + UndoStack.describe(r.before, r.after);
@@ -7328,6 +7416,43 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]].forEach(function (k) { g.fillRect(f.x + k[0] * f.w - hs / 2, f.y + k[1] * f.h - hs / 2, hs, hs); });
     g.restore();
   }
+  // Where a layer's picture is drawn: its box on screen, the drawn rectangle and the part of the source used.
+  function layerDrawRect(l, src, W, H) {
+    var f = l.pic.frame, box = { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H };
+    var r = PictureBox.fitRect(box, src.w, src.h, l.pic.fit, l.pic.crop || null);
+    return { box: box, r: r, rect: l.pic.fit === 'contain' ? { x: r.dx, y: r.dy, w: r.dw, h: r.dh } : box };
+  }
+  function makeCanvas(w, h) {
+    return typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+  }
+  var keyScratch = null, keyedStills = {}, keyedStillCount = 0;
+  function isPicking(l) { return !!(ui.picTool && ui.picTool.mode === 'pick' && ui.picTool.lane === l.lane && ui.picTool.id === l.id); }
+  // The layer's picture with its background color made see-through, sized cw × ch. Stills are kept; video frames are redone each time.
+  function keyedSource(l, src, r, cw, ch) {
+    var keySig = null, keyCanvas;
+    if (l.kind === 'image') {
+      keySig = [cw, ch, JSON.stringify(l.pic.crop || null), l.pic.key.color, l.pic.key.amount, src.w, src.h].join('|');
+      var kept = keyedStills[layerKey(l)];
+      if (kept && kept.sig === keySig) return kept.canvas;
+      if (!kept && keyedStillCount >= 12) { keyedStills = {}; keyedStillCount = 0; }
+      keyCanvas = kept ? kept.canvas : makeCanvas(cw, ch);
+    } else {
+      if (!keyScratch) keyScratch = makeCanvas(cw, ch);
+      keyCanvas = keyScratch;
+    }
+    if (keyCanvas.width !== cw || keyCanvas.height !== ch) { keyCanvas.width = cw; keyCanvas.height = ch; }
+    var kg = keyCanvas.getContext('2d', { willReadFrequently: true });
+    kg.clearRect(0, 0, cw, ch);
+    kg.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, 0, 0, cw, ch);
+    var pixels = kg.getImageData(0, 0, cw, ch);
+    ChromaKey.apply(pixels.data, ChromaKey.prepare(l.pic.key.color, l.pic.key.amount));
+    kg.putImageData(pixels, 0, 0);
+    if (keySig) {
+      if (!keyedStills[layerKey(l)]) keyedStillCount++;
+      keyedStills[layerKey(l)] = { sig: keySig, canvas: keyCanvas };
+    }
+    return keyCanvas;
+  }
   // `source(layer, t)` gives { img, w, h } to draw, or null while it is still loading.
   function paintPictures(g, W, H, t, source, boxes) {
     var layers = pictureLayers();
@@ -7340,13 +7465,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var box = { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H };
       var src = a > 0 ? source(l, t) : null;
       if (src) {
-        var r = PictureBox.fitRect(box, src.w, src.h, l.pic.fit);
-        var rect = l.pic.fit === 'contain' ? { x: r.dx, y: r.dy, w: r.dw, h: r.dh } : box;
+        var placed = layerDrawRect(l, src, W, H), r = placed.r, rect = placed.rect;
+        var useKey = !!l.pic.key && !(boxes && isPicking(l));
         var rad = l.pic.round ? 0.035 * Math.min(rect.w, rect.h) : 0;
         var m = l.kind === 'image' ? PictureMotion.transform(l.motion, l.strength, (t - l.start) / l.dur, rect.w, rect.h) : { scale: 1, dx: 0, dy: 0, rot: 0 };
         g.save();
         g.globalAlpha = a;
-        if (l.pic.shadow) {
+        if (l.pic.shadow && !useKey) {
           g.save();
           g.shadowColor = 'rgba(0,0,0,0.55)'; g.shadowBlur = 28 * H / 1080; g.shadowOffsetY = 6 * H / 1080; g.fillStyle = '#000';
           roundPath(g, rect, rad); g.fill();
@@ -7355,7 +7480,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         roundPath(g, rect, rad); g.clip();
         g.translate(rect.x + rect.w / 2 + m.dx * rect.w, rect.y + rect.h / 2 + m.dy * rect.h);
         g.rotate(m.rot); g.scale(m.scale, m.scale);
-        g.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+        if (useKey) {
+          var keyW = Math.max(1, Math.round(rect.w)), keyH = Math.max(1, Math.round(rect.h));
+          g.drawImage(keyedSource(l, src, r, keyW, keyH), 0, 0, keyW, keyH, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+        } else g.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
         g.restore();
       } else if (boxes && a > 0) {
         g.save(); g.setLineDash([4, 4]); g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -7369,6 +7497,46 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         boxes.push({ kind: 'frame', lane: l.lane, id: l.id, x: box.x, y: box.y, w: box.w, h: box.h });
       }
     });
+  }
+  // Crop mode: the whole picture shown large with the crop box over it. Preview only.
+  function cropToolLayer() {
+    var tool = ui.picTool;
+    if (!tool || tool.mode !== 'crop') return null;
+    var list = pictureLayers();
+    for (var i = 0; i < list.length; i++) if (list[i].lane === tool.lane && list[i].id === tool.id) return list[i];
+    return null;
+  }
+  function cropView(src) {
+    var r = PictureBox.fitRect({ x: 48, y: 27, w: 864, h: 486 }, src.w, src.h, 'contain');
+    return { x: r.dx, y: r.dy, w: r.dw, h: r.dh };
+  }
+  function cropBoxOn(view, crop) {
+    var c = crop || { x: 0, y: 0, w: 1, h: 1 };
+    return { x: view.x + c.x * view.w, y: view.y + c.y * view.h, w: c.w * view.w, h: c.h * view.h };
+  }
+  function paintCropTool(g, t, boxes, fromBg) {
+    var layer = cropToolLayer();
+    ui.cropView = null;
+    if (!layer) return;
+    g.save();
+    g.fillStyle = 'rgba(10,16,13,0.92)'; g.fillRect(0, 0, 960, 540);
+    g.fillStyle = '#E8EDE9'; g.font = '600 14px ' + SANS; g.textAlign = 'center'; g.textBaseline = 'middle';
+    var cropAt = clamp(t, layer.start, layer.start + Math.max(0, layer.dur - 0.05));
+    var src = previewSource(layer, cropAt, !fromBg);
+    if (!src) { g.fillText('Loading the picture…', 480, 270); g.restore(); return; }
+    var view = cropView(src), cropBox = cropBoxOn(view, layer.pic.crop);
+    g.drawImage(src.img, 0, 0, src.w, src.h, view.x, view.y, view.w, view.h);
+    g.fillStyle = 'rgba(0,0,0,0.6)';
+    g.fillRect(view.x, view.y, view.w, cropBox.y - view.y);
+    g.fillRect(view.x, cropBox.y + cropBox.h, view.w, view.y + view.h - cropBox.y - cropBox.h);
+    g.fillRect(view.x, cropBox.y, cropBox.x - view.x, cropBox.h);
+    g.fillRect(cropBox.x + cropBox.w, cropBox.y, view.x + view.w - cropBox.x - cropBox.w, cropBox.h);
+    paintHandles(g, 960, cropBox);
+    g.fillStyle = '#E8EDE9';
+    g.fillText('Drag the box or its edges. Press Done cropping or Esc when finished.', 480, 14);
+    g.restore();
+    boxes.push({ kind: 'crop', x: cropBox.x, y: cropBox.y, w: cropBox.w, h: cropBox.h });
+    ui.cropView = view;
   }
   function selPictureLayer() {
     if (!ui.sel) return null;
@@ -7575,7 +7743,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (cv.width !== W) { cv.width = W; cv.height = H; }
     if (t == null) t = screenTime();
     ui.screenBoxes = []; ui.screenT = t;
-    var cap = paintScreen(cv.getContext('2d'), W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes, function (l, at) { return previewSource(l, at, !fromBg); });
+    var screenCtx = cv.getContext('2d');
+    var cap = paintScreen(screenCtx, W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes, function (l, at) { return previewSource(l, at, !fromBg); });
+    paintCropTool(screenCtx, t, ui.screenBoxes, fromBg);
     if (!fromBg) requestBg(t * (mix.opts.motionSpeed || 1));
     if (Date.now() - lastIdleCheck > 1000) { lastIdleCheck = Date.now(); closeIdleClipPlayers(t); }
     $('screenAt').textContent = 'At ' + fmt(t);
@@ -10242,6 +10412,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     return null;
   }
+  // Crop mode and pick mode are view state only: never saved and never part of Undo.
+  function endPicTool() { ui.picTool = null; renderPicEditor(); drawScreen(); }
+  function picToolFor(sp, mode) { var tool = ui.picTool; return !!(tool && sp && tool.mode === mode && tool.lane === sp.lane && tool.id === sp.id); }
   function pictureSize(sp) {
     if (sp.kind === 'image') { var e = PicCache.peek(sp.key); if (!e) PicCache.want(sp.key); return e ? { w: e.w, h: e.h } : null; }
     if (!vidSize[sp.key] && !vidErr[sp.key]) videoIndex(sp.key);
@@ -10301,8 +10474,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     h += '<h4 class="edhead">Where</h4><div class="btnrow presets">' + Object.keys(PictureBox.PRESETS).map(function (k) { return '<button class="btn small" data-preset="' + k + '">' + esc(PictureBox.PRESET_LABELS[k]) + '</button>'; }).join('') + '</div>' +
       '<div class="grid">' + BOX_LABELS.map(function (b) { return '<label>' + b[1] + ' <span><input type="number" data-box="' + b[0] + '" min="0" max="100" step="0.5"> %</span></label>'; }).join('') + '</div>' +
       '<div class="btnrow"><button class="btn small" data-pact="shape">Match the picture’s shape</button><span class="note" data-pnote="shape"></span></div>' +
+      '<h4 class="edhead">Crop</h4><div class="btnrow"><button class="btn small" data-pact="crop">Crop…</button><button class="btn small quiet" data-pact="cropReset">Reset crop</button><span class="note" data-pnote="crop"></span></div>' +
       '<h4 class="edhead">Look</h4><div class="grid look"><label>Fit <select data-pf="fit"><option value="cover">Fill the box (edges may be cut off)</option><option value="contain">Show the whole picture</option></select></label>' +
       '<label><input type="checkbox" data-pf="round"> Rounded corners</label><label><input type="checkbox" data-pf="shadow"> Soft shadow</label></div>' +
+      '<h4 class="edhead">Background color</h4><div class="btnrow"><button class="btn small" data-pact="pick">Pick the background color</button><span class="swatch keyswatch" data-pnote="keyColor"></span><button class="btn small quiet" data-pact="keyOff">Turn off</button></div>' +
+      '<label class="keyamount">How much to remove <input type="range" data-pf="keyAmount" min="0" max="100" step="1"></label><p class="note" data-pnote="key"></p>' +
       '<h4 class="edhead">Timing</h4><div class="grid timing">' +
       (image ? '<label>Starts at <input type="text" data-pf="start" inputmode="decimal"></label><label>Shows for <span><input type="number" data-pf="dur" min="0.5" max="3600" step="0.5"> s</span></label>' : '') +
       '<label>Fade in <span><input type="number" data-pf="fadeIn" min="0" max="10" step="0.5"> s</span></label><label>Fade out <span><input type="number" data-pf="fadeOut" min="0" max="10" step="0.5"> s</span></label></div>';
@@ -10315,6 +10491,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function renderPicEditor() {
     var sp = selPicture(), ed = picEdEl;
+    if (ui.picTool && !(picToolFor(sp, ui.picTool.mode) && sp.item.pic)) ui.picTool = null;
     ed.hidden = !sp;
     if (!sp) { ed._for = null; return; }
     var silent = !!(lib[sp.key] && lib[sp.key].meta && lib[sp.key].meta.silent);
@@ -10342,8 +10519,24 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var size = pictureSize(sp), shapeBtn = field('[data-pact="shape"]');
     shapeBtn.disabled = !size;
     field('[data-pnote="shape"]').textContent = size ? '' : 'Waiting for the picture’s size…';
+    var cropping = picToolFor(sp, 'crop'), cropBtn = field('[data-pact="crop"]');
+    cropBtn.textContent = cropping ? 'Done cropping' : 'Crop…';
+    cropBtn.classList.toggle('primary', cropping);
+    field('[data-pact="cropReset"]').disabled = !pic.crop;
+    field('[data-pnote="crop"]').textContent = pic.crop ? 'Showing ' + Math.round(pic.crop.w * 100) + '% × ' + Math.round(pic.crop.h * 100) + '% of the picture' : 'Showing the whole picture';
+    var picking = picToolFor(sp, 'pick'), pickBtn = field('[data-pact="pick"]'), swatch = field('[data-pnote="keyColor"]'), amount = field('[data-pf="keyAmount"]');
+    pickBtn.textContent = picking ? 'Click the color in the preview…' : 'Pick the background color';
+    pickBtn.classList.toggle('primary', picking);
+    swatch.hidden = !pic.key;
+    swatch.style.background = pic.key ? pic.key.color : '';
+    swatch.title = pic.key ? 'Removed color ' + pic.key.color : '';
+    amount.disabled = !pic.key;
+    if (pic.key) setVal('[data-pf="keyAmount"]', pic.key.amount);
+    field('[data-pact="keyOff"]').disabled = !pic.key;
+    field('[data-pnote="key"]').textContent = pic.key ? 'Whatever is underneath shows through.' : 'Click the button, then click the wall or green screen behind the person.';
     setVal('[data-pf="fit"]', pic.fit);
-    setTick('[data-pf="round"]', pic.round); setTick('[data-pf="shadow"]', pic.shadow);
+    setTick('[data-pf="round"]', pic.round); setTick('[data-pf="shadow"]', pic.shadow, !!pic.key);
+    field('[data-pf="shadow"]').parentNode.title = pic.key ? 'Off while the background color is removed' : '';
     setVal('[data-pf="fadeIn"]', pic.fadeIn); setVal('[data-pf="fadeOut"]', pic.fadeOut);
     if (sp.kind === 'image') {
       setVal('[data-pf="start"]', fmt1(it.start)); setVal('[data-pf="dur"]', it.dur); setVal('[data-pf="motion"]', it.motion);
@@ -10367,6 +10560,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (box) { if (isFinite(v)) pic.frame = TextLayout.setFrameField(pic.frame, box, v / 100); }
     else if (f === 'fit') pic.fit = el.value === 'contain' ? 'contain' : 'cover';
     else if (f === 'round' || f === 'shadow') pic[f] = el.checked;
+    else if (f === 'keyAmount') { if (pic.key && isFinite(v)) pic.key.amount = clamp(Math.round(v), 0, 100); }
     else if (f === 'fadeIn' || f === 'fadeOut') { if (isFinite(v)) pic[f] = clamp(v, 0, 10); }
     else if (f === 'dur') { if (isFinite(v)) it.dur = clamp(Math.round(v * 10) / 10, 0.5, 3600); }
     else if (f === 'start') { if (final) { var st = parseTime(el.value); if (st != null) it.start = Math.max(0, Math.round(st * 10) / 10); } }
@@ -11091,6 +11285,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       var t = ev.target.tagName;
       if (ev.target.matches && ev.target.matches('[data-act="check"], [data-act="gcheck"], #textAll') && pickKey(ev)) return;
+      if (ev.key === 'Escape' && ui.picTool) { endPicTool(); return; }
       if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
       if (ev.code === 'Space' && t !== 'BUTTON') { ev.preventDefault(); $('playBtn').click(); return; }
       if (ev.key === 'Enter' && mix.queue.length && Player.tag && isMixTag(Player.tag)) { ev.preventDefault(); placeNext(); return; }
@@ -11920,11 +12115,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       else if (act === 'remove') removePicture(sp.id);
       else if (act === 'shape') {
         var size = pictureSize(sp);
-        if (size && sp.item.pic) { sp.item.pic.frame = PictureBox.shapeFrame(sp.item.pic.frame, size.w, size.h); changed(); }
+        if (size && sp.item.pic) { var shown = PictureBox.croppedSize(size.w, size.h, sp.item.pic.crop || null); sp.item.pic.frame = PictureBox.shapeFrame(sp.item.pic.frame, shown.w, shown.h); changed(); }
       }
+      else if ((act === 'crop' || act === 'pick') && sp.item.pic) {
+        if (picToolFor(sp, act)) { endPicTool(); return; }
+        if (Player.tag) Player.stop();
+        ui.picTool = { mode: act, lane: sp.lane, id: sp.id };
+        renderPicEditor(); drawScreen();
+      }
+      else if (act === 'cropReset' && sp.item.pic) { delete sp.item.pic.crop; changed(); }
+      else if (act === 'keyOff' && sp.item.pic) { delete sp.item.pic.key; if (picToolFor(sp, 'pick')) ui.picTool = null; changed(); }
     });
     picEdEl.addEventListener('input', function (ev) {
-      var sp = selPicture(); if (!sp || ev.target.type !== 'number') return;
+      var sp = selPicture(); if (!sp || (ev.target.type !== 'number' && ev.target.type !== 'range')) return;
       applyPicField(sp, ev.target, false);
       persistMix(); live();
     });
@@ -11957,7 +12160,45 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       [0.12, 0.3, 0.5, 0.72].forEach(function (g) { if (Math.abs(cy - g) < 0.012) { nf.y = g - nf.h / 2; ui.guides.h = g; } });
       nf.x = Math.round(clamp(nf.x, 0, 1 - nf.w) * 1e4) / 1e4; nf.y = Math.round(clamp(nf.y, 0, 1 - nf.h) * 1e4) / 1e4;
     }
+    function startCropDrag(ev, p) {
+      var tool = ui.picTool, cropHit = (ui.screenBoxes || []).filter(function (x) { return x.kind === 'crop'; })[0];
+      var handle = cropHit ? TextLayout.handleAt(cropHit, p.x, p.y, 8) : null, cropPic = picOf(tool.lane, tool.id);
+      if (!handle || !cropPic) return;
+      if (Player.tag) Player.stop();
+      ui.holdT = ui.screenT;
+      sd = { p: p, kind: 'crop', lane: tool.lane, id: tool.id, handle: handle, c0: cropPic.crop ? clone(cropPic.crop) : null };
+      try { scr.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+    }
+    function pickColorAt(p) {
+      var tool = ui.picTool, pickLayer = pictureLayers().filter(function (l) { return l.lane === tool.lane && l.id === tool.id; })[0];
+      var outside = 'Click inside the picture to pick its background color.';
+      if (!pickLayer) { flashSel(outside); return; }
+      var pf = pickLayer.pic.frame;
+      if (p.x < pf.x * 960 || p.x > (pf.x + pf.w) * 960 || p.y < pf.y * 540 || p.y > (pf.y + pf.h) * 540) { flashSel(outside); return; }
+      var pickT = clamp(ui.screenT, pickLayer.start, pickLayer.start + Math.max(0, pickLayer.dur - 0.05));
+      var pickSrc = previewSource(pickLayer, pickT, false);
+      if (!pickSrc) { flashSel('The picture is still loading. Try again in a moment.'); return; }
+      var placed = layerDrawRect(pickLayer, pickSrc, 960, 540), pr = placed.r, prect = placed.rect;
+      if (p.x < prect.x || p.x > prect.x + prect.w || p.y < prect.y || p.y > prect.y + prect.h) { flashSel(outside); return; }
+      var srcX = pr.sx + (p.x - prect.x) / prect.w * pr.sw, srcY = pr.sy + (p.y - prect.y) / prect.h * pr.sh;
+      var patchW = Math.min(9, pickSrc.w), patchH = Math.min(9, pickSrc.h);
+      var patchX = clamp(Math.round(srcX) - 4, 0, pickSrc.w - patchW), patchY = clamp(Math.round(srcY) - 4, 0, pickSrc.h - patchH);
+      var patch = makeCanvas(patchW, patchH), patchCtx = patch.getContext('2d', { willReadFrequently: true });
+      patchCtx.drawImage(pickSrc.img, patchX, patchY, patchW, patchH, 0, 0, patchW, patchH);
+      var color = ChromaKey.sample(patchCtx.getImageData(0, 0, patchW, patchH).data, patchW, patchH, srcX - patchX, srcY - patchY, 4);
+      var pickPic = picOf(tool.lane, tool.id);
+      if (!color || !pickPic) { flashSel('That color couldn’t be read. Try clicking again.'); return; }
+      pickPic.key = { color: color, amount: pickPic.key ? pickPic.key.amount : 40 };
+      ui.picTool = null;
+      changed();
+    }
     scr.addEventListener('pointerdown', function (ev) {
+      if (ui.picTool) {
+        ev.preventDefault();
+        var toolPoint = scrPoint(ev);
+        if (ui.picTool.mode === 'crop') startCropDrag(ev, toolPoint); else pickColorAt(toolPoint);
+        return;
+      }
       var p = scrPoint(ev), fr = frameAt(p), b = fr ? null : boxAt(p);
       if (!fr && !b) return;
       ev.preventDefault();
@@ -11993,7 +12234,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     scr.addEventListener('pointermove', function (ev) {
       var p = scrPoint(ev);
+      if (!sd && ui.picTool) {
+        var cropHover = ui.picTool.mode === 'crop' ? (ui.screenBoxes || []).filter(function (x) { return x.kind === 'crop'; })[0] : null;
+        var hoverHandle = cropHover ? TextLayout.handleAt(cropHover, p.x, p.y, 8) : null;
+        scr.style.cursor = ui.picTool.mode === 'pick' ? 'crosshair' : hoverHandle ? CURSORS[hoverHandle] : '';
+        return;
+      }
       if (!sd) { var fh = frameAt(p); scr.style.cursor = fh ? CURSORS[fh.handle] : boxAt(p) ? 'move' : ''; return; }
+      if (sd.kind === 'crop') {
+        var cropPic = picOf(sd.lane, sd.id), view = ui.cropView;
+        if (!cropPic || !view) return;
+        var newCrop = PictureBox.cleanCrop(PictureBox.resizeCrop(sd.c0, sd.handle, (p.x - sd.p.x) / view.w, (p.y - sd.p.y) / view.h));
+        if (newCrop) cropPic.crop = newCrop; else delete cropPic.crop;
+        drawScreen(ui.holdT);
+        return;
+      }
       var dx = (p.x - sd.p.x) / 960, dy = (p.y - sd.p.y) / 540;
       if (sd.kind === 'roll') {
         var rf = TextLayout.resizeFrame(sd.f0, sd.handle, dx, dy), rollSong = findItem('items', sd.songId);

@@ -269,3 +269,132 @@ describe('placeAt', () => {
     assert.equal(PictureBox.placeAt([], -4, 1.5), 0);
   });
 });
+
+const CROP = { x: 0.1, y: 0.2, w: 0.5, h: 0.6 };
+const KEY = { color: '#00b140', amount: 55 };
+
+describe('clean keeps crop and key', () => {
+  test('a valid crop survives for both pictures and videos', () => {
+    assert.deepEqual(PictureBox.clean({ crop: CROP }, 'image').crop, CROP);
+    assert.deepEqual(PictureBox.clean({ crop: CROP }, 'video').crop, CROP);
+  });
+
+  test('a valid key survives with its color upper-cased', () => {
+    assert.deepEqual(PictureBox.clean({ key: KEY }, 'video').key, { color: '#00B140', amount: 55 });
+  });
+
+  test('cleanItem keeps both', () => {
+    const item = PictureBox.cleanItem({ id: 'p1', key: 'a.jpg', pic: { crop: CROP, key: KEY } });
+    assert.deepEqual(item.pic.crop, CROP);
+    assert.deepEqual(item.pic.key, { color: '#00B140', amount: 55 });
+  });
+});
+
+describe('clean leaves out unused fields', () => {
+  test('defaults and a plain pic have no crop or key', () => {
+    ['image', 'video'].forEach((kind) => {
+      const out = PictureBox.clean(PictureBox.defaults(kind), kind);
+      assert.equal('crop' in out, false);
+      assert.equal('key' in out, false);
+    });
+    assert.equal('crop' in PictureBox.defaults('video'), false);
+  });
+
+  test('a whole-frame crop is dropped', () => {
+    assert.equal('crop' in PictureBox.clean({ crop: { x: 0, y: 0, w: 1, h: 1 } }, 'image'), false);
+    assert.equal(PictureBox.cleanCrop({ x: 0.001, y: 0, w: 0.999, h: 1 }), null);
+  });
+});
+
+describe('cleanCrop refuses bad input', () => {
+  test('a missing height gives null', () => {
+    assert.equal(PictureBox.cleanCrop({ x: 0.1, y: 0.1, w: 0.5 }), null);
+  });
+
+  test('x that is not a number gives null', () => {
+    assert.equal(PictureBox.cleanCrop({ x: NaN, y: 0.1, w: 0.5, h: 0.5 }), null);
+  });
+
+  test('a width given as text gives null', () => {
+    assert.equal(PictureBox.cleanCrop({ x: 0.1, y: 0.1, w: '0.5', h: 0.5 }), null);
+  });
+
+  test('no crop at all gives null', () => {
+    assert.equal(PictureBox.cleanCrop(null), null);
+    assert.equal(PictureBox.cleanCrop('crop'), null);
+  });
+});
+
+describe('cleanCrop clamps', () => {
+  test('a crop thinner than the smallest allowed is widened', () => {
+    assert.equal(PictureBox.cleanCrop({ x: 0.2, y: 0.2, w: 0.01, h: 0.5 }).w, PictureBox.MIN_CROP);
+  });
+
+  test('a crop running off the right edge is pulled back inside', () => {
+    assert.deepEqual(PictureBox.cleanCrop({ x: 0.98, y: 0.1, w: 0.5, h: 0.5 }), { x: 0.5, y: 0.1, w: 0.5, h: 0.5 });
+  });
+});
+
+describe('cleanKey', () => {
+  test('a color that is not a #RRGGBB hex gives null', () => {
+    assert.equal(PictureBox.cleanKey({ color: 'green', amount: 40 }), null);
+    assert.equal(PictureBox.cleanKey({ color: '#12345', amount: 40 }), null);
+    assert.equal(PictureBox.cleanKey(null), null);
+  });
+
+  test('a missing amount becomes 40', () => {
+    assert.deepEqual(PictureBox.cleanKey({ color: '#FFFFFF' }), { color: '#FFFFFF', amount: 40 });
+  });
+
+  test('the amount is kept between 0 and 100', () => {
+    assert.equal(PictureBox.cleanKey({ color: '#FFFFFF', amount: 250 }).amount, 100);
+    assert.equal(PictureBox.cleanKey({ color: '#FFFFFF', amount: -5 }).amount, 0);
+  });
+});
+
+describe('fitRect with crop', () => {
+  const box = { x: 10, y: 20, w: 320, h: 180 };
+
+  test('no crop gives the same result as before', () => {
+    assert.deepEqual(PictureBox.fitRect(box, 1920, 1080, 'cover', null), PictureBox.fitRect(box, 1920, 1080, 'cover'));
+    assert.deepEqual(PictureBox.fitRect(box, 800, 1200, 'contain', null), PictureBox.fitRect(box, 800, 1200, 'contain'));
+  });
+
+  test('cover with a centered half crop uses the middle of the source', () => {
+    const r = PictureBox.fitRect(box, 1920, 1080, 'cover', { x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+    near(r.sx, 480); near(r.sy, 270); near(r.sw, 960); near(r.sh, 540);
+  });
+
+  test('contain with a tall crop letterboxes using the cropped shape', () => {
+    const r = PictureBox.fitRect(box, 1920, 1080, 'contain', { x: 0.4, y: 0, w: 0.2, h: 1 });
+    near(r.sx, 768); near(r.sy, 0); near(r.sw, 384); near(r.sh, 1080);
+    near(r.dh, 180); near(r.dw, 64); near(r.dx, 10 + (320 - 64) / 2); near(r.dy, 20);
+  });
+});
+
+describe('croppedSize', () => {
+  test('gives the size of the cropped part', () => {
+    assert.deepEqual(PictureBox.croppedSize(1920, 1080, { x: 0, y: 0, w: 0.5, h: 1 }), { w: 960, h: 1080 });
+    assert.deepEqual(PictureBox.croppedSize(1920, 1080, null), { w: 1920, h: 1080 });
+  });
+});
+
+describe('resizeCrop', () => {
+  test('move stays inside the picture', () => {
+    assert.deepEqual(PictureBox.resizeCrop(CROP, 'move', 0.9, -0.9), { x: 0.5, y: 0, w: 0.5, h: 0.6 });
+  });
+
+  test('dragging the lower-right corner cannot shrink below the smallest crop', () => {
+    const c = PictureBox.resizeCrop(CROP, 'se', -1, -1);
+    near(c.w, PictureBox.MIN_CROP, 1e-4); near(c.h, PictureBox.MIN_CROP, 1e-4);
+  });
+
+  test('starting from no crop acts like the whole picture', () => {
+    assert.deepEqual(PictureBox.resizeCrop(null, 'e', -0.25, 0), { x: 0, y: 0, w: 0.75, h: 1 });
+  });
+
+  test('dragging the left edge past the right edge stops just short of it', () => {
+    const c = PictureBox.resizeCrop(CROP, 'w', 2, 0);
+    near(c.x, 0.6 - PictureBox.MIN_CROP, 1e-4); near(c.x + c.w, 0.6, 1e-4);
+  });
+});
