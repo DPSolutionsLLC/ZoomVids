@@ -140,6 +140,7 @@ You can have both open in two tabs at once. Each keeps its own work. Two tabs on
 - **`Glo-ri-a`** splits a word into syllables. On screen it still reads "Gloria". The syllables will be used later to time and highlight the words.
 - **`well--known`** (two hyphens) keeps a real hyphen: "well-known". A hyphen at the start or end of a word, or on its own, stays as you typed it.
 - **`High:`** at the start of a line puts that line's words in the part "High". A part name is one word of letters and numbers, up to 15 characters. A tag on a line by itself, such as `Low:`, covers the lines under it until the slide ends. In the middle of a line, `Low:` switches part only when the song already has a part called Low, and **`-:`** means "no part" from there on.
+- **`[Chorus]`** on a line by itself names the verse under it (and starts a new verse). Verses without a name are numbered Verse 1, Verse 2…
 
 The slides land back to back as one group named after the song: from the playhead if it's inside the song, otherwise from the song's start. Each starts as long as it takes to read, in the song's look for new slides (see Song settings). Drag each slide to where it's sung, or stretch it to fit.
 
@@ -190,6 +191,20 @@ Dragging a slide or its group moves its words with it. **Fill**, **Reset** and s
 - **Countdown after a break** shows **Dots** (one goes out each second) or a **Bar** that shrinks to nothing, or **Off**. It shows after a break of at least **5 s** to start with, and counts down for **3 s**. It also shows before the first words if the song starts with at least that much music.
 
 Slides without word timing look as they did before.
+
+**Rolling lines.** At the top of Song settings, **Show the lyrics as** picks **Slides** or **Rolling lines** for each song. In Rolling lines, every line of the lyrics is its own block on the timeline, in a group named "<song> lines", and clicking one jumps to its verse in Lyrics. On screen, one box shows the current line with a few lines above and below it, all at one fixed size.
+
+- **Look for the lines** (in Song settings) sets the font, size, color and Behind the text for every line. The size is exact; lines never shrink. **Line up** is Centered or Left.
+- **Lines above the current one** (0–4) and **Lines below** (0–6) set how many lines show. A line where two parts sing at once stacks on its own rows, as on slides, and still counts as one line.
+- **Move on**: **Current line stays put** keeps the current line in one place and moves the others past it. **Page by page** keeps a whole screen still while the highlight moves down, then changes to the next screen.
+- **Motion**: **Smooth scroll** slides to the next place over about 0.4 s. **Instant jump** changes at once.
+- **Verse starts**: **Show a label** puts "Verse 2" (or the name typed as `[Chorus]`) above the verse's first line. **Start a fresh screen** never mixes two verses on screen. **Nothing** runs the lines straight on.
+- The highlight, part colors and countdown settings under While it's sung work the same for slides and lines.
+- Word timing is shared: a song timed as slides is already timed as lines, and the other way round. Each view keeps its own blocks on the timeline, so switching back puts every slide (or line) where you left it. A hidden duplicate slide keeps its own timing. A switch is one Undo step.
+- Lyrics edits (Update, Set part, Join) rebuild the lines and keep their timing.
+- To move or resize the box, select a line on the timeline and drag the box in the preview, or type **Left / Top / Width / Height** in Song settings.
+- The video shows whichever view is on when you export. To get both looks, export, switch, and export again.
+- **Step aside for song and talk titles** doesn't apply to rolling lines.
 
 **Look for new lyric slides.** Also in Song settings, each song has a font, Bold and Italic, size, text color and **Behind the text** for its new slides. A song starts with Montserrat Bold, 72 px, white, with a solid black outline. Slides made with Make slides, and slides split off by a blank line, start with this look. Changing it doesn't touch slides you've already made. **Use on every slide in this song** gives all of the song's slides this look, including ones you changed by hand. It asks first, and one Undo puts them all back.
 

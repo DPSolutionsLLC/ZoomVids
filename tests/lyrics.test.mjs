@@ -5,7 +5,8 @@ import { loadModule } from './extract-module.mjs';
 globalThis.TextLook = loadModule('TextLook');
 const L = loadModule('Lyrics');
 const KARAOKE_FULL = { font: 'montserrat', bold: true, italic: false, size: 72, color: '#FFFFFF', look: 'solid', glowColor: '#000000', glowOpacity: 60, glowWidth: 12, glowSoft: 20, solidColor: '#000000', solidWidth: 6, boxColor: '#0A100D', boxOpacity: 72 };
-const songDefaults = () => Object.assign({}, L.SHOW_DEFAULTS, { slideLook: KARAOKE_FULL });
+const ROLL_FULL = { frame: { x: 0.06, y: 0.52, w: 0.88, h: 0.42 }, align: 'center', above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'mark', look: Object.assign({}, KARAOKE_FULL, { size: 64 }) };
+const songDefaults = () => Object.assign({}, L.SHOW_DEFAULTS, { slideLook: KARAOKE_FULL, view: 'slides', roll: ROLL_FULL });
 
 function counter(prefix = 'w') {
   let n = 0;
@@ -386,7 +387,7 @@ describe('cleanSong', () => {
     assert.equal(L.cleanSong({ countLen: 50 }).countLen, 10);
   });
   test('valid display values are kept', () => {
-    const raw = { showParts: false, parts: [], highlight: 'word', keepLit: true, singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7, slideLook: KARAOKE_FULL };
+    const raw = { showParts: false, parts: [], highlight: 'word', keepLit: true, singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7, slideLook: KARAOKE_FULL, view: 'slides', roll: ROLL_FULL };
     assert.deepEqual(L.cleanSong(raw), raw);
   });
   test('an old sweep highlight becomes syllable by syllable, and whole word stays', () => {
@@ -789,5 +790,196 @@ describe('buildRecord', () => {
   test('the record it builds passes cleanRecord unchanged', () => {
     const out = L.buildRecord([slide('a', 0, 0, 'One two'), slide('b', 5, 1, 'three')], counter('v'));
     assert.deepEqual(L.cleanRecord(out.verses).verses, out.verses);
+  });
+});
+
+describe('verse labels', () => {
+  test('[Chorus] before a chunk names it', () => {
+    const out = parse('One two\n\n[Chorus]\nSing it loud');
+    assert.equal(out.slides.length, 2);
+    assert.equal('label' in out.slides[0], false);
+    assert.equal(out.slides[1].label, 'Chorus');
+    assert.deepEqual(shape(out.slides[1]).map((ln) => ln.map((w) => w.syls.join(''))), [['Sing', 'it', 'loud']]);
+  });
+  test('a label row ends the previous chunk even without a blank line', () => {
+    const out = parse('One two\n[Bridge]\nthree four');
+    assert.equal(out.slides.length, 2);
+    assert.equal(out.slides[1].label, 'Bridge');
+  });
+  test('spaces inside the brackets are trimmed', () => {
+    assert.equal(parse('[  Chorus  ]\nSing').slides[0].label, 'Chorus');
+  });
+  test('a trailing label with no lines after it is dropped', () => {
+    const out = parse('One two\n\n[Outro]');
+    assert.equal(out.slides.length, 1);
+    assert.equal('label' in out.slides[0], false);
+  });
+  test('[] and [   ] stay lyric rows', () => {
+    const out = parse('[]\n[   ]');
+    assert.equal(out.slides.length, 1);
+    assert.equal('label' in out.slides[0], false);
+    assert.equal(out.slides[0].lines.length, 2);
+  });
+  test('a 41-character label is a lyric row, and 40 characters is a label', () => {
+    const out = parse('[' + 'x'.repeat(41) + ']\nSing');
+    assert.equal(out.slides.length, 1);
+    assert.equal('label' in out.slides[0], false);
+    assert.equal(out.slides[0].lines.length, 2);
+    assert.equal(parse('[' + 'x'.repeat(40) + ']\nSing').slides[0].label, 'x'.repeat(40));
+  });
+});
+
+describe('recordText and verseRanges with labels', () => {
+  const labelled = () => {
+    const { verses } = recordFrom('One two\n\nSing it loud\n\nthree four');
+    verses[1].label = 'Chorus';
+    return verses;
+  };
+  test('parsing recordText gives the same labels back', () => {
+    const again = L.parse(L.recordText(labelled()), counter('y'));
+    assert.deepEqual(again.slides.map((s) => s.label || null), [null, 'Chorus', null]);
+  });
+  test('verseMarkup puts the label row first', () => {
+    const verses = labelled();
+    assert.equal(L.verseMarkup(verses[1]), '[Chorus]\n' + L.markup(verses[1]));
+    assert.equal(L.verseMarkup(verses[0]), L.markup(verses[0]));
+  });
+  test('a labelled verse’s range starts at the [', () => {
+    const verses = labelled(), all = L.recordText(verses), ranges = L.verseRanges(verses);
+    assert.equal(all.charAt(ranges[1].from), '[');
+    ranges.forEach((r, i) => assert.equal(all.slice(r.from, r.to), L.verseMarkup(verses[i])));
+    assert.equal(ranges[2].to, all.length);
+  });
+});
+
+describe('applyText with labels', () => {
+  const base = 'One two\n\nSing it loud\n\nthree four';
+  test('adding only a label keeps the verse id and its word ids', () => {
+    const { verses } = recordFrom(base);
+    const res = L.applyText(verses, 'One two\n\n[Chorus]\nSing it loud\n\nthree four', counter('n'));
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    assert.equal(res.verses[1].label, 'Chorus');
+    assert.deepEqual(ids(res.verses[1]), ids(verses[1]));
+    assert.equal('label' in res.verses[0], false);
+    assert.deepEqual(res.added, []);
+  });
+  test('renaming a label keeps the verse id', () => {
+    const { verses } = recordFrom(base);
+    verses[1].label = 'Chorus';
+    const res = L.applyText(verses, L.recordText(verses).replace('[Chorus]', '[Refrain]'), counter('n'));
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    assert.equal(res.verses[1].label, 'Refrain');
+  });
+  test('adding a label above verse 2 with no blank line keeps both verse ids', () => {
+    const { verses } = recordFrom('One two\n\nSing it loud');
+    const res = L.applyText(verses, 'One two\n[Chorus]\nSing it loud', counter('n'));
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2']);
+    assert.equal(res.verses[1].label, 'Chorus');
+  });
+  test('removing a label drops it from the verse', () => {
+    const { verses } = recordFrom(base);
+    verses[1].label = 'Chorus';
+    const res = L.applyText(verses, base, counter('n'));
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    assert.equal('label' in res.verses[1], false);
+  });
+});
+
+describe('cleanRecord labels', () => {
+  const one = (label) => L.cleanRecord([Object.assign(timedVerse('v1', [['a', 'a1', 'x']]), { label })]).verses[0];
+  test('keeps a good label and trims spaces', () => {
+    assert.equal(one('Chorus').label, 'Chorus');
+    assert.equal(one('  Chorus 2 ').label, 'Chorus 2');
+  });
+  test('drops a label with a bracket, a line break, no text, too many characters or the wrong type', () => {
+    ['Cho]rus', '[Chorus', 'Cho\nrus', '   ', '', 'x'.repeat(41), 7, null].forEach((bad) => assert.equal('label' in one(bad), false, String(bad)));
+  });
+  test('labels survive cleanSong', () => {
+    const verses = [Object.assign(timedVerse('v1', [['a', 'a1', 'x']]), { label: 'Chorus' })];
+    assert.equal(L.cleanSong({ verses }).verses[0].label, 'Chorus');
+  });
+});
+
+describe('cleanSong: view, roll and parked', () => {
+  const lyricText = (id, verse) => ({ id, text: 'x', start: 1, lyric: { song: 's1', verse, lines: [{ words: [{ id: 'w' + id, syls: [{ id: 's' + id, text: 'x' }] }] }] } });
+  test('defaults to slides view and a full roll at size 64', () => {
+    const out = L.cleanSong({});
+    assert.equal(out.view, 'slides');
+    assert.deepEqual(out.roll, ROLL_FULL);
+    assert.equal(out.roll.look.size, 64);
+    assert.deepEqual(L.ROLL_DEFAULTS, { frame: { x: 0.06, y: 0.52, w: 0.88, h: 0.42 }, align: 'center', above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'mark' });
+  });
+  test('view roll is kept; anything else is slides', () => {
+    assert.equal(L.cleanSong({ view: 'roll' }).view, 'roll');
+    assert.equal(L.cleanSong({ view: 'lines' }).view, 'slides');
+  });
+  test('line counts are clamped, rounded and fall back when not numbers', () => {
+    assert.equal(L.cleanSong({ roll: { above: 9 } }).roll.above, 4);
+    assert.equal(L.cleanSong({ roll: { below: -1 } }).roll.below, 0);
+    assert.equal(L.cleanSong({ roll: { above: 'x' } }).roll.above, 1);
+    assert.equal(L.cleanSong({ roll: { below: 2.6 } }).roll.below, 3);
+    assert.equal(L.cleanSong({ roll: { below: 99 } }).roll.below, 6);
+  });
+  test('a bad frame falls back to the default, and a frame past the edge is pulled back inside', () => {
+    assert.deepEqual(L.cleanRoll({ frame: { x: 0.1, y: 'top', w: 0.5, h: 0.5 } }).frame, L.ROLL_DEFAULTS.frame);
+    assert.deepEqual(L.cleanRoll({ frame: null }).frame, L.ROLL_DEFAULTS.frame);
+    const f = L.cleanRoll({ frame: { x: 0.9, y: 0.2, w: 0.3, h: 0.5 } }).frame;
+    assert.equal(f.w, 0.3);
+    assert.equal(f.x, 0.7);
+    assert.deepEqual(L.cleanRoll({ frame: { x: -1, y: 0.2, w: 2, h: 0.01 } }).frame, { x: 0, y: 0.2, w: 1, h: 0.05 });
+  });
+  test('unknown choices fall back to the defaults, one at a time', () => {
+    const good = { align: 'left', move: 'page', motion: 'jump', verses: 'screen' };
+    const defaults = { align: 'center', move: 'stay', motion: 'smooth', verses: 'mark' };
+    Object.keys(good).forEach((key) => {
+      const out = L.cleanRoll(Object.assign({}, good, { [key]: 'nope' }));
+      assert.equal(out[key], defaults[key], key);
+      Object.keys(good).filter((k) => k !== key).forEach((k) => assert.equal(out[k], good[k], key + ' left ' + k));
+    });
+  });
+  test('a roll look keeps its own size, and a full roll round-trips unchanged', () => {
+    assert.equal(L.cleanRoll({ look: { size: 90 } }).look.size, 90);
+    const once = L.cleanSong({ view: 'roll', roll: { above: 2, below: 3, move: 'page', motion: 'jump', verses: 'none', align: 'left', frame: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 }, look: { size: 50, color: '#123456' } } });
+    assert.deepEqual(L.cleanSong(once), once);
+  });
+  test('parked blocks of the other view are kept', () => {
+    const out = L.cleanSong({ view: 'roll', parked: { view: 'slides', texts: [lyricText('t1', 'v1')], groups: [{ id: 'g1', name: 'Song', fill: 'packed' }] } });
+    assert.equal(out.parked.view, 'slides');
+    assert.deepEqual(out.parked.texts.map((tx) => tx.id), ['t1']);
+    assert.equal(out.parked.texts[0].start, 1);
+    assert.deepEqual(out.parked.groups, [{ id: 'g1', name: 'Song', fill: 'packed' }]);
+  });
+  test('parked with the same view as the song is dropped', () => {
+    assert.equal('parked' in L.cleanSong({ view: 'roll', parked: { view: 'roll', texts: [lyricText('t1', 'v1')] } }), false);
+    assert.equal('parked' in L.cleanSong({ parked: { view: 'slides', texts: [lyricText('t1', 'v1')] } }), false);
+  });
+  test('a parked text with an invalid lyric is dropped, and parked with no texts left is dropped', () => {
+    const bad = Object.assign(lyricText('t2', 'v1'), { lyric: { song: 's1', lines: [] } });
+    const noId = Object.assign(lyricText('t3', 'v1'), { id: '' });
+    const out = L.cleanSong({ view: 'roll', parked: { view: 'slides', texts: [lyricText('t1', 'v1'), bad, noId], groups: [{ id: 'g' }] } });
+    assert.deepEqual(out.parked.texts.map((tx) => tx.id), ['t1']);
+    assert.deepEqual(out.parked.groups, []);
+    assert.equal('parked' in L.cleanSong({ view: 'roll', parked: { view: 'slides', texts: [bad] } }), false);
+  });
+});
+
+describe('matchLines', () => {
+  const line = (...wordIds) => ({ words: wordIds.map((id) => ({ id, syls: [{ id: 's' + id, text: id }] })) });
+  const block = (...lines) => ({ lines });
+  test('one block per line maps in order', () => {
+    const rec = [line('a', 'b'), line('c'), line('d', 'e')];
+    assert.deepEqual(L.matchLines(rec, [block(line('a', 'b')), block(line('c')), block(line('d', 'e'))]).lineOf, [0, 1, 2]);
+  });
+  test('two blocks sharing one line both map to it (a duplicated take)', () => {
+    const rec = [line('a', 'b'), line('c')];
+    assert.deepEqual(L.matchLines(rec, [block(line('a', 'b')), block(line('a', 'b')), block(line('c'))]).lineOf, [0, 0, 1]);
+  });
+  test('a block with no shared word ids maps to -1', () => {
+    assert.deepEqual(L.matchLines([line('a')], [block(line('z'))]).lineOf, [-1]);
+  });
+  test('the line with the most shared words wins, and a tie goes to the lower index', () => {
+    const rec = [line('a'), line('b', 'c'), line('d')];
+    assert.deepEqual(L.matchLines(rec, [block(line('a', 'b', 'c'))]).lineOf, [1]);
+    assert.deepEqual(L.matchLines(rec, [block(line('d', 'a'))]).lineOf, [0]);
   });
 });

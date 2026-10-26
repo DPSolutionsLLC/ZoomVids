@@ -238,3 +238,27 @@ describe('copyTimes', () => {
     assert.deepEqual(W.list(out).map((e) => e.t), [0.5, null, 1.5]);
   });
 });
+
+describe('placeAll', () => {
+  const untimed = (read) => ({ first: null, last: null, read, fadeIn: 0.3 });
+  const timedAt = (first, last, read = 2) => ({ first, last, read, fadeIn: 0.3 });
+  test('untimed entries go back to back from the start point', () => {
+    assert.deepEqual(W.placeAll([untimed(2), untimed(3), untimed(1.5)], 10), [{ start: 10, dur: 2 }, { start: 12, dur: 3 }, { start: 15, dur: 1.5 }]);
+  });
+  test('timed entries get a 1 s lead and 0.5 s tail, like windows', () => {
+    const out = W.placeAll([timedAt(20, 22), timedAt(30, 33)], 0);
+    assert.deepEqual(out, [{ start: 19, dur: 3.5 }, { start: 29, dur: 4.5 }]);
+    const wins = W.windows([timedAt(20, 22), timedAt(30, 33)]);
+    out.forEach((p, i) => { assert.equal(p.start, wins[i].start); assert.equal(Math.round((p.start + p.dur) * 100) / 100, wins[i].end); });
+  });
+  test('an untimed entry after a timed one starts at that one’s end', () => {
+    const out = W.placeAll([timedAt(20, 22), untimed(3)], 0);
+    assert.deepEqual(out[1], { start: 22.5, dur: 3 });
+  });
+  test('starts are never negative, and a length is never under the minimum', () => {
+    const out = W.placeAll([timedAt(0.2, 1), untimed(0)], -5);
+    assert.equal(out[0].start, 0);
+    assert.ok(out[1].dur >= W.MIN_LEN);
+    assert.equal(W.placeAll([untimed(2)], -5)[0].start, 0);
+  });
+});
