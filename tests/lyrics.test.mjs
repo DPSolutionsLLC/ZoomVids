@@ -1026,3 +1026,47 @@ describe('matchLines', () => {
     assert.deepEqual(L.matchLines(rec, [block(line('d', 'a'))]).lineOf, [0]);
   });
 });
+
+describe('cleanSong part labels', () => {
+  const partWith = (label) => L.cleanSong({ parts: [{ name: 'High', color: '#123456', label }] }).parts[0];
+  test('a part with no label gets no label key, and an empty song keeps its old shape', () => {
+    const part = L.cleanSong({ parts: [{ name: 'High', color: '#123456' }] }).parts[0];
+    assert.deepEqual(part, { name: 'High', color: '#123456', hi: '#FFD54A' });
+    assert.equal('label' in part, false);
+    assert.deepEqual(L.cleanSong({}), Object.assign({ showParts: false, parts: [] }, songDefaults()));
+  });
+  test('valid overrides are kept', () => {
+    const label = { size: 60, font: 'lora', italic: true, color: '#AABBCC', look: 'solid', solidColor: '#112233', solidWidth: 4 };
+    assert.deepEqual(partWith(label).label, label);
+  });
+  test('size clamps to 30-150 in steps of 5, and 100 alone stores nothing', () => {
+    assert.equal(partWith({ size: 10 }).label.size, 30);
+    assert.equal(partWith({ size: 400 }).label.size, 150);
+    assert.equal(partWith({ size: 62 }).label.size, 60);
+    assert.equal('label' in partWith({ size: 100 }), false);
+    assert.deepEqual(L.LABEL_SIZE, { min: 30, max: 150, step: 5 });
+  });
+  test('a box is not allowed, and only the fields of the chosen look are kept', () => {
+    assert.equal('label' in partWith({ look: 'box', boxColor: '#000000', boxOpacity: 50 }), false);
+    assert.deepEqual(partWith({ look: 'solid', solidColor: '#112233', solidWidth: 99, glowColor: '#FFFFFF', glowOpacity: 50 }).label,
+      { look: 'solid', solidColor: '#112233', solidWidth: 20 });
+    assert.deepEqual(partWith({ look: 'outline', glowColor: '#FFFFFF' }).label,
+      { look: 'outline', glowColor: '#FFFFFF', glowOpacity: 60, glowWidth: 12, glowSoft: 20 });
+    assert.deepEqual(partWith({ look: 'shadow' }).label, { look: 'shadow' });
+    assert.deepEqual(partWith({ bold: true, solidColor: '#112233', glowWidth: 10 }).label, { bold: true });
+  });
+  test('a valid part whose label holds only bad values is kept with no label', () => {
+    const part = partWith({ size: 'big', color: 'red', bold: 'yes', font: '' });
+    assert.deepEqual(part, { name: 'High', color: '#123456', hi: '#FFD54A' });
+  });
+  test('cleanPartLabel returns null for nothing usable', () => {
+    assert.equal(L.cleanPartLabel(null), null);
+    assert.equal(L.cleanPartLabel({}), null);
+    assert.equal(L.cleanPartLabel({ font: 'x'.repeat(81) }), null);
+  });
+  test('addParts keeps an existing label and gives new parts none', () => {
+    const out = L.addParts({ parts: [{ name: 'High', color: '#123456', label: { size: 50, bold: false } }] }, ['Low']);
+    assert.deepEqual(out.parts[0].label, { size: 50, bold: false });
+    assert.equal('label' in out.parts[1], false);
+  });
+});

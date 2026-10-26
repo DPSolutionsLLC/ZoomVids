@@ -307,3 +307,55 @@ describe('countdownPlace', () => {
     close(left.x + left.w, 84);
   });
 });
+
+describe('wrap with label looks', () => {
+  const half = (part, text, px) => text.length * px * 0.25;
+  const plain = (rows, w, px) => V.wrap(rows, w, px, true, measure);
+  test('no labelWidth, or one that always gives null, changes nothing', () => {
+    const rows = V.rows(slideOf('a High: bbbb Low: cc dd'));
+    const base = plain(rows, 60, 10);
+    assert.deepEqual(V.wrap(rows, 60, 10, true, measure, undefined), base);
+    assert.deepEqual(V.wrap(rows, 60, 10, true, measure, () => null), base);
+    const spec = { size: 100, minSize: 10, fixed: false, lh: 1, w: 200, h: 100, showParts: true };
+    assert.deepEqual(V.fitPx(rows, Object.assign({ labelWidth: () => null }, spec), measure), V.fitPx(rows, spec, measure));
+  });
+  test('a styled label is measured on its own and the word follows it', () => {
+    const out = V.wrap(V.rows(slideOf('a High: bbbb')), 1000, 10, true, measure, half);
+    const line = out.lines[0], label = line.pieces.find((p) => p.kind === 'label'), word = line.pieces[line.pieces.length - 1];
+    assert.equal(label.custom, true);
+    assert.equal(label.text, 'High: ');
+    close(label.dx, measure('a ', 10));
+    close(label.w, half('High', 'High: ', 10));
+    close(word.dx, label.dx + label.w);
+    close(line.w, measure('a bbbb', 10) + label.w);
+    assert.ok(line.w < plain(V.rows(slideOf('a High: bbbb')), 1000, 10).lines[0].w);
+  });
+  test('a narrower label lets the word stay on the line; the label always sits with its word', () => {
+    const rows = V.rows(slideOf('a High: bbbb'));
+    const w = measure('a ', 10) + half('High', 'High: ', 10) + measure('bbbb', 10);
+    const styled = V.wrap(rows, w, 10, true, measure, half), normal = plain(rows, w, 10);
+    assert.equal(styled.lines.length, 1);
+    assert.equal(normal.lines.length, 2);
+    const narrow = V.wrap(rows, 30, 10, true, measure, half);
+    narrow.lines.forEach((ln) => {
+      const last = ln.pieces[ln.pieces.length - 1];
+      assert.notEqual(last.kind, 'label');
+    });
+    const labelLine = narrow.lines.find((ln) => ln.pieces.some((p) => p.kind === 'label'));
+    assert.equal(labelLine.pieces[0].kind, 'label');
+    assert.equal(labelLine.pieces[1].text, 'bbbb');
+  });
+  test('overlapping parts give one row each, each starting with its own styled label', () => {
+    const rows = V.rows(timed('High: a b Low: c d', [[0, 0.5], [0.5, 0.5], [0, 0.5], [0.5, 0.5]]));
+    const out = V.wrap(rows, 1000, 10, true, measure, half);
+    assert.equal(out.lines.length, 2);
+    assert.deepEqual(out.lines.map((ln) => [ln.pieces[0].kind, ln.pieces[0].part, ln.pieces[0].custom]), [['label', 'High', true], ['label', 'Low', true]]);
+    out.lines.forEach((ln) => close(ln.pieces[1].dx, ln.pieces[0].w));
+  });
+  test('fitPx picks a larger size when narrower labels let a width-bound row fit', () => {
+    const rows = V.rows(slideOf('High: aaaa'));
+    const spec = { size: 100, minSize: 4, fixed: false, lh: 1, w: 200, h: 1000, showParts: true };
+    const normal = V.fitPx(rows, spec, measure).px, styled = V.fitPx(rows, Object.assign({ labelWidth: half }, spec), measure).px;
+    assert.ok(styled > normal, styled + ' should be above ' + normal);
+  });
+});
