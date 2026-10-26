@@ -109,6 +109,18 @@ The preview floats the same way and keeps its own controls and sizes (see Previe
 
 The layout is saved in this browser and comes back when you open the app again. It belongs to this computer only: it's not copied into the music folder's data file, and moving panels never counts as a change to undo. If the window is smaller than your layout, panels are shrunk and nudged into view without losing their saved spots; make the window bigger again and they go back where they were.
 
+### Karaoke workspace
+
+The same app has a second workspace for sing-along videos at `https://zoommedia-e2d78.web.app/karaoke`. The **Karaoke** button at the top of the hymn side takes you there, and **Hymn Playlist** takes you back. Your work on each side is saved before you switch.
+
+Karaoke keeps its own music folder, library, saved projects and settings. Link a different folder there with **Choose music folder**. Karaoke saves into `karaoke-data.json` in that folder, next to your songs. Don't delete it: it holds your karaoke projects. The hymn side keeps using `hymn-playlist-data.json` in its own folder, and neither side ever reads the other's file.
+
+Added Google Fonts, recent background colors and the floating panel layout are also separate for each side. Backgrounds, pictures and video clips, text boxes, Undo and Redo and floating panels all work the same in both.
+
+Karaoke hides the parts that only make sense for sacrament meeting: the Hymn checklist, Talk references to send, the Scripture collection, Mark as used on export, the library's Show filter and the two "used" sorts. Exports are named `karaoke-` and today's date.
+
+You can have both open in two tabs at once. Each keeps its own work. Two tabs on the *same* side still share one working copy, as before.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.

@@ -5,9 +5,19 @@
       "firebase.json",
       "**/.*"
     ],
+    "rewrites": [
+      {
+        "source": "/karaoke",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/karaoke/",
+        "destination": "/index.html"
+      }
+    ],
     "headers": [
       {
-        "regex": "^/(index\\.html)?$",
+        "regex": "^/(index\\.html|karaoke/?)?$",
         "headers": [
           {
             "key": "Cache-Control",

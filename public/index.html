@@ -399,23 +399,26 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
 .htag.q { background: var(--warn-soft); color: var(--warn); }
 [data-book].on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+html[data-workspace="karaoke"] [data-hymn-only] { display: none !important; }
+#wsSwitch { text-decoration: none; }
 @media (prefers-reduced-motion: no-preference) { .bar i { transition: width 0.2s linear; } }
 </style>
 
 <div class="wrap" id="wrap">
   <header class="top">
     <div>
-      <h1>Hymn Playlist</h1>
-      <p class="sub">Line up the music for the sacrament, check each crossfade, and export one file for OBS.</p>
+      <h1 id="appTitle">Hymn Playlist</h1>
+      <p class="sub" id="appSub">Line up the music for the sacrament, check each crossfade, and export one file for OBS.</p>
     </div>
     <div class="plbar">
+      <a class="btn quiet" id="wsSwitch" href="/karaoke">Karaoke</a>
       <button class="btn quiet" id="layoutReset" hidden title="Put every floating panel back into the page">Reset layout</button>
       <span class="note" id="layoutNote" role="status" aria-live="polite"></span>
       <button class="btn quiet" id="undoBtn" title="Undo (Ctrl+Z)" disabled>Undo</button>
       <button class="btn quiet" id="redoBtn" title="Redo (Ctrl+Y)" disabled>Redo</button>
       <span class="undonote" id="undoNote" role="status" aria-live="polite"></span>
       <label for="plName" class="visually-hidden">Playlist name</label>
-      <input type="text" id="plName" placeholder="Name this playlist to keep it">
+      <input type="text" id="plName" placeholder="Name this playlist to keep it" data-karaoke-placeholder="Name this project to keep it">
       <span class="savenote" id="plSaved" role="status" aria-live="polite"></span>
       <label for="plOpen" class="visually-hidden">Open a saved playlist</label>
       <select id="plOpen"></select>
@@ -455,7 +458,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           <button class="btn small" id="rescan" hidden>Rescan</button>
           <button class="btn small" id="addFiles">Add files</button>
           <button class="btn small" id="newFolder">New folder</button>
-          <button class="btn small" id="openHymns">Hymn checklist</button>
+          <button class="btn small" id="openHymns" data-hymn-only>Hymn checklist</button>
         </div>
         <button class="btn small quiet" data-float="library" aria-pressed="false">Float</button>
       </div>
@@ -465,8 +468,8 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       <div class="libtools">
         <label for="filter" class="visually-hidden">Search this folder</label>
         <input type="search" id="filter" placeholder="Search this folder">
-        <label for="showUsed" class="visually-hidden">Show</label>
-        <select id="showUsed">
+        <label for="showUsed" class="visually-hidden" data-hymn-only>Show</label>
+        <select id="showUsed" data-hymn-only>
           <option value="all">All</option>
           <option value="unused">Not used yet</option>
           <option value="used">Used before</option>
@@ -475,8 +478,8 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
         <select id="sortBy">
           <option value="name">Name A–Z</option>
           <option value="name-desc">Name Z–A</option>
-          <option value="lru">Longest since used</option>
-          <option value="mru">Most recently used</option>
+          <option value="lru" data-hymn-only>Longest since used</option>
+          <option value="mru" data-hymn-only>Most recently used</option>
           <option value="short">Shortest first</option>
           <option value="long">Longest first</option>
         </select>
@@ -495,7 +498,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
       </section>
 
       <section class="stack sec" id="sec-spoken">
-        <div class="headrow"><h2><button class="sectoggle" data-sec="spoken" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Spoken clips over the music</button></h2><button class="btn small quiet" data-float="spoken" aria-pressed="false">Float</button></div>
+        <div class="headrow"><h2><button class="sectoggle" data-sec="spoken" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg><span data-karaoke-text="Clips over the music">Spoken clips over the music</span></button></h2><button class="btn small quiet" data-float="spoken" aria-pressed="false">Float</button></div>
         <ul class="list" id="spoken"></ul>
       </section>
 
@@ -715,10 +718,10 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
           <div class="texted" id="picEd" hidden></div>
         </div>
         <div class="stack sec" id="sec-titles">
-          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="titles" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Song and talk titles</button></h3><button class="btn small quiet" data-float="titles" aria-pressed="false">Float</button></div>
+          <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="titles" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg><span data-karaoke-text="Song titles">Song and talk titles</span></button></h3><button class="btn small quiet" data-float="titles" aria-pressed="false">Float</button></div>
           <ol class="cues" id="cues"></ol>
         </div>
-        <div class="talkshare stack sec" id="sec-talkref">
+        <div class="talkshare stack sec" id="sec-talkref" data-hymn-only>
           <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="talkref" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Talk references to send</button></h3><button class="btn small" id="copyTalks">Copy for email or text</button><button class="btn small quiet" data-float="talkref" aria-pressed="false">Float</button></div>
           <label for="talkIntro" class="note">Opening line</label>
           <input type="text" id="talkIntro" style="width:100%">
@@ -728,7 +731,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
         </div>
       </section>
 
-      <section class="stack sec" id="sec-scriptures">
+      <section class="stack sec" id="sec-scriptures" data-hymn-only>
         <div class="headrow"><h2><button class="sectoggle" data-sec="scriptures" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Scripture collection</button></h2>
           <span class="btnrow"><button class="btn small" id="collPick">Random pick</button><button class="btn small" id="collFillBtn">Choose a stretch</button></span><button class="btn small quiet" data-float="scriptures" aria-pressed="false">Float</button></div>
         <div class="texted" id="collFill" hidden></div>
@@ -775,7 +778,7 @@ dialog.wide { width: min(880px, calc(100vw - 32px)); }
             <p class="note" id="lenNote" style="width:100%"></p>
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
-          <label><input type="checkbox" id="markUsed"> Mark these recordings and scriptures as used on <input type="date" id="usedDate"></label>
+          <label data-hymn-only><input type="checkbox" id="markUsed"> Mark these recordings and scriptures as used on <input type="date" id="usedDate"></label>
           <div class="btnrow">
             <label for="fileName" class="visually-hidden">File name</label>
             <input type="text" id="fileName" style="width:240px">
@@ -3317,10 +3320,36 @@ var InfoTour = (function () {
   return { order: order, indexOf: indexOf, step: step, name: name, label: label };
 })();
 
+/* Which workspace is open (hymn or karaoke) and the storage names that keep them apart. Pure functions. */
+var Workspace = (function () {
+  var HYMN = Object.freeze({
+    id: 'hymn', name: 'Hymn Playlist',
+    subtitle: 'Line up the music for the sacrament, check each crossfade, and export one file for OBS.',
+    prefix: 'hp.', dbName: 'hymn-playlist', dataFile: 'hymn-playlist-data.json', pickerId: 'hymn-playlist-music',
+    home: '/', other: Object.freeze({ name: 'Karaoke', href: '/karaoke' })
+  });
+  var KARAOKE = Object.freeze({
+    id: 'karaoke', name: 'Karaoke',
+    subtitle: 'Build sing-along videos with the words on screen, for class and for practice at home.',
+    prefix: 'kp.', dbName: 'karaoke-playlist', dataFile: 'karaoke-data.json', pickerId: 'karaoke-music',
+    home: '/karaoke', other: Object.freeze({ name: 'Hymn Playlist', href: '/' })
+  });
+  function fromPath(pathname) { return /^\/karaoke\/?$/i.test(String(pathname || '')) ? KARAOKE : HYMN; }
+  function storageKey(workspace, key) {
+    if (typeof key === 'string' && key.indexOf('hp.') === 0) return workspace.prefix + key.slice(3);
+    return key;
+  }
+  function ownsKey(workspace, realKey) { return typeof realKey === 'string' && realKey.indexOf(workspace.prefix) === 0; }
+  return { HYMN: HYMN, KARAOKE: KARAOKE, fromPath: fromPath, storageKey: storageKey, ownsKey: ownsKey };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
   'use strict';
+  var WS = Workspace.fromPath(location.pathname);
+  // Code names every key 'hp.…'; the karaoke workspace stores them as 'kp.…'.
+  function sk(key) { return Workspace.storageKey(WS, key); }
   var E = Engine, SR = E.SR;
   function $(id) { return document.getElementById(id); }
   var ICON = {
@@ -3353,13 +3382,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
-  function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
-  var bootSavedAt = (function () { try { return JSON.parse(localStorage.getItem('hp.savedAt')) || 0; } catch (e) { return 0; } })();
+  function lsGet(k) { try { var v = localStorage.getItem(sk(k)); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  var bootSavedAt = (function () { try { return JSON.parse(localStorage.getItem(sk('hp.savedAt'))) || 0; } catch (e) { return 0; } })();
   var onSaved = null; // set once the music folder is linked, to copy settings into it
   function lsSet(k, v) {
     try {
-      localStorage.setItem(k, JSON.stringify(v));
-      if (k !== 'hp.savedAt' && k !== PanelLayout.KEY && k.indexOf('hp.') === 0) { localStorage.setItem('hp.savedAt', JSON.stringify(Date.now())); if (onSaved) onSaved(); }
+      localStorage.setItem(sk(k), JSON.stringify(v));
+      if (k !== 'hp.savedAt' && k !== PanelLayout.KEY && k.indexOf('hp.') === 0) { localStorage.setItem(sk('hp.savedAt'), JSON.stringify(Date.now())); if (onSaved) onSaved(); }
       return true;
     } catch (e) { return false; }
   }
@@ -3445,7 +3474,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var m = blankMix();
     SAMPLES.forEach(function (s, i) {
       if (i < 4) m.items.push({ id: nid(), key: s.key, name: s.name });
-      else m.spoken.push({ id: nid(), key: s.key, name: s.name, at: 150 });
+      else if (WS.id !== 'karaoke') m.spoken.push({ id: nid(), key: s.key, name: s.name, at: 150 });
     });
     return m;
   }
@@ -3555,7 +3584,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     open: function () {
       return new Promise(function (res) {
         try {
-          var rq = indexedDB.open('hymn-playlist', 2);
+          var rq = indexedDB.open(WS.dbName, 2);
           rq.onupgradeneeded = function () {
             var db = rq.result;
             if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'key' });
@@ -5521,7 +5550,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   async function loadVolume(vol) {
     if (scriptureCache[vol]) return scriptureCache[vol];
     var r;
-    try { r = await fetch('scriptures/' + vol + '.json'); }
+    try { r = await fetch('/scriptures/' + vol + '.json'); }
     catch (e) { throw new Error('The scripture text could not be loaded. Check the internet connection and try again.'); }
     if (!r.ok) throw new Error('The scripture text could not be loaded (' + r.status + '). Check the internet connection and try again.');
     var data = await r.json();
@@ -7099,7 +7128,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (ui.exporting || !plan.total) return;
     Player.stop();
     var pl = plan, fmtNow = ui.format, lock = null, len = exportLen();
-    var base = ($('fileName').value.trim() || 'sacrament-' + nextSunday()).replace(/[\\/:*?"<>|]+/g, '-').replace(/\.(mp3|wav|zip|webm|mp4)$/i, '');
+    var base = ($('fileName').value.trim() || defaultFileName()).replace(/[\\/:*?"<>|]+/g, '-').replace(/\.(mp3|wav|zip|webm|mp4)$/i, '');
     ui.exporting = true; ui.lastExport = null;
     $('saveAgain').hidden = true; $('bar').hidden = false; $('barFill').style.width = '0%'; $('exportBtn').disabled = true;
     try { if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch (e) { lock = null; }
@@ -8862,7 +8891,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- linked music folder (when hosted on your own site) ---------- */
   // The app reads audio straight from a folder you pick, such as your Google
   // Drive folder, and keeps playlists and settings in a small file inside it.
-  var DATA_FILE = 'hymn-playlist-data.json';
+  var DATA_FILE = WS.dataFile;
   var metaCache = {};
   var scanning = false;
   var Link = {
@@ -8877,7 +8906,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   async function pickMusicFolder() {
     var h;
-    try { h = await window.showDirectoryPicker({ id: 'hymn-playlist-music', mode: 'readwrite' }); }
+    try { h = await window.showDirectoryPicker({ id: WS.pickerId, mode: 'readwrite' }); }
     catch (e) { if (e && e.name === 'AbortError') return; ui.libMsg = { text: 'That folder could not be opened. ' + (e && e.message ? e.message : '') }; renderLibrary(); return; }
     await openLinked(h);
   }
@@ -8892,9 +8921,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var data = {};
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (k && k.indexOf('hp.') === 0 && k !== 'hp.savedAt' && k !== 'hp.folder' && k !== PanelLayout.KEY) data[k] = localStorage.getItem(k);
+      if (Workspace.ownsKey(WS, k) && k !== sk('hp.savedAt') && k !== sk('hp.folder') && k !== sk(PanelLayout.KEY)) data[k] = localStorage.getItem(k);
     }
-    return { app: 'Hymn Playlist', version: 1, savedAt: lsGet('hp.savedAt') || Date.now(), data: data };
+    return { app: WS.name, version: 1, savedAt: lsGet('hp.savedAt') || Date.now(), data: data };
   }
   async function writeData() {
     clearTimeout(Link.timer); Link.timer = null;
@@ -8920,8 +8949,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function importData(obj) {
     clearTimeout(saveTimer); saveTimer = null; saveState.pending = false;
     bootSavedAt = obj.savedAt;
-    Object.keys(obj.data).forEach(function (k) { if (k === PanelLayout.KEY) return; try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
-    try { localStorage.setItem('hp.savedAt', JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
+    Object.keys(obj.data).forEach(function (k) { if (k === sk(PanelLayout.KEY) || !Workspace.ownsKey(WS, k)) return; try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
+    try { localStorage.setItem(sk('hp.savedAt'), JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
     LM = lsGet('hp.libmeta') || {};
     folders = lsGet('hp.folders') || [];
     scrColl = ScriptureCollection.clean(lsGet('hp.scriptures'));
@@ -9068,9 +9097,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   window.addEventListener('focus', checkFolderOnReturn);
 
   /* ---------- start ---------- */
+  function defaultFileName() { return WS.id === 'karaoke' ? 'karaoke-' + ymd(new Date()) : 'sacrament-' + nextSunday(); }
+  async function switchWorkspace(ev) {
+    ev.preventDefault();
+    flushSave();
+    if (Link.timer) await writeData();
+    location.href = WS.other.href;
+  }
+  function applyWorkspace() {
+    document.documentElement.setAttribute('data-workspace', WS.id);
+    document.title = WS.name;
+    $('appTitle').textContent = WS.name;
+    $('appSub').textContent = WS.subtitle;
+    var sw = $('wsSwitch');
+    sw.href = WS.other.href;
+    sw.textContent = WS.other.name;
+    sw.title = 'Switch to ' + WS.other.name + '. Your work here stays as it is.';
+    sw.onclick = switchWorkspace;
+    if (WS.id !== 'karaoke') return;
+    document.querySelectorAll('[data-karaoke-text]').forEach(function (el) { el.textContent = el.getAttribute('data-karaoke-text'); });
+    document.querySelectorAll('[data-karaoke-placeholder]').forEach(function (el) { el.placeholder = el.getAttribute('data-karaoke-placeholder'); });
+  }
   function start() {
     // ask the browser to keep the library instead of clearing it when space runs low
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* fine */ }
+    applyWorkspace();
     bind();
     renderFontMenu();
     loadUserFontsQuietly();
@@ -9079,8 +9130,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ui.expLen = lsGet('hp.expLen') === 'full' ? 'full' : 'mix';
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     $('usedDate').value = nextSunday();
-    $('markUsed').checked = true;
-    $('fileName').value = 'sacrament-' + nextSunday();
+    $('markUsed').checked = WS.id !== 'karaoke';
+    $('fileName').value = defaultFileName();
     addSamples();
     var work = lsGet('hp.work');
     if (work && work.items && work.spoken && (work.items.length || work.spoken.length || (work.pictures && work.pictures.length))) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }
