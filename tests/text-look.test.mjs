@@ -4,7 +4,8 @@ import { loadModule } from './extract-module.mjs';
 
 const TextLook = loadModule('TextLook');
 
-const savedOutline = { look: 'outline', glowColor: '#112233', glowOpacity: 80, glowWidth: 20, glowSoft: 30, boxColor: '#445566', boxOpacity: 50 };
+const savedOutline = { look: 'outline', glowColor: '#112233', glowOpacity: 80, glowWidth: 20, glowSoft: 30, solidColor: '#000000', solidWidth: 6, boxColor: '#445566', boxOpacity: 50 };
+const savedSolid = { look: 'solid', glowColor: '#000000', glowOpacity: 60, glowWidth: 12, glowSoft: 20, solidColor: '#223344', solidWidth: 9, boxColor: '#0A100D', boxOpacity: 72 };
 
 describe('upgrade', () => {
   test('a boxed item becomes Dark box', () => {
@@ -89,6 +90,39 @@ describe('apply', () => {
   test('a saved value with no valid look starts as Soft shadow', () => {
     const tx = TextLook.apply({ id: 'a' }, { look: 'glow', glowOpacity: 50 });
     assert.deepEqual(tx, { id: 'a', look: 'shadow' });
+  });
+});
+
+describe('solid outline', () => {
+  test('is one of the looks', () => {
+    assert.ok(TextLook.LOOKS.includes('solid'));
+  });
+
+  test('resolves with its default color and thickness', () => {
+    const lk = TextLook.resolve({ look: 'solid' });
+    assert.equal(lk.look, 'solid');
+    assert.equal(lk.solidColor, '#000000');
+    assert.equal(lk.solidWidth, 6);
+  });
+
+  test('clamps the thickness to 1 through 20', () => {
+    assert.equal(TextLook.resolve({ look: 'solid', solidWidth: 50 }).solidWidth, 20);
+    assert.equal(TextLook.resolve({ look: 'solid', solidWidth: 0 }).solidWidth, 1);
+  });
+
+  test('ignores a color that is not a six-digit hex', () => {
+    assert.equal(TextLook.resolve({ look: 'solid', solidColor: 'black' }).solidColor, '#000000');
+  });
+
+  test('pick and apply carry the color and thickness', () => {
+    assert.deepEqual(TextLook.pick(Object.assign({ text: 'hi' }, savedSolid)), savedSolid);
+    const tx = TextLook.apply({ id: 'a' }, savedSolid);
+    assert.equal(tx.solidColor, '#223344');
+    assert.equal(tx.solidWidth, 9);
+  });
+
+  test('a legacy box still resolves to Dark box', () => {
+    assert.equal(TextLook.resolve({ box: true }).look, 'box');
   });
 });
 

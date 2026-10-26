@@ -2,7 +2,10 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
+globalThis.TextLook = loadModule('TextLook');
 const L = loadModule('Lyrics');
+const KARAOKE_FULL = { font: 'montserrat', bold: true, italic: false, size: 72, color: '#FFFFFF', look: 'solid', glowColor: '#000000', glowOpacity: 60, glowWidth: 12, glowSoft: 20, solidColor: '#000000', solidWidth: 6, boxColor: '#0A100D', boxOpacity: 72 };
+const songDefaults = () => Object.assign({}, L.SHOW_DEFAULTS, { slideLook: KARAOKE_FULL });
 
 function counter(prefix = 'w') {
   let n = 0;
@@ -354,19 +357,19 @@ describe('cleanSong', () => {
       { name: 'Low', color: 'red' },
       { name: 'bad name', color: '#111111' },
     ] });
-    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#123456' }, { name: 'Low', color: L.PALETTE[1] }] }, L.SHOW_DEFAULTS));
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#123456' }, { name: 'Low', color: L.PALETTE[1] }] }, songDefaults()));
   });
   test('showParts is only on when it is true', () => {
     assert.equal(L.cleanSong({ showParts: 'yes' }).showParts, false);
     assert.deepEqual(L.cleanSong({}).parts, []);
   });
   test('an empty song gets every display default', () => {
-    assert.deepEqual(L.cleanSong({}), Object.assign({ showParts: false, parts: [] }, L.SHOW_DEFAULTS));
-    assert.deepEqual(L.SHOW_DEFAULTS, { highlight: 'sweep', singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3 });
+    assert.deepEqual(L.cleanSong({}), Object.assign({ showParts: false, parts: [] }, songDefaults()));
+    assert.deepEqual(L.SHOW_DEFAULTS, { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3 });
   });
   test('bad display values fall back to the defaults, one field at a time', () => {
-    const good = { showParts: true, parts: [], highlight: 'word', singColor: '#112233', countdown: 'bar', breakGap: 8, countLen: 4 };
-    const bad = { highlight: 'flash', singColor: 'red', countdown: 'lights', breakGap: 'x', countLen: null };
+    const good = { showParts: true, parts: [], highlight: 'word', keepLit: true, singColor: '#112233', countdown: 'bar', breakGap: 8, countLen: 4 };
+    const bad = { highlight: 'flash', keepLit: 'yes', singColor: 'red', countdown: 'lights', breakGap: 'x', countLen: null };
     Object.keys(bad).forEach((key) => {
       const raw = Object.assign({}, good, { [key]: bad[key] });
       const out = L.cleanSong(raw);
@@ -383,8 +386,88 @@ describe('cleanSong', () => {
     assert.equal(L.cleanSong({ countLen: 50 }).countLen, 10);
   });
   test('valid display values are kept', () => {
-    const raw = { showParts: false, parts: [], highlight: 'word', singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7 };
+    const raw = { showParts: false, parts: [], highlight: 'word', keepLit: true, singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7, slideLook: KARAOKE_FULL };
     assert.deepEqual(L.cleanSong(raw), raw);
+  });
+  test('an old sweep highlight becomes syllable by syllable, and whole word stays', () => {
+    assert.equal(L.cleanSong({ highlight: 'sweep' }).highlight, 'syllable');
+    assert.equal(L.cleanSong({ highlight: 'syllable' }).highlight, 'syllable');
+    assert.equal(L.cleanSong({ highlight: 'word' }).highlight, 'word');
+    assert.equal(L.cleanSong({ highlight: 'flash' }).highlight, 'syllable');
+    assert.equal(L.cleanSong({ highlight: 'sweep' }).keepLit, false);
+    assert.equal(L.cleanSong({ highlight: 'word' }).keepLit, false);
+  });
+  test('keepLit is on only for true', () => {
+    assert.equal(L.cleanSong({ keepLit: true }).keepLit, true);
+    assert.equal(L.cleanSong({ keepLit: 'yes' }).keepLit, false);
+    assert.equal(L.cleanSong({ keepLit: 1 }).keepLit, false);
+    assert.equal(L.cleanSong({}).keepLit, false);
+  });
+});
+
+describe('slideLook', () => {
+  const custom = { font: 'lora', bold: false, italic: true, size: 96, color: '#112233', look: 'outline', glowColor: '#445566', glowOpacity: 40, glowWidth: 10, glowSoft: 15, solidColor: '#778899', solidWidth: 9, boxColor: '#0A0B0C', boxOpacity: 50 };
+  test('a song with no look gets the karaoke default', () => {
+    assert.deepEqual(L.cleanSong({}).slideLook, KARAOKE_FULL);
+    assert.deepEqual(L.cleanSlideLook(undefined), KARAOKE_FULL);
+    assert.equal(L.KARAOKE_LOOK.font, 'montserrat');
+  });
+  test('bad values fall back to the defaults, never an empty string', () => {
+    const out = L.cleanSong({ slideLook: { font: '', size: 'x', color: 'red', look: 'neon', solidWidth: 'thick' } }).slideLook;
+    assert.equal(out.font, 'montserrat');
+    assert.equal(out.size, 72);
+    assert.equal(out.color, '#FFFFFF');
+    assert.equal(out.look, 'solid');
+    assert.equal(out.solidWidth, 6);
+    Object.keys(out).forEach((key) => assert.notEqual(out[key], '', key));
+  });
+  test('a font name longer than 80 characters falls back', () => {
+    assert.equal(L.cleanSlideLook({ font: 'x'.repeat(81) }).font, 'montserrat');
+    assert.equal(L.cleanSlideLook({ font: '  lora  ' }).font, 'lora');
+  });
+  test('size is clamped and rounded', () => {
+    assert.equal(L.cleanSlideLook({ size: 500 }).size, 180);
+    assert.equal(L.cleanSlideLook({ size: 3 }).size, 24);
+    assert.equal(L.cleanSlideLook({ size: 60.4 }).size, 60);
+  });
+  test('a full valid look round-trips through cleanSong twice unchanged', () => {
+    const once = L.cleanSong({ slideLook: custom });
+    const twice = L.cleanSong(once);
+    assert.deepEqual(once.slideLook, custom);
+    assert.deepEqual(twice, once);
+  });
+  test('addParts keeps keepLit and slideLook', () => {
+    const out = L.addParts({ parts: [], keepLit: true, slideLook: custom }, ['High']);
+    assert.equal(out.keepLit, true);
+    assert.deepEqual(out.slideLook, custom);
+  });
+});
+
+describe('slideStyle', () => {
+  const tx = { id: 't1', text: 'Hi', font: 'sans', bold: true, size: 40, color: '#000000', look: 'shadow', frame: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 }, align: 'left', valign: 'bottom', lh: 1.5, start: 3, dur: 4, lyric: { song: 's1', lines: [] } };
+  test('copies the font, style, size, color and look fields', () => {
+    const out = L.slideStyle(tx, { font: 'lora', bold: false, italic: true, size: 90, color: '#ABCDEF', look: 'solid', solidColor: '#FF0000', solidWidth: 12 });
+    assert.equal(out.font, 'lora');
+    assert.equal(out.italic, true);
+    assert.equal(out.size, 90);
+    assert.equal(out.color, '#ABCDEF');
+    assert.equal(out.look, 'solid');
+    assert.equal(out.solidColor, '#FF0000');
+    assert.equal(out.solidWidth, 12);
+    globalThis.TextLook.FIELDS.forEach((key) => assert.ok(key in out, key));
+  });
+  test('drops bold when it is off', () => {
+    const out = L.slideStyle(tx, { bold: false });
+    assert.equal('bold' in out, false);
+  });
+  test('leaves frame, alignment, line spacing, timing and lyric alone', () => {
+    const out = L.slideStyle(tx, undefined);
+    ['frame', 'align', 'valign', 'lh', 'lyric', 'start', 'dur', 'id', 'text'].forEach((key) => assert.deepEqual(out[key], tx[key], key));
+  });
+  test('does not change its input', () => {
+    const before = structuredClone(tx);
+    L.slideStyle(tx, { font: 'lora', size: 120 });
+    assert.deepEqual(tx, before);
   });
   test('non-object input gives null', () => {
     assert.equal(L.cleanSong(null), null);
@@ -401,7 +484,7 @@ describe('addParts', () => {
   test('existing parts are untouched and duplicates are skipped', () => {
     const base = { showParts: true, parts: [{ name: 'High', color: '#010203' }] };
     const out = L.addParts(base, ['high', 'Low', 'Low', 'bad name']);
-    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#010203' }, { name: 'Low', color: L.PALETTE[1] }] }, L.SHOW_DEFAULTS));
+    assert.deepEqual(out, Object.assign({ showParts: true, parts: [{ name: 'High', color: '#010203' }, { name: 'Low', color: L.PALETTE[1] }] }, songDefaults()));
     assert.equal(base.parts.length, 1);
   });
   test('keeps the song display settings', () => {

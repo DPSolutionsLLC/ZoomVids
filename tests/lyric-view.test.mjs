@@ -170,25 +170,74 @@ describe('previewOn', () => {
 });
 
 describe('lit', () => {
-  test('sweep fills a syllable over its held time', () => {
-    const p = sylPieces(V.wrap(V.rows(timed('Peace', [[1, 0.4]])), 1000, 10, false, measure))[0];
-    close(V.lit(p, 1.2, 'sweep'), 0.5);
-    assert.equal(V.lit(p, 0.9, 'sweep'), null);
-    assert.equal(V.lit(p, 1.4, 'sweep'), null);
+  const SYL = { highlight: 'syllable' }, WORD = { highlight: 'word' };
+  const one = () => sylPieces(V.wrap(V.rows(timed('Peace', [[1, 0.4]])), 1000, 10, false, measure))[0];
+  test('syllable by syllable fills a syllable over its held time', () => {
+    const p = one();
+    close(V.lit(p, 1.2, SYL), 0.5);
+    assert.equal(V.lit(p, 0.9, SYL), null);
+    assert.equal(V.lit(p, 1.4, SYL), null);
   });
-  test('whole word lights every syllable, even between them', () => {
+  test('with keep lit on, a sung syllable stays lit until its line ends', () => {
+    const p = one();
+    assert.equal(V.lit(p, 1.5, { highlight: 'syllable', keepLit: true, rowEnd: 3 }), 1);
+    assert.equal(V.lit(p, 3, { highlight: 'syllable', keepLit: true, rowEnd: 3 }), null);
+    assert.equal(V.lit(p, 0.9, { highlight: 'syllable', keepLit: true, rowEnd: 3 }), null);
+  });
+  test('keep lit needs a line end to stay lit', () => {
+    assert.equal(V.lit(one(), 1.5, { highlight: 'syllable', keepLit: true, rowEnd: null }), null);
+  });
+  test('an untimed syllable in a timed word lights with its word', () => {
+    const syls = sylPieces(V.wrap(V.rows(timed('Glo-ri-a', [[1, 0.4], null, [2, 0.5]])), 1000, 10, false, measure));
+    const untimed = syls[1];
+    assert.equal(untimed.t, null);
+    close(V.lit(untimed, 1.75, SYL), 0.5);
+    assert.equal(V.lit(untimed, 0.9, SYL), null);
+  });
+  test('whole word sweeps across the word, piece by piece', () => {
+    const syls = sylPieces(V.wrap(V.rows(timed('abcdefgh-ijklmnopqrst', [[1, 0.4], [1.4, 0.6]])), 1000, 10, false, measure));
+    assert.equal(syls[0].w, 40);
+    assert.equal(syls[1].w, 60);
+    close(V.lit(syls[0], 1.2, WORD), 0.5);
+    assert.equal(V.lit(syls[1], 1.2, WORD), null);
+    assert.equal(V.lit(syls[0], 1.7, WORD), 1);
+    close(V.lit(syls[1], 1.7, WORD), 0.5);
+    assert.equal(V.lit(syls[0], 0.9, WORD), null);
+  });
+  test('whole word lights every syllable between them, and goes out after the word', () => {
     const syls = sylPieces(V.wrap(V.rows(timed('Glo-ri-a', [[0, 0.2], [0.5, 0.2], [1, 0.2]])), 1000, 10, false, measure));
-    syls.forEach((p) => assert.equal(V.lit(p, 0.3, 'word'), 1));
-    syls.forEach((p) => assert.equal(V.lit(p, 1.2, 'word'), null));
+    syls.forEach((p) => assert.ok(V.lit(p, 1.19, WORD) > 0));
+    syls.forEach((p) => assert.equal(V.lit(p, 1.2, WORD), null));
   });
-  test('labels and untimed syllables never light', () => {
+  test('whole word with keep lit stays lit after the word ends', () => {
+    const syls = sylPieces(V.wrap(V.rows(timed('Glo-ri-a', [[0, 0.2], [0.5, 0.2], [1, 0.2]])), 1000, 10, false, measure));
+    syls.forEach((p) => assert.equal(V.lit(p, 1.5, { highlight: 'word', keepLit: true, rowEnd: 4 }), 1));
+  });
+  test('labels and untimed words never light', () => {
     const out = V.wrap(V.rows(timed('a High: b', [[0, 1]])), 1000, 10, true, measure);
     const all = out.lines.flatMap((ln) => ln.pieces);
     const label = all.find((p) => p.kind === 'label'), untimed = all.find((p) => p.text === 'b');
-    assert.equal(V.lit(label, 0.5, 'sweep'), null);
-    assert.equal(V.lit(label, 0.5, 'word'), null);
-    assert.equal(V.lit(untimed, 0.5, 'sweep'), null);
-    assert.equal(V.lit(untimed, 0.5, 'word'), null);
+    [SYL, WORD, { highlight: 'syllable', keepLit: true, rowEnd: 9 }].forEach((opts) => {
+      assert.equal(V.lit(label, 0.5, opts), null);
+      assert.equal(V.lit(untimed, 0.5, opts), null);
+    });
+  });
+});
+
+describe('word extents', () => {
+  test('every syllable knows where its word starts and how wide it is', () => {
+    const out = V.wrap(V.rows(timed('a Glo-ri-a', [[0, 0.2], [1, 0.2], [1.5, 0.2], [2, 0.2]])), 1000, 10, false, measure);
+    const syls = sylPieces(out), glo = syls.filter((p) => p.wordId === syls[1].wordId);
+    assert.equal(glo.length, 3);
+    glo.forEach((p) => assert.equal(p.wordDx, glo[0].dx));
+    glo.forEach((p) => assert.equal(p.wordW, 30));
+    assert.equal(syls[0].wordDx, syls[0].dx);
+    assert.equal(syls[0].wordW, syls[0].w);
+  });
+  test('labels get no word extents', () => {
+    const out = V.wrap(V.rows(timed('High: a', [[0, 1]])), 1000, 10, true, measure);
+    const label = out.lines[0].pieces.find((p) => p.kind === 'label');
+    assert.equal('wordDx' in label, false);
   });
 });
 

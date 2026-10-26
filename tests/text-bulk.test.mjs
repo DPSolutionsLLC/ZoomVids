@@ -152,4 +152,10 @@ describe('lookKey', () => {
   test('text colors match whatever their case', () => {
     assert.equal(TextBulk.lookKey(base({ color: '#ffffff' }), lk()), TextBulk.lookKey(base({ color: '#FFFFFF' }), lk()));
   });
+  test('two solid outlines with different thickness do not match, and identical ones do', () => {
+    const solid = (extra) => lk(Object.assign({ look: 'solid', solidColor: '#000000', solidWidth: 6 }, extra));
+    assert.notEqual(TextBulk.lookKey(base(), solid()), TextBulk.lookKey(base(), solid({ solidWidth: 12 })));
+    assert.equal(TextBulk.lookKey(base(), solid()), TextBulk.lookKey(base(), solid()));
+    assert.equal(TextBulk.lookKey(base(), solid({ solidColor: '#abcdef' })), TextBulk.lookKey(base(), solid({ solidColor: '#ABCDEF' })));
+  });
 });
