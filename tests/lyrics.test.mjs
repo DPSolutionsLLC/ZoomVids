@@ -493,3 +493,301 @@ describe('addParts', () => {
     assert.equal(out.countLen, 5);
   });
 });
+
+const verseOf = (id, slide) => ({ id, lines: slide.lines });
+const timedVerse = (id, sylTimes) => ({ id, lines: [{ words: sylTimes.map(([wid, sid, text, t, d]) => ({ id: wid, syls: [Object.assign({ id: sid, text }, t == null ? {} : { t, d })] })) }] });
+const recordFrom = (text) => {
+  const out = L.parse(text, counter('x'));
+  const verseId = counter('v');
+  return { verses: out.slides.map((s) => verseOf(verseId(), s)) };
+};
+const allSyls = (verse) => verse.lines.flatMap((ln) => ln.words.flatMap((w) => w.syls));
+
+describe('cleanRecord', () => {
+  test('keeps verses and their ids', () => {
+    const { verses } = recordFrom('One two\n\nthree');
+    const out = L.cleanRecord({ verses });
+    assert.deepEqual(out.verses.map((v) => v.id), ['v1', 'v2']);
+    assert.deepEqual(ids(out.verses[0]), ids(verses[0]));
+  });
+  test('takes a plain array too', () => {
+    const { verses } = recordFrom('One');
+    assert.equal(L.cleanRecord(verses).verses.length, 1);
+  });
+  test('strips t and d from every syllable', () => {
+    const out = L.cleanRecord([timedVerse('v1', [['a', 'a1', 'Hi', 1, 0.4]])]);
+    const syl = out.verses[0].lines[0].words[0].syls[0];
+    assert.equal('t' in syl, false);
+    assert.equal('d' in syl, false);
+  });
+  test('drops a verse with no valid words', () => {
+    const out = L.cleanRecord([{ id: 'v1', lines: [{ words: [{ id: 'a', syls: [] }] }] }, timedVerse('v2', [['b', 'b1', 'Yes']])]);
+    assert.deepEqual(out.verses.map((v) => v.id), ['v2']);
+  });
+  test('drops a verse without a string id', () => {
+    const out = L.cleanRecord([timedVerse('', [['a', 'a1', 'x']]), timedVerse('v2', [['b', 'b1', 'y']])]);
+    assert.deepEqual(out.verses.map((v) => v.id), ['v2']);
+  });
+  test('drops a duplicate verse id after the first', () => {
+    const out = L.cleanRecord([timedVerse('v1', [['a', 'a1', 'x']]), timedVerse('v1', [['b', 'b1', 'y']])]);
+    assert.equal(out.verses.length, 1);
+    assert.equal(out.verses[0].lines[0].words[0].id, 'a');
+  });
+  test('drops a later word that reuses a word id or a syllable id', () => {
+    const out = L.cleanRecord([
+      timedVerse('v1', [['a', 'a1', 'x'], ['b', 'b1', 'y']]),
+      timedVerse('v2', [['a', 'c1', 'reusedword'], ['c', 'b1', 'reusedsyl'], ['d', 'd1', 'fine']]),
+    ]);
+    assert.deepEqual(out.verses[1].lines[0].words.map((w) => w.id), ['d']);
+  });
+  test('returns null for an empty record and for non-objects', () => {
+    assert.equal(L.cleanRecord([]), null);
+    assert.equal(L.cleanRecord({ verses: [] }), null);
+    assert.equal(L.cleanRecord(null), null);
+    assert.equal(L.cleanRecord('verses'), null);
+    assert.equal(L.cleanRecord({ verses: 'x' }), null);
+  });
+});
+
+describe('cleanSong and cleanSlide keep the record links', () => {
+  test('verses survive cleanSong', () => {
+    const { verses } = recordFrom('One two\n\nthree');
+    assert.deepEqual(L.cleanSong({ verses }).verses, verses);
+  });
+  test('a song without verses has no verses key', () => {
+    assert.equal('verses' in L.cleanSong({}), false);
+    assert.equal('verses' in L.cleanSong({ verses: [] }), false);
+  });
+  test('addParts keeps the verses', () => {
+    const { verses } = recordFrom('One');
+    assert.deepEqual(L.addParts(L.cleanSong({ verses }), ['High']).verses, verses);
+  });
+  test('verse survives cleanSlide, and an empty or non-string verse is dropped', () => {
+    const lines = [{ words: [{ id: 'a', syls: [{ id: 'a1', text: 'x' }] }] }];
+    assert.equal(L.cleanSlide({ song: 's', verse: 'v1', lines }).verse, 'v1');
+    assert.equal('verse' in L.cleanSlide({ song: 's', verse: '', lines }), false);
+    assert.equal('verse' in L.cleanSlide({ song: 's', verse: 3, lines }), false);
+  });
+});
+
+describe('recordText and verseRanges', () => {
+  const text = 'Glo-ri-a in\nex-cel-sis\n\nHigh: Peace on earth\nLow: good will\n\nwell--known';
+  test('verses join with blank lines', () => {
+    const { verses } = recordFrom(text);
+    assert.equal(verses.length, 3);
+    assert.equal(L.recordText(verses), verses.map((v) => L.markup(v)).join('\n\n'));
+  });
+  test('each range slices exactly that verse', () => {
+    const { verses } = recordFrom(text);
+    const all = L.recordText(verses), ranges = L.verseRanges(verses);
+    assert.deepEqual(ranges.map((r) => r.id), ['v1', 'v2', 'v3']);
+    ranges.forEach((r, i) => assert.equal(all.slice(r.from, r.to), L.markup(verses[i])));
+    assert.equal(ranges[2].to, all.length);
+  });
+  test('parsing the text gives the same shapes and parts back', () => {
+    const { verses } = recordFrom(text);
+    const again = L.parse(L.recordText(verses), counter('y'));
+    assert.equal(again.slides.length, verses.length);
+    again.slides.forEach((s, i) => assert.deepEqual(shape(s), shape(verses[i])));
+    assert.deepEqual(again.parts, ['High', 'Low']);
+  });
+});
+
+describe('applyText', () => {
+  const base = 'Glo-ri-a in\nex-cel-sis\n\nPeace on earth\ngood will\n\nSing we now\nloud and clear';
+  const setup = (text = base) => ({ verses: recordFrom(text).verses, make: counter('n') });
+  test('unchanged text keeps every verse, word and syllable id', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, L.recordText(verses), make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    res.verses.forEach((v, i) => { assert.deepEqual(ids(v), ids(verses[i])); assert.deepEqual(sylIds(v), sylIds(verses[i])); });
+    assert.deepEqual(res.kept, { v1: true, v2: true, v3: true });
+    assert.deepEqual(res.added, []);
+    assert.deepEqual(res.absorbed, {});
+    assert.deepEqual(res.dropped, []);
+  });
+  test('a typo fix changes only that word id', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, base.replace('earth', 'Earth!'), make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    const before = ids(verses[1]), after = ids(res.verses[1]);
+    assert.equal(after.length, before.length);
+    assert.equal(after.filter((id, i) => id !== before[i]).length, 1);
+    assert.deepEqual(ids(res.verses[0]), ids(verses[0]));
+    assert.deepEqual(ids(res.verses[2]), ids(verses[2]));
+  });
+  test('adding syllable marks keeps the word id and makes new syllables', () => {
+    const { verses, make } = setup(base.replace('Glo-ri-a', 'Gloria'));
+    const before = verses[0].lines[0].words[0];
+    const res = L.applyText(verses, L.recordText(verses).replace('Gloria', 'Glo-ri-a'), make);
+    const after = res.verses[0].lines[0].words[0];
+    assert.equal(after.id, before.id);
+    assert.deepEqual(after.syls.map((s) => s.text), ['Glo', 'ri', 'a']);
+    assert.ok(after.syls.every((s) => s.id !== before.syls[0].id));
+  });
+  test('a split keeps the verse, adds one after it, and the moved words keep their ids', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, base.replace('Peace on earth\ngood will', 'Peace on earth\n\ngood will'), make);
+    assert.equal(res.verses.length, 4);
+    assert.equal(res.verses[1].id, 'v2');
+    assert.deepEqual(res.added, [{ id: res.verses[2].id, after: 'v2' }]);
+    assert.deepEqual(ids(res.verses[2]), verses[1].lines[1].words.map((w) => w.id));
+    assert.deepEqual(res.dropped, []);
+    assert.deepEqual(res.absorbed, {});
+  });
+  test('a join keeps the first verse and absorbs the second into it', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, base.replace('good will\n\nSing', 'good will\nSing'), make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2']);
+    assert.deepEqual(res.absorbed, { v3: 'v2' });
+    assert.deepEqual(res.dropped, []);
+    assert.deepEqual(res.added, []);
+    assert.deepEqual(ids(res.verses[1]), ids(verses[1]).concat(ids(verses[2])));
+  });
+  test('deleting a verse’s text drops it', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, base.split('\n\n').slice(0, 2).join('\n\n'), make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2']);
+    assert.deepEqual(res.dropped, ['v3']);
+    assert.deepEqual(res.absorbed, {});
+    assert.deepEqual(res.added, []);
+  });
+  test('a brand-new verse between 1 and 2 is added after verse 1', () => {
+    const { verses, make } = setup();
+    const parts = base.split('\n\n');
+    const res = L.applyText(verses, [parts[0], 'Brand new words', parts[1], parts[2]].join('\n\n'), make);
+    assert.equal(res.verses.length, 4);
+    assert.deepEqual(res.added, [{ id: res.verses[1].id, after: 'v1' }]);
+    assert.deepEqual([res.verses[0].id, res.verses[2].id, res.verses[3].id], ['v1', 'v2', 'v3']);
+  });
+  test('a new verse before verse 1 is added after verse 1, the following one', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, 'Brand new words\n\n' + base, make);
+    assert.deepEqual(res.added, [{ id: res.verses[0].id, after: 'v1' }]);
+  });
+  test('a part tag on a line is reported in parts', () => {
+    const { verses, make } = setup();
+    const res = L.applyText(verses, base.replace('Peace on earth', 'High: Peace on earth'), make);
+    assert.deepEqual(res.parts, ['High']);
+    assert.equal(res.verses[1].lines[0].words[0].part, 'High');
+    assert.equal(res.verses[1].id, 'v2');
+  });
+  test('only blank lines and a lone part tag is empty', () => {
+    const { verses, make } = setup();
+    assert.equal(L.parse('\n\nHigh:\n\n', counter()).slides.length, 0, 'it passes parse but has no words');
+    assert.deepEqual(L.applyText(verses, '\n\nHigh:\n\n', make), { error: 'empty' });
+    assert.deepEqual(L.applyText(verses, '', make), { error: 'empty' });
+  });
+  test('swapping two verses keeps both ids and their words', () => {
+    const { verses, make } = setup();
+    const parts = base.split('\n\n');
+    const res = L.applyText(verses, [parts[0], parts[2], parts[1]].join('\n\n'), make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v3', 'v2']);
+    assert.deepEqual(ids(res.verses[1]), ids(verses[2]));
+    assert.deepEqual(ids(res.verses[2]), ids(verses[1]));
+    assert.deepEqual(res.added, []);
+    assert.deepEqual(res.dropped, []);
+  });
+  test('a repeated chorus keeps each copy’s own verse id', () => {
+    const { verses, make } = setup('Sing it\n\nVerse one\n\nSing it');
+    const res = L.applyText(verses, 'Sing it\n\nVerse one\n\nSing it', make);
+    assert.deepEqual(res.verses.map((v) => v.id), ['v1', 'v2', 'v3']);
+    assert.deepEqual(ids(res.verses[2]), ids(verses[2]));
+  });
+  test('the result has no timing and the input is not changed', () => {
+    const verses = [timedVerse('v1', [['a', 'a1', 'Hi', 1, 0.4]])];
+    const before = JSON.stringify(verses);
+    const res = L.applyText(verses, 'Hi', counter('n'));
+    assert.equal(JSON.stringify(verses), before);
+    assert.equal('t' in allSyls(res.verses[0])[0], false);
+  });
+});
+
+describe('fillSlide', () => {
+  const verse = timedVerse('v1', [['a', 'a1', 'One'], ['b', 'b1', 'two'], ['c', 'c1', 'three']]);
+  const lyricWith = (times) => ({ lines: [{ words: times.map(([wid, sid, t, d]) => ({ id: wid, syls: [{ id: sid, text: 'x', t, d }] })) }] });
+  test('keeps the slide’s own timing by syllable id', () => {
+    const out = L.fillSlide(verse, 10, [{ start: 10, lyric: lyricWith([['a', 'a1', 0.5, 0.3]]) }]);
+    assert.deepEqual(allSyls(out)[0], { id: 'a1', text: 'One', t: 0.5, d: 0.3 });
+  });
+  test('converts a syllable from another slide through mix time', () => {
+    const out = L.fillSlide(verse, 11, [{ start: 11, lyric: lyricWith([]) }, { start: 10, lyric: lyricWith([['b', 'b1', 1.5, 0.2]]) }]);
+    assert.equal(allSyls(out)[1].t, 0.5);
+    assert.equal(allSyls(out)[1].d, 0.2);
+  });
+  test('the first source wins', () => {
+    const out = L.fillSlide(verse, 0, [{ start: 0, lyric: lyricWith([['a', 'a1', 1, 0.3]]) }, { start: 0, lyric: lyricWith([['a', 'a1', 2, 0.6]]) }]);
+    assert.equal(allSyls(out)[0].t, 1);
+    assert.equal(allSyls(out)[0].d, 0.3);
+  });
+  test('syllables with no timing anywhere stay untimed', () => {
+    const out = L.fillSlide(verse, 0, [{ start: 0, lyric: lyricWith([['a', 'a1', 1, 0.3]]) }]);
+    assert.equal('t' in allSyls(out)[2], false);
+    assert.equal('d' in allSyls(out)[2], false);
+  });
+  test('the verse is not changed and no song or verse is set', () => {
+    const before = JSON.stringify(verse);
+    const out = L.fillSlide(verse, 0, [{ start: 0, lyric: lyricWith([['a', 'a1', 1, 0.3]]) }]);
+    assert.equal(JSON.stringify(verse), before);
+    assert.deepEqual(Object.keys(out), ['lines']);
+  });
+});
+
+describe('buildRecord', () => {
+  const slide = (id, start, index, text, opts = {}) => {
+    const lyric = L.parse(text, counter(opts.prefix || id + '-')).slides[0];
+    lyric.song = 's1';
+    if (opts.time) Object.assign(lyric.lines[0].words[0].syls[0], { t: opts.time, d: 0.3 });
+    return { id, start, index, hidden: !!opts.hidden, lyric };
+  };
+  test('visible slides out of time order become verses in time order with their own ids', () => {
+    const slides = [slide('c', 20, 0, 'Third'), slide('a', 0, 1, 'First'), slide('b', 10, 2, 'Second')];
+    const out = L.buildRecord(slides, counter('v'));
+    assert.deepEqual(out.verses.map((v) => L.markup(v)), ['First', 'Second', 'Third']);
+    assert.deepEqual(ids(out.verses[0]), ids(slides[1].lyric));
+    assert.equal(out.links.a.verse, out.verses[0].id);
+    assert.equal(out.links.c.verse, out.verses[2].id);
+    assert.equal(out.links.a.song, 's1');
+    out.verses.forEach((v) => assert.ok(allSyls(v).every((s) => !('t' in s))));
+  });
+  test('a hidden copy at the same start links to the same verse, remapped by position, keeping its own timing', () => {
+    const shown = slide('b', 10, 1, 'Peace on earth');
+    const take = slide('a', 10.02, 0, 'peace on Earth', { hidden: true, time: 0.7 });
+    const out = L.buildRecord([take, shown], counter('v'));
+    assert.equal(out.verses.length, 1);
+    assert.equal(out.links.a.verse, out.verses[0].id);
+    assert.deepEqual(ids(out.links.a), ids(out.verses[0]));
+    assert.deepEqual(sylIds(out.links.a), sylIds(out.verses[0]));
+    assert.equal(out.links.a.lines[0].words[0].syls[0].t, 0.7);
+    assert.equal(out.links.a.lines[0].words[0].syls[0].text, 'peace');
+  });
+  test('a hidden slide with different words becomes its own verse, in time order', () => {
+    const out = L.buildRecord([slide('a', 0, 0, 'One'), slide('b', 20, 1, 'Three'), slide('h', 10, 2, 'Two', { hidden: true })], counter('v'));
+    assert.deepEqual(out.verses.map((v) => L.markup(v)), ['One', 'Two', 'Three']);
+    assert.equal(out.links.h.verse, out.verses[1].id);
+  });
+  test('a hidden copy with the same words far from the shown one is its own verse', () => {
+    const out = L.buildRecord([slide('a', 0, 0, 'Same'), slide('h', 5, 1, 'Same', { hidden: true })], counter('v'));
+    assert.equal(out.verses.length, 2);
+  });
+  test('when every slide is hidden, all become verses', () => {
+    const out = L.buildRecord([slide('a', 0, 0, 'One', { hidden: true }), slide('b', 0, 1, 'One', { hidden: true })], counter('v'));
+    assert.equal(out.verses.length, 2);
+  });
+  test('two visible slides sharing ids: the second is re-id’d and its link matches, timing kept', () => {
+    const first = slide('a', 0, 0, 'Hello there', { prefix: 'same-' });
+    const second = slide('b', 10, 1, 'Hello there', { prefix: 'same-', time: 1.2 });
+    const out = L.buildRecord([first, second], counter('v'));
+    assert.equal(out.verses.length, 2);
+    assert.deepEqual(ids(out.verses[0]), ids(first.lyric));
+    assert.notDeepEqual(ids(out.verses[1]), ids(first.lyric));
+    assert.deepEqual(ids(out.links.b), ids(out.verses[1]));
+    assert.deepEqual(sylIds(out.links.b), sylIds(out.verses[1]));
+    assert.equal(out.links.b.lines[0].words[0].syls[0].t, 1.2);
+    assert.equal(new Set(out.verses.map((v) => v.id)).size, 2);
+  });
+  test('the record it builds passes cleanRecord unchanged', () => {
+    const out = L.buildRecord([slide('a', 0, 0, 'One two'), slide('b', 5, 1, 'three')], counter('v'));
+    assert.deepEqual(L.cleanRecord(out.verses).verses, out.verses);
+  });
+});

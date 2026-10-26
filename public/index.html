@@ -439,6 +439,15 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .lyricword:hover { border-color: var(--accent-mid); border-left-color: var(--part); }
 .lyricword[aria-pressed="true"] { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: 0; }
 .lyricword .dot { color: var(--muted); padding: 0 1px; }
+.lyricrec { position: relative; background: var(--surface); border-radius: var(--r); }
+.lyrichl { position: absolute; inset: 0; font: 16px/1.4 var(--ui); padding: 8px 10px; border: 1px solid transparent; border-radius: var(--r); white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; scrollbar-gutter: stable; color: transparent; pointer-events: none; }
+.lyrichl mark { background: var(--accent-soft); color: transparent; border-radius: 3px; }
+.texted #songLyrics { position: relative; display: block; background: transparent; width: 100%; overflow-wrap: anywhere; scrollbar-gutter: stable; }
+.lyricverse { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px; border-radius: var(--r); }
+.lyricverse + .lyricverse { border-top: 1px solid var(--line); }
+.lyricverse.current { outline: 2px solid var(--accent-soft); }
+.lyricversehead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.lyricversehead .vname { font-weight: 700; color: var(--muted); }
 .wordtiming { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .wordlistwrap { max-height: 40vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
 .wordlist { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -622,6 +631,13 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
           <div class="texted" id="songSet">
             <label>Song <select id="songSetSong"></select></label>
             <p class="note" id="songSetEmpty" hidden>Add a song to Order of music first.</p>
+            <h4 class="edhead">Lyrics</h4>
+            <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part.</p>
+            <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
+            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><span class="note" id="songLyricsState"></span></div>
+            <p class="msg" id="songLyricsMsg" role="status"></p>
+            <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this song"></div>
+            <div class="btnrow"><label>Part <select id="lyricPart"></select></label><button class="btn small" id="lyricApply" disabled>Set part</button><span class="note" id="lyricPickNote"></span></div>
             <h4 class="edhead">While it's sung</h4>
             <div class="btnrow">
               <label>Highlight <select id="lyricHighlight"><option value="syllable">Syllable by syllable</option><option value="word">Whole word</option></select></label>
@@ -664,10 +680,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <div class="btnrow" role="radiogroup" aria-label="What to add">
               <label><input type="radio" name="manyKind" value="scripture" checked> Scriptures</label>
               <label><input type="radio" name="manyKind" value="text"> My own text, one per line</label>
-              <label data-karaoke-only><input type="radio" name="manyKind" value="lyrics"> Song lyrics</label>
             </div>
-            <div class="btnrow" id="manySongRow" hidden><label>For song <select id="manySong"></select></label></div>
-            <p class="note" id="manyLyricHint" hidden>Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen. Start a line with High: or Low: to give it a part.</p>
             <label for="manyInput" class="visually-hidden">Scripture references or lines of text</label>
             <textarea id="manyInput" rows="4" placeholder="John 3:16, Moroni 10:4, D&amp;C 4:2"></textarea>
             <div class="btnrow" id="manyModeRow" role="radiogroup" aria-label="How a passage shows">
@@ -717,18 +730,9 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <textarea id="textBody" rows="3"></textarea>
             </div>
             <div id="lyricRow" class="lyricrow" data-single hidden>
-              <label for="lyricBody" class="minor" style="font-size:14px">Lyrics for <span id="lyricSong"></span></label>
-              <textarea id="lyricBody" rows="4"></textarea>
-              <p class="note">A blank line splits this into two slides. Glo-ri-a = syllables; well--known keeps a hyphen; High: sets a part.</p>
-              <div class="btnrow"><button class="btn small" id="lyricUpdate">Update</button><span class="note">Applies your changes and keeps this slide open.</span></div>
-              <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this slide"></div>
-              <div class="btnrow">
-                <label>Part <select id="lyricPart"></select></label>
-                <button class="btn small" id="lyricApply" disabled>Set part</button>
-                <span class="note" id="lyricPickNote"></span>
-              </div>
-              <p class="note">Highlight, colors, countdown and the look for new slides are in Song settings.</p>
-              <div class="btnrow"><button class="btn small" id="lyricJoin">Join with next slide</button></div>
+              <p class="note" id="lyricRowNote">Slide <span id="lyricVerseNo"></span> of <span id="lyricSong"></span>. Its words are edited in Song settings.</p>
+              <p class="note" id="lyricOrphanNote" hidden>This slide’s song is no longer in Order of music, so its words can’t be edited.</p>
+              <div class="btnrow"><button class="btn small" id="lyricOpenSong">Edit the lyrics</button></div>
               <p class="msg" id="lyricMsg" role="status"></p>
               <div id="wordTimingRow" class="wordtiming" data-single hidden>
                 <h4 class="edhead">Word timing</h4>
@@ -4000,10 +4004,9 @@ var Lyrics = (function () {
   }
   function wordCount(slide) { return words(slide).length; }
   function syllableCount(slide) { return words(slide).reduce(function (sum, w) { return sum + w.syls.length; }, 0); }
-  function cleanSlide(raw) {
-    if (!isObject(raw) || !Array.isArray(raw.lines)) return null;
+  function cleanLines(rawLines) {
     var lines = [];
-    raw.lines.forEach(function (line) {
+    rawLines.forEach(function (line) {
       if (!isObject(line) || !Array.isArray(line.words)) return;
       var kept = [];
       line.words.forEach(function (w) {
@@ -4023,10 +4026,168 @@ var Lyrics = (function () {
       });
       if (kept.length) lines.push({ words: kept });
     });
+    return lines;
+  }
+  function cleanSlide(raw) {
+    if (!isObject(raw) || !Array.isArray(raw.lines)) return null;
+    var lines = cleanLines(raw.lines);
     if (!lines.length) return null;
     var out = { lines: lines };
     if (typeof raw.song === 'string') out.song = raw.song;
+    if (typeof raw.verse === 'string' && raw.verse) out.verse = raw.verse;
     return out;
+  }
+  function untime(lines) {
+    lines.forEach(function (line) { line.words.forEach(function (w) { w.syls.forEach(function (s) { delete s.t; delete s.d; }); }); });
+    return lines;
+  }
+  function cleanRecord(raw) {
+    var list = Array.isArray(raw) ? raw : isObject(raw) && Array.isArray(raw.verses) ? raw.verses : null;
+    if (!list) return null;
+    var verseSeen = {}, idSeen = {}, verses = [];
+    list.forEach(function (v) {
+      if (!isObject(v) || typeof v.id !== 'string' || !v.id || verseSeen[v.id] || !Array.isArray(v.lines)) return;
+      var lines = untime(cleanLines(v.lines)).map(function (line) {
+        return { words: line.words.filter(function (w) {
+          var ids = [w.id].concat(w.syls.map(function (s) { return 's:' + s.id; }));
+          if (ids.some(function (id) { return idSeen[id]; })) return false;
+          ids.forEach(function (id) { idSeen[id] = true; });
+          return true;
+        }) };
+      }).filter(function (line) { return line.words.length; });
+      if (!lines.length) return;
+      verseSeen[v.id] = true;
+      verses.push({ id: v.id, lines: lines });
+    });
+    return verses.length ? { verses: verses } : null;
+  }
+  function recordText(verses) { return verses.map(function (v) { return markup(v); }).join('\n\n'); }
+  function verseRanges(verses) {
+    var at = 0;
+    return verses.map(function (v, i) {
+      var len = markup(v).length, out = { id: v.id, from: at, to: at + len };
+      at += len + (i < verses.length - 1 ? 2 : 0);
+      return out;
+    });
+  }
+  function applyText(verses, text, makeId, knownParts) {
+    var parsed = parse(text, makeId, knownParts);
+    if (!parsed.slides.length) return { error: 'empty' };
+    var wordVerse = {}, oldAll = { lines: [] }, newAll = { lines: [] }, taken = {};
+    function textKey(slide) { return words(slide).map(wordText).join(' '); }
+    verses.forEach(function (v) { v.lines.forEach(function (line) { line.words.forEach(function (w) { wordVerse[w.id] = v.id; }); }); });
+    var pairs = parsed.slides.map(function (s) {
+      var key = textKey(s);
+      for (var i = 0; i < verses.length; i++) if (!taken[verses[i].id] && textKey(verses[i]) === key) { taken[verses[i].id] = true; return verses[i]; }
+      return null;
+    });
+    verses.forEach(function (v) { if (!taken[v.id]) oldAll.lines = oldAll.lines.concat(v.lines); });
+    parsed.slides.forEach(function (s, i) { if (!pairs[i]) newAll.lines = newAll.lines.concat(s.lines); });
+    var merged = merge(oldAll, newAll), at = 0;
+    var chunks = parsed.slides.map(function (s, i) {
+      if (pairs[i]) return { lines: untime(merge(pairs[i], s).lines) };
+      var piece = { lines: untime(merged.lines.slice(at, at + s.lines.length)) };
+      at += s.lines.length;
+      return piece;
+    });
+    var kept = {};
+    chunks.forEach(function (c, i) { if (pairs[i]) { kept[pairs[i].id] = true; c.id = pairs[i].id; c.kept = true; } });
+    var firstOld = chunks.map(function (c) {
+      var ws = words(c);
+      for (var i = 0; i < ws.length; i++) if (wordVerse[ws[i].id]) return wordVerse[ws[i].id];
+      return null;
+    });
+    chunks.forEach(function (c, i) {
+      if (c.kept) return;
+      var old = firstOld[i];
+      if (old && !kept[old]) { kept[old] = true; c.id = old; c.kept = true; }
+      else c.id = makeId();
+    });
+    var added = [];
+    chunks.forEach(function (c, i) {
+      if (c.kept) return;
+      var after = null;
+      if (firstOld[i] && kept[firstOld[i]]) after = firstOld[i];
+      for (var k = i - 1; after === null && k >= 0; k--) if (chunks[k].kept) after = chunks[k].id;
+      for (k = i + 1; after === null && k < chunks.length; k++) if (chunks[k].kept) after = chunks[k].id;
+      added.push({ id: c.id, after: after });
+    });
+    var absorbed = {}, dropped = [];
+    verses.forEach(function (v) {
+      if (kept[v.id]) return;
+      var mine = {};
+      words(v).forEach(function (w) { mine[w.id] = true; });
+      var best = null, bestCount = 0;
+      chunks.forEach(function (c) {
+        var n = words(c).filter(function (w) { return mine[w.id]; }).length;
+        if (n > bestCount) { best = c.id; bestCount = n; }
+      });
+      if (best) absorbed[v.id] = best; else dropped.push(v.id);
+    });
+    return {
+      verses: chunks.map(function (c) { return { id: c.id, lines: c.lines }; }),
+      parts: parsed.parts, kept: kept, added: added, absorbed: absorbed, dropped: dropped
+    };
+  }
+  function round3(x) { return Math.round(x * 1000) / 1000; }
+  function isTime(s) { return typeof s.t === 'number' && isFinite(s.t) && typeof s.d === 'number' && isFinite(s.d) && s.d > 0; }
+  function fillSlide(verse, start, sources) {
+    var found = {};
+    (sources || []).forEach(function (src) {
+      if (!src || !src.lyric || !Array.isArray(src.lyric.lines)) return;
+      words(src.lyric).forEach(function (w) {
+        w.syls.forEach(function (s) {
+          if (found[s.id] || !isTime(s)) return;
+          found[s.id] = { t: round3(src.start + s.t - start), d: s.d };
+        });
+      });
+    });
+    var lines = untime(copy(verse.lines));
+    lines.forEach(function (line) { line.words.forEach(function (w) { w.syls.forEach(function (s) { if (found[s.id]) { s.t = found[s.id].t; s.d = found[s.id].d; } }); }); });
+    return { lines: lines };
+  }
+  function sylShape(slide) {
+    return words(slide).map(function (w) { return w.syls.map(function (s) { return s.text.toLowerCase(); }).join('\u0001'); }).join('\u0002');
+  }
+  function remapByPosition(slide, verse) {
+    var out = copy(slide), from = words(verse);
+    words(out).forEach(function (w, i) {
+      w.id = from[i].id;
+      w.syls.forEach(function (s, k) { s.id = from[i].syls[k].id; });
+    });
+    return out;
+  }
+  function buildRecord(slides, makeId) {
+    var used = {}, verses = [], links = {};
+    function order(a, b) { return a.start - b.start || a.index - b.index; }
+    function addVerse(sl) {
+      var lyric = copy(sl.lyric), ids = [];
+      words(lyric).forEach(function (w) { ids.push(w.id); w.syls.forEach(function (s) { ids.push('s:' + s.id); }); });
+      if (ids.some(function (id) { return used[id]; })) {
+        lyric = reId(lyric, makeId);
+        ids = [];
+        words(lyric).forEach(function (w) { ids.push(w.id); w.syls.forEach(function (s) { ids.push('s:' + s.id); }); });
+      }
+      ids.forEach(function (id) { used[id] = true; });
+      var verse = { id: makeId(), lines: untime(copy(lyric.lines)), start: sl.start, index: sl.index };
+      verses.push(verse);
+      lyric.verse = verse.id;
+      links[sl.id] = lyric;
+      return verse;
+    }
+    var shown = slides.filter(function (sl) { return !sl.hidden; });
+    var base = (shown.length ? shown : slides).slice().sort(order), rest = shown.length ? slides.filter(function (sl) { return sl.hidden; }).sort(order) : [];
+    var baseVerses = base.map(function (sl) { var v = addVerse(sl); v.shape = sylShape(sl.lyric); return v; });
+    rest.forEach(function (sl) {
+      var shape = sylShape(sl.lyric), match = null;
+      for (var i = 0; i < baseVerses.length && !match; i++) if (baseVerses[i].shape === shape && Math.abs(baseVerses[i].start - sl.start) <= 0.05) match = baseVerses[i];
+      if (!match) { addVerse(sl); return; }
+      var lyric = remapByPosition(sl.lyric, match);
+      lyric.verse = match.id;
+      links[sl.id] = lyric;
+    });
+    verses.sort(order);
+    return { verses: verses.map(function (v) { return { id: v.id, lines: v.lines }; }), links: links };
   }
   function cleanSong(raw) {
     if (!isObject(raw)) return null;
@@ -4043,7 +4204,7 @@ var Lyrics = (function () {
       if (typeof v !== 'number' || !isFinite(v)) return fallback;
       return Math.round(Math.min(hi, Math.max(lo, v)) / step) * step;
     }
-    return {
+    var out = {
       showParts: raw.showParts === true, parts: parts,
       highlight: raw.highlight === 'word' ? 'word' : raw.highlight === 'syllable' || raw.highlight === 'sweep' ? 'syllable' : d.highlight,
       keepLit: raw.keepLit === true,
@@ -4053,6 +4214,9 @@ var Lyrics = (function () {
       countLen: num(raw.countLen, 1, 10, 1, d.countLen),
       slideLook: cleanSlideLook(raw.slideLook)
     };
+    var rec = cleanRecord(raw.verses);
+    if (rec) out.verses = rec.verses;
+    return out;
   }
   function cleanSlideLook(raw) {
     var src = isObject(raw) ? raw : {}, d = KARAOKE_LOOK;
@@ -4088,7 +4252,8 @@ var Lyrics = (function () {
   return {
     PALETTE: PALETTE, PART_RE: PART_RE, SHOW_DEFAULTS: SHOW_DEFAULTS, KARAOKE_LOOK: KARAOKE_LOOK, splitWord: splitWord, tagName: tagName, wordText: wordText, parse: parse, display: display, markup: markup,
     merge: merge, reId: reId, partsOf: partsOf, setPart: setPart, joinSlides: joinSlides, wordCount: wordCount, syllableCount: syllableCount,
-    cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts
+    cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts,
+    cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord
   };
 })();
 
@@ -4527,7 +4692,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricPick: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top'
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -4551,8 +4716,34 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (slide) { tx.lyric = slide; syncLyricText(tx, m.items || []); } else delete tx.lyric;
     });
     if ('vocalExport' in m) m.vocalExport = VocalExport.clean(m.vocalExport);
+    migrateLyrics(m);
     tidyGroups(m);
     return m;
+  }
+  // Gives every karaoke song one lyrics record built from its slides. Safe to run on every load:
+  // a song that already has a record only gains verses for slides that aren't linked to it yet.
+  function migrateLyrics(m) {
+    var items = m.items || [], bySong = {};
+    m.texts.forEach(function (tx, index) {
+      if (!tx.lyric || !items.some(function (it) { return it.id === tx.lyric.song; })) return;
+      (bySong[tx.lyric.song] = bySong[tx.lyric.song] || []).push({ id: tx.id, start: tx.start || 0, index: index, hidden: !!tx.hidden, lyric: tx.lyric, tx: tx });
+    });
+    Object.keys(bySong).forEach(function (songId) {
+      var item = items.filter(function (it) { return it.id === songId; })[0], have = item.lyrics && item.lyrics.verses || [];
+      var known = {};
+      have.forEach(function (v) { known[v.id] = true; });
+      var loose = bySong[songId].filter(function (sl) { return !known[sl.lyric.verse]; });
+      if (!loose.length) return;
+      var usedIds = {};
+      have.forEach(function (v) { v.lines.forEach(function (line) { line.words.forEach(function (w) { usedIds[w.id] = true; w.syls.forEach(function (s) { usedIds['s:' + s.id] = true; }); }); }); });
+      loose.forEach(function (sl) {
+        var clash = sl.lyric.lines.some(function (line) { return line.words.some(function (w) { return usedIds[w.id] || w.syls.some(function (s) { return usedIds['s:' + s.id]; }); }); });
+        if (clash) sl.lyric = Lyrics.reId(sl.lyric, nid);
+      });
+      var built = Lyrics.buildRecord(loose, nid);
+      item.lyrics = Lyrics.cleanSong(Object.assign({}, item.lyrics || {}, { verses: have.concat(built.verses) }));
+      loose.forEach(function (sl) { sl.tx.lyric = built.links[sl.id]; syncLyricText(sl.tx, items); });
+    });
   }
   function tidyGroups(m) {
     m.groups = TextGroup.liveGroups(m.groups || [], m.texts);
@@ -7010,26 +7201,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function manyKind() { return document.querySelector('input[name="manyKind"]:checked').value; }
   function manySay(text, isErr) { var m = $('manyMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
   function syncManyKind() {
-    var kind = manyKind(), scripture = kind === 'scripture', lyrics = kind === 'lyrics';
+    var scripture = manyKind() === 'scripture';
     $('manyModeRow').hidden = !scripture;
-    $('manyGroupRow').hidden = lyrics;
-    $('manySongRow').hidden = $('manyLyricHint').hidden = !lyrics;
-    $('manyQueue').disabled = lyrics;
-    $('manyInput').placeholder = scripture ? 'John 3:16, Moroni 10:4, D&C 4:2' : lyrics ? 'Glo-ri-a in ex-cel-sis De-o\n\nHigh: Peace on earth\nLow: Good will to all' : 'One message per line';
-    if (lyrics) fillManySongs();
-  }
-  function fillManySongs() {
-    var select = $('manySong'), keep = select.value, under = songUnderCursor();
-    fillSongSelect(select, under ? under.id : plan.music.some(function (c) { return c.id === keep; }) ? keep : plan.music.length ? plan.music[0].id : '');
+    $('manyInput').placeholder = scripture ? 'John 3:16, Moroni 10:4, D&C 4:2' : 'One message per line';
   }
   async function gatherMany() {
     var input = $('manyInput').value;
-    if (manyKind() === 'lyrics') {
-      var songId = $('manySong').value;
-      if (!songId || !findItem('items', songId)) return { items: [], errors: [], message: 'Add the song to Order of music first.' };
-      var parsed = Lyrics.parse(input, nid, partNames(songId));
-      return { items: parsed.slides.map(function (s) { return newLyricSlide(s, songId); }), errors: [], song: songId, parts: parsed.parts };
-    }
     if (manyKind() === 'scripture') {
       var mode = document.querySelector('input[name="manyMode"]:checked').value, found = await resolveRefs(input);
       return { items: found.items.map(function (p) { return newScriptureItem(p, mode); }), errors: found.errors };
@@ -7042,11 +7219,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     manySay('Looking up…', false);
     try {
       var result = await gatherMany();
-      if (result.message) { manySay(result.message, true); return; }
       var bad = result.errors.map(function (e) { return e.input + ': ' + e.error; });
       if (!result.items.length) {
-        var kind = manyKind();
-        manySay(bad.length ? bad.join('\n') : kind === 'scripture' ? 'Type a reference, for example John 3:16.' : kind === 'lyrics' ? 'Paste the song’s lyrics first.' : 'Type at least one line of text.', true);
+        manySay(bad.length ? bad.join('\n') : manyKind() === 'scripture' ? 'Type a reference, for example John 3:16.' : 'Type at least one line of text.', true);
         return;
       }
       var done = use(result.items, result);
@@ -7060,8 +7235,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } catch (err) {
       manySay('That could not be added. ' + (err && err.message ? err.message : 'Unknown problem.'), true);
     } finally {
-      $('manyPlace').disabled = false;
-      $('manyQueue').disabled = manyKind() === 'lyrics';
+      $('manyPlace').disabled = $('manyQueue').disabled = false;
     }
   }
   function placeStart() {
@@ -7069,21 +7243,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (Player.tag) Player.stop();
     return t;
   }
-  function placeLyrics(items, songId, parts) {
-    var song = findItem('items', songId), title = songTitle(songId);
-    song.lyrics = Lyrics.addParts(song.lyrics || Lyrics.cleanSong({}), parts);
-    items.forEach(function (tx) { syncLyricText(tx); });
-    var t = placeStart();
-    var g = { id: 'g' + nid(), name: TextGroup.cleanName(title, TextGroup.nextName(mix.groups, 'Lyrics')), fill: 'packed' };
-    mix.groups.push(g);
-    var starts = GroupFill.packed(items.map(function (tx) { return { len: textLen(tx), fadeIn: tx.fadeIn || 0 }; }), Math.round(t * 10) / 10);
-    items.forEach(function (tx, i) { tx.start = starts[i].start; tx.group = g.id; mix.texts.push(tx); });
-    ui.sel = { lane: 'texts', id: items[0].id };
-    changed(); revealSel();
-    return 'Added ' + items.length + (items.length === 1 ? ' slide' : ' slides') + ' for “' + title + '”.';
-  }
-  function placeMany(items, result) {
-    if (result && result.song) return placeLyrics(items, result.song, result.parts);
+  function placeMany(items) {
     var t = placeStart();
     var asGroup = $('manyGroup').checked, g = null;
     if (asGroup) {
@@ -7793,7 +7953,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     function set(id, v) { var el = $(id); if (fresh || document.activeElement !== el) el.value = v; }
     set('textBody', tx.text || '');
     $('textBodyRow').hidden = !!tx.passage || !!tx.lyric; $('textPassageRow').hidden = !tx.passage;
-    renderLyricRow(tx, fresh, set);
+    renderLyricRow(tx, fresh);
     if (tx.passage) {
       document.querySelectorAll('input[name="textMode"]').forEach(function (r) { r.checked = r.value === tx.passage.mode; });
       document.querySelectorAll('input[name="textRefPos"]').forEach(function (r) { r.checked = r.value === (tx.passage.refPos || 'bottom'); });
@@ -7876,36 +8036,248 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   /* ---------- song lyrics in the text editor ---------- */
   function lyricSay(text, isErr) { var m = $('lyricMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
-  function lyricWordIds(slide) { var out = []; slide.lines.forEach(function (line) { line.words.forEach(function (w) { out.push(w.id); }); }); return out; }
-  function lyricPickFor(tx) {
-    if (!ui.lyricPick || ui.lyricPick.slide !== tx.id) ui.lyricPick = { slide: tx.id, ids: {}, last: null };
-    return ui.lyricPick;
+  function verseNumber(songId, verseId) {
+    var verses = songRecord(songId);
+    for (var i = 0; i < verses.length; i++) if (verses[i].id === verseId) return i + 1;
+    return 0;
   }
-  function nextSlide(tx) {
-    var me = txSpan(tx).start, best = null, bestStart = Infinity;
-    mix.texts.forEach(function (other) {
-      if (other === tx || !other.lyric || other.lyric.song !== tx.lyric.song) return;
-      var s = txSpan(other).start;
-      if (s > me && s < bestStart) { best = other; bestStart = s; }
-    });
-    return best;
-  }
-  function renderLyricRow(tx, fresh, set) {
+  function renderLyricRow(tx, fresh) {
     $('lyricRow').hidden = !tx.lyric;
     if (!tx.lyric) return;
-    if (fresh) { ui.lyricPick = null; lyricSay('', false); }
-    lyricPickFor(tx);
-    set('lyricBody', Lyrics.markup(tx.lyric));
-    var song = songOf(tx), lyr = songLyrics(tx.lyric.song);
-    $('lyricSong').textContent = song ? '“' + songTitle(tx.lyric.song) + '”' : 'a song no longer in Order of music';
-    renderLyricWords(tx);
-    var partSel = $('lyricPart'), keep = partSel.value;
-    setHTML(partSel, '<option value="">No part</option>' + lyr.parts.map(function (p) { return '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>'; }).join('') + (song ? '<option value="__new">New part…</option>' : ''));
-    partSel.value = keep && keep !== '__new' && lyr.parts.some(function (p) { return p.name === keep; }) ? keep : '';
-    $('lyricJoin').disabled = !nextSlide(tx) || !!ui.rec;
-    $('lyricBody').disabled = !!ui.rec;
-    $('lyricUpdate').disabled = !!ui.rec;
+    if (fresh) lyricSay('', false);
+    var inOrder = !!songClip(tx.lyric.song), number = inOrder ? verseNumber(tx.lyric.song, tx.lyric.verse) : 0;
+    $('lyricRowNote').hidden = !inOrder;
+    $('lyricOrphanNote').hidden = inOrder;
+    $('lyricOpenSong').hidden = !inOrder;
+    $('lyricVerseNo').textContent = number ? String(number) : '';
+    $('lyricSong').textContent = inOrder ? '“' + songTitle(tx.lyric.song) + '”' : '';
     renderWordTiming(tx);
+  }
+  function openSongLyrics() {
+    var tx = selText(); if (!tx || !tx.lyric || !songClip(tx.lyric.song)) return;
+    var songId = tx.lyric.song;
+    ui.songSet = songId; ui.songSetSlide = tx.id;
+    if (document.getElementById('sec-song').classList.contains('collapsed')) document.querySelector('.sectoggle[data-sec="song"]').click();
+    if (isFloating('song')) bringToFront('song');
+    renderSongSettings();
+    var box = $('songLyrics');
+    box.closest('.lyricrec').scrollIntoView({ block: 'nearest' });
+    box.focus();
+    if (ui.lyricDrafts[songId] != null) return;
+    var range = Lyrics.verseRanges(songRecord(songId)).filter(function (r) { return r.id === tx.lyric.verse; })[0];
+    if (range) box.setSelectionRange(range.from, range.to);
+  }
+  /* ---------- the song's lyrics record: every change goes through applyLyricsRecord or rebuildSongSlides ---------- */
+  function songRecord(songId) { return songLyrics(songId).verses || []; }
+  function slideSnapshot(songId) {
+    return songSlides(songId).map(function (tx) { var sp = txSpan(tx); return { tx: tx, start: sp.start, dur: sp.dur, lyric: clone(tx.lyric) }; });
+  }
+  function keepAllResult(songId) {
+    var verses = songRecord(songId), kept = {};
+    verses.forEach(function (v) { kept[v.id] = true; });
+    return { verses: verses, kept: kept, added: [], absorbed: {}, dropped: [] };
+  }
+  // Writes the edited text into the record and rebuilds the song's slides. The caller calls changed() once.
+  function applyLyricsRecord(songId, text) {
+    if (ui.rec) return { error: 'Stop recording first.' };
+    if (!songClip(songId)) return { error: 'Add the song to Order of music first.' };
+    var res = Lyrics.applyText(songRecord(songId), text, nid, partNames(songId));
+    if (res.error) return { error: 'The lyrics need at least one word.' };
+    var dropped = {};
+    res.dropped.forEach(function (id) { dropped[id] = true; });
+    var lost = songSlides(songId).filter(function (tx) { return dropped[tx.lyric.verse] && WordTiming.anyTimed(tx.lyric); }).length;
+    if (lost && !confirm('This removes ' + lost + (lost === 1 ? ' slide that has' : ' slides that have') + ' word timing. Remove ' + (lost === 1 ? 'it' : 'them') + '?')) return { cancelled: true };
+    var old = slideSnapshot(songId);
+    writeSongLyrics(songId, Lyrics.addParts(Object.assign({}, songLyrics(songId), { verses: res.verses }), res.parts));
+    res.verses = songRecord(songId);
+    var counts = rebuildSongSlides(songId, res, old);
+    return { ok: true, counts: counts };
+  }
+  function nearestSlide(list, to) {
+    var best = null;
+    list.forEach(function (o) { if (!best || Math.abs(o.start - to.start) < Math.abs(best.start - to.start)) best = o; });
+    return best;
+  }
+  function rebuildSongSlides(songId, res, old) {
+    var byId = {}, isNew = {}, now = {}, gone = {}, extra = {}, counts = { updated: 0, added: 0, removed: 0 };
+    var look = songLyrics(songId).slideLook;
+    res.verses.forEach(function (v) { byId[v.id] = v; });
+    res.added.forEach(function (a) { isNew[a.id] = true; });
+    old.forEach(function (o) { now[o.tx.id] = { start: o.start, dur: o.dur }; });
+    function relink(o, verseId, start, sources) {
+      o.tx.lyric = Object.assign(Lyrics.fillSlide(byId[verseId], start, sources), { song: songId, verse: verseId });
+    }
+    function remove(o) { gone[o.tx.id] = true; counts.removed++; }
+    old.forEach(function (o) {
+      var vid = o.lyric.verse;
+      if (res.kept[vid] && byId[vid]) { relink(o, vid, o.start, [o]); counts.updated++; }
+    });
+    var receivers = {};
+    old.forEach(function (r) {
+      var into = res.absorbed[r.lyric.verse];
+      if (!into) return;
+      if (isNew[into] || !byId[into]) { (extra[into] = extra[into] || []).push(r); remove(r); return; }
+      var mates = old.filter(function (o) { return o.lyric.verse === into && !gone[o.tx.id]; });
+      if (!mates.length) { relink(r, into, r.start, [r]); counts.updated++; return; }
+      var sameGroup = mates.filter(function (o) { return (o.tx.group || '') === (r.tx.group || ''); });
+      var recv = nearestSlide(sameGroup.length ? sameGroup : mates, r);
+      var entry = receivers[recv.tx.id] = receivers[recv.tx.id] || { o: recv, start: recv.start, end: recv.start + recv.dur, sources: [recv] };
+      if (!recv.tx.locked) { entry.start = Math.min(entry.start, r.start); entry.end = Math.max(entry.end, r.start + r.dur); }
+      entry.sources.push(r);
+      remove(r);
+    });
+    Object.keys(receivers).forEach(function (id) {
+      var e = receivers[id], tx = e.o.tx, start = Math.round(e.start * 10) / 10;
+      if (!tx.locked) {
+        if (start < e.o.start - 0.01) { tx.start = start; tx.afterPrev = false; tx.fromStart = false; }
+        tx.dur = Math.round((e.end - start) * 10) / 10;
+        tx.readTime = false;
+        delete tx.ownLen;
+        now[id] = { start: start, dur: tx.dur };
+      }
+      relink(e.o, tx.lyric.verse, now[id].start, e.sources);
+    });
+    old.forEach(function (o) { if (res.dropped.indexOf(o.lyric.verse) >= 0 && !gone[o.tx.id]) remove(o); });
+    var order = {};
+    res.verses.forEach(function (v, i) { order[v.id] = i; });
+    var byAfter = {};
+    res.added.forEach(function (a) { if (a.after) (byAfter[a.after] = byAfter[a.after] || []).push(a.id); });
+    var inserts = [];
+    Object.keys(byAfter).forEach(function (afterId) {
+      old.forEach(function (s) {
+        if (s.lyric.verse !== afterId || gone[s.tx.id] || !byId[afterId]) return;
+        var pieces = [afterId].concat(byAfter[afterId]).sort(function (a, b) { return order[a] - order[b]; });
+        var slot = now[s.tx.id], lengths = splitLengths(pieces.map(function (id) { return byId[id]; }), slot.dur, s.tx), at = slot.start, row = [];
+        var current = { start: slot.start, lyric: clone(s.tx.lyric) };
+        pieces.forEach(function (vid, i) {
+          var pieceStart = Math.round(at * 10) / 10, len = lengths[i];
+          at += len;
+          if (vid === afterId) {
+            if (i > 0) { s.tx.start = pieceStart; s.tx.afterPrev = false; s.tx.fromStart = false; }
+            s.tx.dur = len; s.tx.readTime = false; delete s.tx.ownLen;
+            relink(s, vid, pieceStart, [current, s]);
+            row.push(s.tx);
+            return;
+          }
+          var copy = Lyrics.slideStyle(clone(s.tx), look);
+          copy.id = nid(); copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
+          delete copy.ownLen;
+          copy.readTime = false; copy.start = pieceStart; copy.dur = len;
+          copy.lyric = Object.assign(Lyrics.fillSlide(byId[vid], pieceStart, [current, s].concat(extra[vid] || [])), { song: songId, verse: vid });
+          row.push(copy);
+          counts.added++;
+        });
+        inserts.push({ at: s.tx, row: row });
+      });
+    });
+    mix.texts = mix.texts.filter(function (tx) { return !gone[tx.id]; });
+    inserts.forEach(function (ins) {
+      var index = mix.texts.indexOf(ins.at);
+      mix.texts.splice.apply(mix.texts, [index, 1].concat(ins.row));
+    });
+    syncSongSlides(songId);
+    return counts;
+  }
+  function makeSongSlides(songId) {
+    var clip = songClip(songId), title = songTitle(songId);
+    var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor;
+    if (Player.tag) Player.stop();
+    if (!(t >= clip.start && t < clip.start + clip.len)) t = clip.start;
+    var items = songRecord(songId).map(function (v) { return newLyricSlide({ lines: clone(v.lines), verse: v.id }, songId); });
+    if (!items.length) return 0;
+    var g = { id: 'g' + nid(), name: TextGroup.cleanName(title, TextGroup.nextName(mix.groups, 'Lyrics')), fill: 'packed' };
+    mix.groups.push(g);
+    var starts = GroupFill.packed(items.map(function (tx) { return { len: textLen(tx), fadeIn: tx.fadeIn || 0 }; }), Math.round(t * 10) / 10);
+    items.forEach(function (tx, i) { tx.start = starts[i].start; tx.group = g.id; mix.texts.push(tx); });
+    ui.sel = { lane: 'texts', id: items[0].id };
+    return items.length;
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function songLyricsSay(text, isErr) { var m = $('songLyricsMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
+  function commitSongLyrics(songId, text) {
+    var hadSlides = songSlides(songId).length > 0;
+    var res = applyLyricsRecord(songId, text);
+    if (res.cancelled) return false;
+    if (res.error) { songLyricsSay(res.error, true); return false; }
+    delete ui.lyricDrafts[songId];
+    var msg;
+    if (!hadSlides) {
+      var made = makeSongSlides(songId);
+      msg = 'Made ' + plural(made, 'slide', 'slides') + ' for “' + songTitle(songId) + '”.';
+    } else {
+      var c = res.counts;
+      msg = 'Updated ' + plural(c.updated, 'slide', 'slides') + '.' + (c.added ? ' Added ' + c.added + '.' : '') + (c.removed ? ' Removed ' + c.removed + '.' : '');
+    }
+    changed();
+    if (!hadSlides) revealSel();
+    songLyricsSay(msg, false);
+    return true;
+  }
+  function pressSongLyrics() {
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || ui.rec) return;
+    commitSongLyrics(songId, $('songLyrics').value);
+  }
+  function joinVerseWithNext(index) {
+    var songId = $('songSetSong').value, verses = songRecord(songId);
+    if (!songClip(songId) || ui.rec || ui.lyricDrafts[songId] != null || index < 0 || index >= verses.length - 1) return;
+    var text = verses.map(function (v, i) { return Lyrics.markup(v) + (i === verses.length - 1 ? '' : i === index ? '\n' : '\n\n'); }).join('');
+    commitSongLyrics(songId, text);
+  }
+  function resetSongLyrics() {
+    var songId = $('songSetSong').value;
+    delete ui.lyricDrafts[songId];
+    $('songLyrics').value = Lyrics.recordText(songRecord(songId));
+    songLyricsSay('', false);
+    renderSongSettings();
+  }
+  function onSongLyricsInput() {
+    var songId = $('songSetSong').value; if (!songClip(songId)) return;
+    var text = $('songLyrics').value;
+    if (text === Lyrics.recordText(songRecord(songId))) delete ui.lyricDrafts[songId];
+    else ui.lyricDrafts[songId] = text;
+    renderSongSettings();
+  }
+  function renderSongLyrics(id, has) {
+    var box = $('songLyrics'), draft = has ? ui.lyricDrafts[id] : null, stored = has ? Lyrics.recordText(songRecord(id)) : '';
+    if (draft != null && draft === stored) { delete ui.lyricDrafts[id]; draft = null; }
+    var sameSong = box.getAttribute('data-song') === (id || '');
+    if (draft != null) { if (!sameSong || document.activeElement !== box) box.value = draft; }
+    else if (box.value !== stored) {
+      var caret = Math.min(box.selectionStart, stored.length);
+      box.value = stored;
+      if (sameSong && document.activeElement === box) box.setSelectionRange(caret, caret);
+    }
+    box.setAttribute('data-song', id || '');
+    var drafting = draft != null, slides = has ? songSlides(id) : [], locked = !!ui.rec;
+    box.disabled = !has || locked;
+    $('songLyricsGo').textContent = slides.length ? 'Update' : 'Make slides';
+    $('songLyricsGo').disabled = !has || locked;
+    $('songLyricsReset').hidden = !drafting;
+    $('songLyricsReset').disabled = false;
+    $('songLyricsState').textContent = locked ? 'Stop recording to change the lyrics.' : drafting ? 'Not applied yet' : '';
+    renderLyricWords(id, has, drafting || locked);
+    var partSel = $('lyricPart'), keep = partSel.value, parts = has ? songLyrics(id).parts : [];
+    setHTML(partSel, '<option value="">No part</option>' + parts.map(function (p) { return '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>'; }).join('') + (has ? '<option value="__new">New part…</option>' : ''));
+    partSel.value = keep && keep !== '__new' && parts.some(function (p) { return p.name === keep; }) ? keep : '';
+    partSel.disabled = !has || drafting || locked;
+    syncLyricPick(id, drafting || locked);
+    renderLyricHighlight(id, has && !drafting);
+  }
+  function renderLyricHighlight(id, on) {
+    var hl = $('songLyricsHl'), box = $('songLyrics'), tx = selText();
+    var verseId = on && tx && tx.lyric && tx.lyric.song === id ? tx.lyric.verse : null;
+    var verses = verseId ? songRecord(id) : [], range = verseId ? Lyrics.verseRanges(verses).filter(function (r) { return r.id === verseId; })[0] : null;
+    document.querySelectorAll('#lyricWords .lyricverse').forEach(function (el) { el.classList.toggle('current', !!range && el.getAttribute('data-verse') === verseId); });
+    if (!range) { setHTML(hl, ''); ui.lyricHlFor = null; return; }
+    var text = Lyrics.recordText(verses);
+    setHTML(hl, esc(text.slice(0, range.from)) + '<mark>' + esc(text.slice(range.from, range.to)) + '</mark>' + esc(text.slice(range.to)) + '\n');
+    if (ui.lyricHlFor !== tx.id && box.offsetParent) {
+      ui.lyricHlFor = tx.id;
+      var mark = hl.querySelector('mark');
+      if (mark) box.scrollTop = Math.max(0, mark.offsetTop - 8);
+    }
+    hl.scrollTop = box.scrollTop;
   }
   /* ---------- song settings (karaoke) ---------- */
   function songSetSay(text, isErr) { var m = $('songSetMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
@@ -7932,6 +8304,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     fillSongSelect($('songSetSong'), id);
     $('songSetEmpty').hidden = has;
     $('songSet').querySelectorAll('input, select, button').forEach(function (el) { el.disabled = !has; });
+    renderSongLyrics(id, has);
     set('lyricHighlight', lyr.highlight);
     $('lyricKeepLit').checked = lyr.keepLit;
     set('lyricSingColor', lyr.singColor);
@@ -8032,7 +8405,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function onSongSetEvent(ev, final) {
     var target = ev.target;
-    if (target.id === 'songSetSong') { if (final) { ui.songSet = target.value; songSetSay('', false); renderSongSettings(); } return; }
+    if (target.id === 'songSetSong') { if (final) { ui.songSet = target.value; songSetSay('', false); songLyricsSay('', false); renderSongSettings(); } return; }
+    if (target.id === 'songLyrics') { if (!final) onSongLyricsInput(); return; }
+    if (target.id === 'lyricPart') return;
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
     if (target.id === 'lyricShowParts') { if (final) setShowParts(songId, target.checked); return; }
     if (SHOW_FIELDS.hasOwnProperty(target.id)) { if (final) editSongShow(songId, target); return; }
@@ -8049,83 +8424,91 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (out && !isNaN(v)) out.textContent = target.id === 'songLookSize' ? Math.round(v) + ' px' : target.id === 'songLookOpacity' ? Math.round(v) + '%' : String(Math.round(v));
     }
   }
-  function renderLyricWords(tx) {
-    var songId = tx.lyric.song;
-    setHTML($('lyricWords'), tx.lyric.lines.map(function (line, li) {
-      return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
-        line.words.map(function (w) {
-          var color = w.part ? partColor(songId, w.part) : null;
-          return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
-            w.syls.map(function (s) { return esc(s.text); }).join('<span class="dot" aria-hidden="true">·</span>') + '</button>';
+  function lyricPickFor(songId) {
+    if (!ui.lyricPick || ui.lyricPick.song !== songId) ui.lyricPick = { song: songId, ids: {}, last: null };
+    return ui.lyricPick;
+  }
+  function recordWordIds(songId) {
+    var out = [];
+    songRecord(songId).forEach(function (v) { v.lines.forEach(function (line) { line.words.forEach(function (w) { out.push(w.id); }); }); });
+    return out;
+  }
+  function renderLyricWords(songId, has, locked) {
+    var verses = has ? songRecord(songId) : [], shown = {};
+    if (has) songSlides(songId).forEach(function (tx) { shown[tx.lyric.verse] = true; });
+    setHTML($('lyricWords'), verses.map(function (v, vi) {
+      return '<div class="lyricverse" data-verse="' + esc(v.id) + '"><div class="lyricversehead"><span class="vname">Slide ' + (vi + 1) + '</span>' +
+        (shown[v.id] ? '' : '<span class="note">(not on the timeline)</span>') +
+        (vi < verses.length - 1 ? '<button type="button" class="btn small quiet" data-act="vjoin" data-vi="' + vi + '" title="Put the next slide’s words into this one">Join with next</button>' : '') + '</div>' +
+        v.lines.map(function (line, li) {
+          return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + vi + ':' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
+            line.words.map(function (w) {
+              var color = w.part ? partColor(songId, w.part) : null;
+              return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
+                w.syls.map(function (s) { return esc(s.text); }).join('<span class="dot" aria-hidden="true">·</span>') + '</button>';
+            }).join('') + '</div>';
         }).join('') + '</div>';
     }).join(''));
-    syncLyricPick(tx);
+    $('lyricWords').querySelectorAll('button').forEach(function (b) { b.disabled = locked; });
+    $('lyricWords').hidden = !verses.length;
   }
-  function syncLyricPick(tx) {
-    var pick = lyricPickFor(tx).ids, count = 0;
+  function syncLyricPick(songId, locked) {
+    var pick = lyricPickFor(songId).ids, count = 0;
     $('lyricWords').querySelectorAll('[data-word]').forEach(function (b) {
       var on = !!pick[b.getAttribute('data-word')];
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       if (on) count++;
     });
-    $('lyricApply').disabled = !count || !!ui.rec;
-    $('lyricPickNote').textContent = count ? count + (count === 1 ? ' word picked' : ' words picked') : 'Pick words or a line, then choose a part.';
+    $('lyricApply').disabled = !count || locked;
+    $('lyricPickNote').textContent = ui.rec ? '' : ui.lyricDrafts[songId] != null ? 'Press Update first to pick words.' : count ? count + (count === 1 ? ' word picked' : ' words picked') : 'Pick words or a line, then choose a part.';
   }
   function pickLyricWords(ev) {
-    var tx = selText(); if (!tx || !tx.lyric) return;
-    var pick = lyricPickFor(tx), lineBtn = ev.target.closest('[data-act="lline"]');
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || ui.rec || ui.lyricDrafts[songId] != null) return;
+    var join = ev.target.closest('[data-act="vjoin"]');
+    if (join) { joinVerseWithNext(parseInt(join.getAttribute('data-vi'), 10)); return; }
+    var pick = lyricPickFor(songId), verses = songRecord(songId), lineBtn = ev.target.closest('[data-act="lline"]');
     if (lineBtn) {
-      var line = tx.lyric.lines[parseInt(lineBtn.getAttribute('data-line'), 10)]; if (!line) return;
+      var at = lineBtn.getAttribute('data-line').split(':'), verse = verses[parseInt(at[0], 10)], line = verse && verse.lines[parseInt(at[1], 10)];
+      if (!line) return;
       var lineIds = line.words.map(function (w) { return w.id; }), all = lineIds.every(function (id) { return pick.ids[id]; });
       lineIds.forEach(function (id) { if (all) delete pick.ids[id]; else pick.ids[id] = true; });
-      syncLyricPick(tx);
+      syncLyricPick(songId, false);
       return;
     }
     var b = ev.target.closest('[data-word]'); if (!b) return;
-    var id = b.getAttribute('data-word'), order = lyricWordIds(tx.lyric);
+    var id = b.getAttribute('data-word'), order = recordWordIds(songId);
     if (ev.shiftKey && pick.last && order.indexOf(pick.last) >= 0) {
       var from = order.indexOf(pick.last), to = order.indexOf(id);
       order.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(function (x) { pick.ids[x] = true; });
     } else if (pick.ids[id]) delete pick.ids[id];
     else pick.ids[id] = true;
     pick.last = id;
-    syncLyricPick(tx);
+    syncLyricPick(songId, false);
   }
   function applyLyricPart() {
-    var tx = selText(); if (!tx || !tx.lyric) return;
-    var songId = tx.lyric.song, partSel = $('lyricPart'), name = partSel.value, pick = lyricPickFor(tx).ids;
-    var ids = lyricWordIds(tx.lyric).filter(function (id) { return pick[id]; });
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || ui.rec || ui.lyricDrafts[songId] != null) return;
+    var partSel = $('lyricPart'), name = partSel.value, pick = lyricPickFor(songId).ids;
+    var ids = recordWordIds(songId).filter(function (id) { return pick[id]; });
     if (!ids.length) return;
     if (name === '__new') {
       var typed = prompt('Name for the new part (one word, like High or Boys)');
       if (typed == null) { partSel.value = ''; return; }
       typed = typed.trim();
-      if (!Lyrics.PART_RE.test(typed)) { lyricSay('A part name is one word of letters and numbers, up to 15 characters.', true); partSel.value = ''; return; }
+      if (!Lyrics.PART_RE.test(typed)) { songLyricsSay('A part name is one word of letters and numbers, up to 15 characters.', true); partSel.value = ''; return; }
       var existing = partNames(songId).filter(function (n) { return n.toLowerCase() === typed.toLowerCase(); })[0];
       name = existing || typed;
-      if (!existing && !writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), [name]))) { lyricSay('This slide’s song is no longer in Order of music, so a new part can’t be added.', true); partSel.value = ''; return; }
+      if (!existing) writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), [name]));
     }
-    tx.lyric = Lyrics.setPart(tx.lyric, ids, name || null);
-    syncLyricText(tx);
+    var old = slideSnapshot(songId);
+    var verses = songRecord(songId).map(function (v) { return Lyrics.setPart(v, ids, name || null); });
+    writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { verses: verses }));
+    rebuildSongSlides(songId, keepAllResult(songId), old);
     ui.lyricPick.ids = {};
-    lyricSay('', false);
+    songLyricsSay('', false);
     changed();
     $('lyricPart').value = name || '';
-  }
-  function joinNextSlide() {
-    var tx = selText(); if (!tx || !tx.lyric) return;
-    var next = nextSlide(tx); if (!next) return;
-    if (next.locked) { lyricSay('The next slide is locked.', true); return; }
-    var mine = txSpan(tx), theirs = txSpan(next);
-    tx.lyric = Lyrics.joinSlides(tx.lyric, WordTiming.shift(next.lyric, theirs.start - mine.start));
-    tx.dur = Math.round((theirs.start + theirs.dur - mine.start) * 10) / 10;
-    tx.readTime = false;
-    delete tx.ownLen;
-    mix.texts = mix.texts.filter(function (other) { return other !== next; });
-    syncLyricText(tx);
-    changed();
-    $('lyricBody').value = Lyrics.markup(tx.lyric);
-    lyricSay('Joined with the next slide.', false);
   }
   // Split pieces share the slide's own time, in proportion to reading time, so they never land on the next slide.
   // A slot too short for that gives each piece its reading time instead.
@@ -8139,74 +8522,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       return len;
     });
   }
-  function oneSlideText(text) { return String(text).split(/\r?\n/).filter(function (ln) { return ln.trim(); }).join('\n'); }
-  function editLyric(tx, final) {
-    var songId = tx.lyric.song, text = $('lyricBody').value;
-    if (!final) {
-      var live = Lyrics.parse(oneSlideText(text), nid, partNames(songId));
-      if (!live.slides.length) return;
-      tx.lyric = Lyrics.merge(tx.lyric, live.slides[0]);
-      syncLyricText(tx);
-      persistMix();
-      resolveTexts();
-      renderTimeline(); renderSel(); drawScreen(); syncTextDisabled(tx);
-      var row = $('texts').querySelector('[data-text="' + tx.id + '"] .txt'); if (row) row.innerHTML = FIT_FLAG + textRowLabel(tx);
-      showTextFit(tx.id);
-      renderLyricWords(tx);
-      return;
-    }
-    var parsed = Lyrics.parse(text, nid, partNames(songId));
-    if (!parsed.slides.length) {
-      var before = ui.lyricBefore && ui.lyricBefore.id === tx.id ? ui.lyricBefore.lyric : null;
-      if (before) { tx.lyric = clone(before); syncLyricText(tx); }
-      changed();
-      $('lyricBody').value = Lyrics.markup(tx.lyric);
-      lyricSay('A slide needs at least one word. Use Remove this text to delete it.', true);
-      return;
-    }
-    if (parsed.parts.length && songOf(tx)) writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), parsed.parts));
-    var all = { lines: [] };
-    parsed.slides.forEach(function (s) { all.lines = all.lines.concat(s.lines); });
-    var merged = Lyrics.merge(tx.lyric, all), at = 0;
-    var pieces = parsed.slides.map(function (s) {
-      var piece = { song: songId, lines: merged.lines.slice(at, at + s.lines.length) };
-      at += s.lines.length;
-      return piece;
-    });
-    var slot = txSpan(tx), lengths = splitLengths(pieces, slot.dur, tx);
-    tx.lyric = pieces[0];
-    syncLyricText(tx);
-    if (pieces.length > 1) { tx.readTime = false; tx.dur = lengths[0]; delete tx.ownLen; }
-    var at = slot.start + lengths[0], index = mix.texts.indexOf(tx);
-    pieces.slice(1).forEach(function (piece, i) {
-      var copy = Lyrics.slideStyle(clone(tx), songLyrics(songId).slideLook), pieceStart = Math.round(at * 10) / 10;
-      copy.id = nid(); copy.lyric = WordTiming.shift(piece, slot.start - pieceStart);
-      copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
-      delete copy.ownLen;
-      syncLyricText(copy);
-      copy.readTime = false;
-      copy.dur = lengths[i + 1];
-      copy.start = pieceStart;
-      at += copy.dur;
-      mix.texts.splice(index + 1 + i, 0, copy);
-    });
-    ui.lyricBefore = { id: tx.id, lyric: clone(tx.lyric) };
-    changed();
-    $('lyricBody').value = Lyrics.markup(tx.lyric);
-    if (pieces.length > 1) lyricSay('Split into ' + pieces.length + ' slides.', false);
-  }
   function onLyricEvent(ev, final) {
     var tx = selText(); if (!tx || !tx.lyric) return;
     var target = ev.target;
-    if (target.id === 'lyricBody') { editLyric(tx, final); return; }
     if (target.id === 'recSpeed') { if (final) ui.recSpeed = REC_SPEEDS.indexOf(parseFloat(target.value)) >= 0 ? parseFloat(target.value) : 1; return; }
     if (target.id === 'copyTimingTo') return;
     if (target.hasAttribute('data-wstart') || target.hasAttribute('data-wlen')) { if (final) editWordTime(tx, target); return; }
-  }
-  function updateLyric() {
-    var tx = selText(); if (!tx || !tx.lyric || ui.rec) return;
-    if ($('lyricBody').value !== Lyrics.markup(tx.lyric)) editLyric(tx, true);
-    $('lyricBody').focus();
   }
 
   /* ---------- word timing ---------- */
@@ -8535,8 +8856,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!rec) { setHTML(bar, ''); return; }
     var current = rec.down ? rec.down.entry : rec.queue[Math.min(rec.pos, rec.queue.length - 1)], tx = findItem('texts', current.txId);
     if (!tx || !tx.lyric) return;
-    var done = {}, nextId = rec.pos < rec.queue.length ? rec.queue[rec.pos].sylId : null, heldId = rec.down ? rec.down.entry.sylId : null;
-    rec.done.forEach(function (d) { done[d.sylId] = true; });
+    var nextEntry = rec.pos < rec.queue.length ? rec.queue[rec.pos] : null;
+    var done = {}, nextId = nextEntry && nextEntry.txId === tx.id ? nextEntry.sylId : null, heldId = rec.down ? rec.down.entry.sylId : null;
+    rec.done.forEach(function (d) { if (d.txId === tx.id) done[d.sylId] = true; });
     var line = tx.lyric.lines.map(function (ln) {
       return ln.words.map(function (w) {
         return w.syls.map(function (s) {
@@ -8608,7 +8930,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (g.fill) copy.fill = g.fill;
     if (g.win) copy.win = clone(g.win);
     var last = mix.texts.indexOf(findItem('texts', ids[ids.length - 1]));
-    var copies = ids.map(function (id) { var c = clone(findItem('texts', id)); c.id = nid(); c.group = copy.id; if (c.lyric) c.lyric = Lyrics.reId(c.lyric, nid); return c; });
+    var copies = ids.map(function (id) { var c = clone(findItem('texts', id)); c.id = nid(); c.group = copy.id; return c; });
     mix.texts.splice.apply(mix.texts, [last + 1, 0].concat(copies));
     mix.groups.splice(mix.groups.indexOf(g) + 1, 0, copy);
     ids.forEach(function (id) { findItem('texts', id).hidden = true; });
@@ -10552,11 +10874,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songSet').addEventListener('input', function (ev) { onSongSetEvent(ev, false); });
     $('songSet').addEventListener('change', function (ev) { onSongSetEvent(ev, true); });
     $('songLookAll').onclick = useSongLookEverywhere;
-    $('lyricUpdate').onclick = updateLyric;
-    $('lyricBody').addEventListener('focus', function () { var tx = selText(); if (tx && tx.lyric) ui.lyricBefore = { id: tx.id, lyric: clone(tx.lyric) }; });
+    $('lyricOpenSong').onclick = openSongLyrics;
+    $('songLyricsGo').onclick = pressSongLyrics;
+    $('songLyricsReset').onclick = resetSongLyrics;
+    $('songLyrics').addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); if (!$('songLyricsGo').disabled) pressSongLyrics(); } });
+    $('songLyrics').addEventListener('scroll', function () { $('songLyricsHl').scrollTop = this.scrollTop; });
     $('lyricWords').addEventListener('click', pickLyricWords);
     $('lyricApply').onclick = applyLyricPart;
-    $('lyricJoin').onclick = joinNextSlide;
     $('recSlide').onclick = function () { var tx = selText(); if (tx && tx.lyric) startRecording({ songId: tx.lyric.song, slideId: tx.id }); };
     $('recSong').onclick = function () { var tx = selText(); if (tx && tx.lyric) startRecording({ songId: tx.lyric.song }); };
     $('fitSlide').onclick = fitOne;
@@ -10581,7 +10905,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textDup').onclick = function () {
       var tx = selText(); if (!tx) return;
       var sp = txSpan(tx), copy = clone(tx);
-      if (copy.lyric) copy.lyric = Lyrics.reId(copy.lyric, nid);
       copy.id = nid(); copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
       copy.start = Math.round((sp.start + sp.dur) * 10) / 10; copy.dur = Math.round(sp.dur * 10) / 10;
       mix.texts.splice(mix.texts.indexOf(tx) + 1, 0, copy);

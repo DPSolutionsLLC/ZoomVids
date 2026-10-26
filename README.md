@@ -134,20 +134,29 @@ You can have both open in two tabs at once. Each keeps its own work. Two tabs on
 - The two tracks always move together. Moving the song, reordering, changing a crossfade, trimming and swapping all keep them in sync. On the timeline, a song with two tracks shows **+ 2** and a stripe along the bottom, and a song whose Track 1 sound is off looks faded.
 - Each change in the Tracks window is one step for Undo.
 
-**Song lyrics.** In karaoke, you can paste a whole song's words at once and get one slide per verse or chunk. Press **Add scriptures or a list**, choose **Song lyrics**, and pick the song under **For song**. It lists the songs in Order of music and starts on the one under the playhead. Then paste the words and press **Put on the timeline**. A few simple marks shape the slides:
+**Song lyrics.** In karaoke, each song keeps its words in one place: **Song settings → Lyrics**. Pick the song at the top, paste the whole song's words into the box and press **Make slides**. You get one slide per verse or chunk. A few simple marks shape the slides:
 
 - A **blank line** starts a new slide. A single line break stays a new line on the same slide.
 - **`Glo-ri-a`** splits a word into syllables. On screen it still reads "Gloria". The syllables will be used later to time and highlight the words.
 - **`well--known`** (two hyphens) keeps a real hyphen: "well-known". A hyphen at the start or end of a word, or on its own, stays as you typed it.
 - **`High:`** at the start of a line puts that line's words in the part "High". A part name is one word of letters and numbers, up to 15 characters. A tag on a line by itself, such as `Low:`, covers the lines under it until the slide ends. In the middle of a line, `Low:` switches part only when the song already has a part called Low, and **`-:`** means "no part" from there on.
 
-The slides land back to back from the playhead as one group named after the song. Each starts as long as it takes to read, in the song's look for new slides (see Song settings). Drag each slide to where it's sung, or stretch it to fit.
+The slides land back to back as one group named after the song: from the playhead if it's inside the song, otherwise from the song's start. Each starts as long as it takes to read, in the song's look for new slides (see Song settings). Drag each slide to where it's sung, or stretch it to fit.
 
-**Editing a slide.** Click a slide to open it. Its words are in the **Lyrics** box with the same marks. Typing a blank line in the box and clicking away splits it into two slides, the second starting where the first ends. The new slide gets the song's look for new slides; the slide you're editing keeps its own. **Update**, next to the box, applies what you typed the same way clicking away does, and keeps the slide open so you can carry on typing. It's off while you're recording. **Join with next slide** puts the next slide of the same song back into this one. Words you didn't change keep their place, so timing added later isn't lost when you fix a typo.
+**Changing the lyrics.** The words stay in **Song settings → Lyrics**, with the same marks. Change them there and press **Update** (or Ctrl+Enter). The song's slides are rebuilt to match, and one Undo puts everything back. Words you didn't change keep their timing, so fixing a typo or adding syllable marks doesn't lose any.
 
-**Parts.** Under the box, each word is a chip, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets a color, which you can change in **Song settings**. Each of these is one step for Undo.
+- Clicking a lyric slide highlights its verse in the box and scrolls to it. The slide editor says which slide of the song it is; **Edit the lyrics** jumps to that verse in Song settings. Word timing stays in the slide editor.
+- A new **blank line** splits a verse. The new slide shares the time of the one it came from, in the same group, with the song's look for new slides. **Join with next**, above each verse's words, removes the blank line after that verse; the joined slide covers the time of both.
+- Deleting a verse's words removes its slides. If they have word timing, it asks first; Cancel keeps everything, including your typing.
+- Until you press Update, a note says **Not applied yet**, and **Undo my typing** puts the box back. Typing you haven't applied isn't saved: it's gone after a reload. Each song keeps its own unapplied typing while you switch between songs.
+- A verse whose slide you removed stays in the lyrics and shows **(not on the timeline)**. Update doesn't bring it back.
+- Duplicated slides and duplicated groups follow the lyrics too: an Update changes every copy, and each keeps its own timing.
+- The box, Update, Set part and Join are off while you're recording.
+- Projects made before this open with their lyrics already in Song settings, built from their slides. Nothing on screen or in the timing changes.
 
-**Timing the words.** Open a slide and find **Word timing** under its lyrics. Each syllable gets its own time, so `Glo-ri-a` is three presses.
+**Parts.** Under the Lyrics box in Song settings, each word is a chip, grouped by slide, with dots between its syllables and a stripe in its part's color. Click words to pick them (Shift+click picks a run, and **Line** picks a whole line). Then choose a part and press **Set part**. **New part…** asks for a name. Each part gets a color, which you can change in **Song settings**. Picking words waits until you've pressed Update. Each of these is one step for Undo.
+
+**Timing the words.** Open a slide and find **Word timing** in its editor. Each syllable gets its own time, so `Glo-ri-a` is three presses.
 
 - **Record this slide** plays from a few seconds before the slide. **Record the whole song** plays from the start of the song and moves from slide to slide by itself.
 - Hold **Space** while each syllable is sung, and let go when it ends. A quick tap counts as at least 0.15 s. The bar above the timeline shows the line, with the next syllable in bold.
@@ -182,7 +191,7 @@ Dragging a slide or its group moves its words with it. **Fill**, **Reset** and s
 
 Slides without word timing look as they did before.
 
-**Look for new lyric slides.** Also in Song settings, each song has a font, Bold and Italic, size, text color and **Behind the text** for its new slides. A song starts with Montserrat Bold, 72 px, white, with a solid black outline. Pasted slides and slides split off in the Lyrics box start with this look. Changing it doesn't touch slides you've already made. **Use on every slide in this song** gives all of the song's slides this look, including ones you changed by hand. It asks first, and one Undo puts them all back.
+**Look for new lyric slides.** Also in Song settings, each song has a font, Bold and Italic, size, text color and **Behind the text** for its new slides. A song starts with Montserrat Bold, 72 px, white, with a solid black outline. Slides made with Make slides, and slides split off by a blank line, start with this look. Changing it doesn't touch slides you've already made. **Use on every slide in this song** gives all of the song's slides this look, including ones you changed by hand. It asks first, and one Undo puts them all back.
 
 **Two versions.** In karaoke, **Export** has a **Versions** choice: **Both, as two files**, **With vocals** or **Music only**. Both is the default, and each project remembers your choice. Both files have the same picture. In the music-only one, every track marked Vocal is silent and every track marked Instrumental plays, whatever their Sound ticks say. The files end in `-with-vocals` and `-music-only`. Both are built in one pass, so it takes about as long as one. Export shows when you last exported and which versions you made. If no track is marked Vocal, the choice is greyed out and you get one file, as before. Clips over the music keep their own sound in both versions.
 
