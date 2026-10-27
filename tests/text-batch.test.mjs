@@ -211,3 +211,31 @@ describe('lineUpNote', () => {
     [[true, 0], [false, 1], [true, 2]].forEach(([all, n]) => assert.notEqual(TextBatch.lineUpNote(all, n, none), ''));
   });
 });
+
+describe('nextLineTarget', () => {
+  test('a row with one block picks that block', () => {
+    assert.equal(TextBatch.nextLineTarget(['b'], { b: { start: 20, dur: 3 } }), 'b');
+  });
+
+  test('a collapsed group picks the member that starts first', () => {
+    const spans = { m1: { start: 9, dur: 1 }, m2: { start: 5, dur: 1 }, m3: { start: 7, dur: 1 } };
+    assert.equal(TextBatch.nextLineTarget(['m1', 'm2', 'm3'], spans), 'm2');
+  });
+
+  test('a tie goes to the block earlier in the row', () => {
+    const spans = { m1: { start: 4, dur: 1 }, m2: { start: 4, dur: 2 } };
+    assert.equal(TextBatch.nextLineTarget(['m1', 'm2'], spans), 'm1');
+  });
+
+  test('no row gives null, never an empty string', () => {
+    assert.equal(TextBatch.nextLineTarget([], {}), null);
+    assert.equal(TextBatch.nextLineTarget(undefined, {}), null);
+  });
+
+  test('the spans are left as they were', () => {
+    const spans = { a: { start: 3, dur: 1 }, b: { start: 1, dur: 2 } };
+    const before = structuredClone(spans);
+    TextBatch.nextLineTarget(['a', 'b'], spans);
+    assert.deepEqual(spans, before);
+  });
+});

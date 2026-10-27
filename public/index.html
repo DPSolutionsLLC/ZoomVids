@@ -15,7 +15,7 @@
   --bg: #F2F5F1; --surface: #FBFCFA; --sunk: #E7ECE6; --ink: #16211C; --muted: #5A685F; --line: #D3DAD3;
   --accent: #1E5A43; --accent-ink: #FFFFFF; --accent-soft: #D9E7DF; --accent-mid: #5F9079;
   --brass: #8C6A16; --brass-soft: #F1E7CC; --warn: #A14E14; --warn-soft: #F6E3D2; --bad: #A23131;
-  --sel: #C98A12; --msg: #3F5568;
+  --sel: #C98A12; --msg: #3F5568; --next: #1F5F7A; --next-ink: #FFFFFF;
   --display: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
   --ui: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
   --r: 6px;
@@ -24,13 +24,13 @@
   --bg: #0F1512; --surface: #171F1A; --sunk: #0B100D; --ink: #E5ECE6; --muted: #96A59B; --line: #2A352E;
   --accent: #74C29E; --accent-ink: #0B140F; --accent-soft: #1D3128; --accent-mid: #4C8A6D;
   --brass: #DDB95F; --brass-soft: #372E17; --warn: #E7A064; --warn-soft: #3A2616; --bad: #F08A8A;
-  --sel: #F2C14E; --msg: #A9C0D6;
+  --sel: #F2C14E; --msg: #A9C0D6; --next: #6CC3D9; --next-ink: #0B1418;
   color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #0F1512; --surface: #171F1A; --sunk: #0B100D; --ink: #E5ECE6; --muted: #96A59B; --line: #2A352E;
   --accent: #74C29E; --accent-ink: #0B140F; --accent-soft: #1D3128; --accent-mid: #4C8A6D;
   --brass: #DDB95F; --brass-soft: #372E17; --warn: #E7A064; --warn-soft: #3A2616; --bad: #F08A8A;
-  --sel: #F2C14E; --msg: #A9C0D6;
+  --sel: #F2C14E; --msg: #A9C0D6; --next: #6CC3D9; --next-ink: #0B1418;
   color-scheme: dark }
 
 * { box-sizing: border-box; }
@@ -48,6 +48,8 @@ button, input, select { font: inherit; color: inherit; }
 .btn:hover { border-color: var(--accent-mid); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn.primary:hover { filter: brightness(1.08); }
+.btn.next { background: var(--next); color: var(--next-ink); border-color: var(--next); }
+.btn.next:hover { filter: brightness(1.08); }
 .btn.small { padding: 3px 8px; font-size: 13px; }
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted); }
 .btn.quiet:hover { color: var(--ink); border-color: var(--line); }
@@ -2169,6 +2171,12 @@ var TextBatch = (function () {
     });
     return { starts: starts, lanes: done, moved: moved };
   }
+  function nextLineTarget(laneIds, spans) {
+    if (!laneIds || !laneIds.length) return null;
+    var best = laneIds[0];
+    laneIds.forEach(function (id) { if (spans[id].start < spans[best].start) best = id; });
+    return best;
+  }
   function lineUpState(state) {
     if (state.recording) return { disabled: true, note: null };
     if (state.whole) return { disabled: true, note: 'This text shows for the whole video, so nothing can start after it.' };
@@ -2188,7 +2196,7 @@ var TextBatch = (function () {
     if (parts.length) note += ' Changed so they could move: ' + parts.join(', ') + '.';
     return note;
   }
-  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction, startEdge: startEdge, lineUp: lineUp, lineUpState: lineUpState, lineUpNote: lineUpNote };
+  return { shiftStarts: shiftStarts, kindsText: kindsText, stayedNote: stayedNote, hideAction: hideAction, startEdge: startEdge, lineUp: lineUp, nextLineTarget: nextLineTarget, lineUpState: lineUpState, lineUpNote: lineUpNote };
 })();
 
 /* Named groups of texts. Pure functions; inputs are never changed. */
@@ -6375,6 +6383,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed();
     flashSel(TextBatch.lineUpNote(all, out.moved, changes));
   }
+  function nextLine() {
+    var tx = selText();
+    if (!tx || TextPick.count(ui.checked, mix.texts)) return;
+    var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
+    var state = TextBatch.lineUpState({ below: lanes.length, whole: !!tx.whole, recording: !!ui.rec });
+    if (state.disabled) { flashSel(state.note || 'Stop recording first.'); return; }
+    var spans = {};
+    lanes[0].forEach(function (id) { spans[id] = txSpan(findItem('texts', id)); });
+    var target = TextBatch.nextLineTarget(lanes[0], spans);
+    lineUpRows(false);
+    if (!target || !findItem('texts', target)) return;
+    ui.wordSel = null;
+    select({ lane: 'texts', id: target });
+    revealTextRow(target);
+  }
+  function revealTextRow(id) {
+    var tl = $('tl'), wrap = $('tlwrap');
+    var el = tl.querySelector('.clip[data-lane="texts"][data-id="' + id + '"]');
+    var tx = findItem('texts', id);
+    if (!el && tx && tx.group) el = tl.querySelector('.grp[data-group="' + tx.group + '"]');
+    if (!el) return;
+    var r = el.getBoundingClientRect(), w = wrap.getBoundingClientRect(), pad = 4;
+    if (r.top < w.top + pad) wrap.scrollTop -= w.top + pad - r.top;
+    else if (r.bottom > w.bottom - pad) wrap.scrollTop += r.bottom - (w.bottom - pad);
+  }
   function revealSel() {
     var hit = clipOf(ui.sel);
     if (!hit || ui.zoom <= 1) return;
@@ -6574,7 +6607,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
     var s = TextBatch.lineUpState({ below: lanes.length, whole: !!tx.whole, recording: !!ui.rec });
     var off = s.disabled ? ' disabled' : '';
-    return '<button class="btn small" data-selact="pullrow"' + off + ' title="Move the row below so it starts where this ends">Pull next row up</button>' +
+    return '<button class="btn small next" data-selact="nextline"' + off + ' title="Pull the next row up and select it, ready to record">Next line</button>' +
+      '<button class="btn small" data-selact="pullrow"' + off + ' title="Move the row below so it starts where this ends">Pull next row up</button>' +
       '<button class="btn small" data-selact="lineuprows"' + off + ' title="Line up every row below, one after another">Line up rows below</button>' +
       (s.note !== null ? '<span class="note">' + esc(s.note) + '</span>' : '');
   }
@@ -11655,6 +11689,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'hidechecked') { setHidden(checkedIds(), TextBatch.hideAction(mix.texts, checkedIds()) === 'hide'); return; }
       if (act === 'groupchecked') { groupChecked(); return; }
       if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
+      if (act === 'nextline') { nextLine(); return; }
       if (act === 'pullrow') { lineUpRows(false); return; }
       if (act === 'lineuprows') { lineUpRows(true); return; }
       var hit = clipOf(ui.sel);
