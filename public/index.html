@@ -973,6 +973,10 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <button class="btn primary" id="exportBtn">Export the mix</button>
             <button class="btn" id="saveAgain" hidden>Save the file</button>
           </div>
+          <div class="btnrow" id="fileRememberRow" hidden>
+            <label><input type="checkbox" id="fileRemember"> <span id="fileRememberText">Remember this name for this playlist</span></label>
+            <button type="button" class="link" id="fileAuto" hidden>Use automatic name</button>
+          </div>
           <div class="bar" id="bar" hidden><i id="barFill"></i></div>
           <p class="msg" id="exportMsg"></p>
         </div>
@@ -3922,6 +3926,25 @@ var VocalExport = (function () {
   };
 })();
 
+/* The Export file name: the project's name (or a remembered one) plus a date. Pure functions. */
+var ExportName = (function () {
+  var BAD = /[\\/:*?"<>|]+/g;
+  var EXT = /\.(mp3|wav|zip|webm|mp4)$/i;
+  var DATE_END = /[-_ ]*\d{4}-\d{2}-\d{2}$/;
+  function safe(s) { return String(s == null ? '' : s).trim().replace(BAD, '-').replace(EXT, '').trim(); }
+  function clean(raw) {
+    if (typeof raw !== 'string') return null;
+    var s = safe(raw).replace(DATE_END, '').trim();
+    return s || null;
+  }
+  function fallback(workspaceId) { return workspaceId === 'karaoke' ? 'karaoke' : 'sacrament'; }
+  function auto(opts) {
+    var base = clean(opts.remembered) || safe(opts.name) || fallback(opts.workspace);
+    return base + '-' + opts.date;
+  }
+  return { safe: safe, clean: clean, auto: auto, fallback: fallback };
+})();
+
 /* Finds how far a song's second track is shifted from the first, by matching their onsets. Pure functions. */
 var TrackAlign = (function () {
   var RATE = 100;
@@ -5414,7 +5437,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -5439,6 +5462,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     parkedTexts(m.items || []).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); syncLyricText(tx, m.items); });
     if ('vocalExport' in m) m.vocalExport = VocalExport.clean(m.vocalExport);
+    if ('exportName' in m) { var en = ExportName.clean(m.exportName); if (en) m.exportName = en; else delete m.exportName; }
     parkStrayColumnTwo(m);
     migrateLyrics(m);
     tidyGroups(m);
@@ -6203,8 +6227,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var UNDO_LIMIT = 50, UNDO_QUIET_MS = 1000;
   var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
-  // Collapsing a group is a view choice and the name is a file choice, so neither is an Undo step.
-  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport')) ? undefined : v; }); }
+  // Collapsing a group is a view choice, and the name, export versions and export file name are file choices, so none is an Undo step.
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport' || k === 'exportName')) ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
     undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
@@ -6240,6 +6264,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     after.groups = TextGroup.keepClosed(after.groups || [], mix.groups);
     after.name = mix.name;
     if (mix.vocalExport) after.vocalExport = mix.vocalExport; else delete after.vocalExport;
+    if (mix.exportName) after.exportName = mix.exportName; else delete after.exportName;
     mix = upgradeMix(after); ui.picTool = null; ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
@@ -6736,7 +6761,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       do {
         renderAgain = false;
         renderHead(); renderTimeline(); renderSel(); renderLibrary(); renderOrder(); renderSpoken();
-        renderScreenOpts(); renderCues(); renderTexts(); renderPictures(); renderCollection(); drawScreen(); renderSettings(); renderSongSettings(); renderExportNote(); syncPlay(); renderSections();
+        renderScreenOpts(); renderCues(); renderTexts(); renderPictures(); renderCollection(); drawScreen(); renderSettings(); renderSongSettings(); renderExportNote(); renderFileName(); syncPlay(); renderSections();
         if (Tracks.id) syncTracks();
       } while (renderAgain);
     } finally { rendering = false; }
@@ -11258,6 +11283,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('versionsLast').textContent = VocalExport.noteText(st.last) || '';
   }
   function twoFiles() { return WS.id === 'karaoke' && VocalExport.check(mix.items).available && VocalExport.clean(mix.vocalExport).pick === 'both'; }
+  function renderFileName() {
+    var auto = defaultFileName(), key = [mix.name || '', mix.exportName || '', exportDate()].join('|');
+    if (key !== ui.fileKey) { ui.fileKey = key; ui.fileTyped = null; }
+    var box = $('fileName');
+    if (document.activeElement !== box) box.value = ui.fileTyped !== null ? ui.fileTyped : auto;
+    var typed = ui.fileTyped !== null && ExportName.safe(ui.fileTyped) !== auto;
+    $('fileRememberRow').hidden = !(mix.exportName || typed);
+    $('fileRemember').checked = !!mix.exportName;
+    $('fileAuto').hidden = !mix.exportName;
+    $('fileRememberText').textContent = 'Remember this name for this ' + (WS.id === 'karaoke' ? 'project' : 'playlist');
+  }
   function renderExportNote() {
     if (WS.id === 'karaoke') renderVersions();
     var mp3ok = typeof lamejs !== 'undefined';
@@ -11452,11 +11488,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
   }
   function setVocalExport(next) { mix.vocalExport = next; saveSoon(); }
+  function setExportName(n) {
+    if (n) mix.exportName = n; else delete mix.exportName;
+    ui.fileTyped = null; ui.fileKey = null;
+    saveSoon(); renderFileName();
+  }
   async function exportMix() {
     if (ui.exporting || !plan.total) return;
     Player.stop();
     var pl = plan, fmtNow = ui.format, lock = null, len = exportLen();
-    var base = ($('fileName').value.trim() || defaultFileName()).replace(/[\\/:*?"<>|]+/g, '-').replace(/\.(mp3|wav|zip|webm|mp4)$/i, '');
+    var base = ExportName.safe($('fileName').value) || defaultFileName();
     ui.exporting = true; ui.lastExport = null;
     $('saveAgain').hidden = true; $('bar').hidden = false; $('barFill').style.width = '0%'; $('exportBtn').disabled = true;
     try { if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch (e) { lock = null; }
@@ -12985,7 +13026,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var savedNow = lsGet('hp.saved') || {};
         if (Object.prototype.hasOwnProperty.call(savedNow, to) && !confirm(replaceQuestion(to))) { box.value = ''; return; }
         mix.name = to; box.value = to;
-        storeNow(); renderHead();
+        storeNow(); renderHead(); renderFileName();
         return;
       }
       if (!to) { box.value = from; flashSaveNote('To stop saving it, use Delete saved'); return; }
@@ -12998,14 +13039,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
       if (!lsSet('hp.saved', r.saved)) { box.value = from; saveState.failed = true; renderSaveNote(); return; }
       mix.name = to; box.value = to;
-      storeNow(); renderHead();
+      storeNow(); renderHead(); renderFileName();
     });
     $('plCopy').onclick = function () {
       if (!mix.name) return;
       flushSave();
       var name = PlaylistSave.copyName(mix.name, lsGet('hp.saved') || {});
       mix.name = name; $('plName').value = name;
-      storeNow(); resetHistory(); renderHead();
+      storeNow(); resetHistory(); renderHead(); renderFileName();
       if (!saveState.failed) flashSaveNote('Saved as “' + name + '”');
     };
     $('plOpen').onchange = function () {
@@ -13027,7 +13068,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!confirm('Delete the saved playlist “' + name + '”? What’s open now stays open, without a name.')) return;
       if (!lsSet('hp.saved', PlaylistSave.remove(lsGet('hp.saved') || {}, name))) { flashSaveNote('Couldn’t delete it', true); return; }
       mix.name = '';
-      storeNow(); renderHead();
+      storeNow(); renderHead(); renderFileName();
     };
     var newArmed = null;
     $('plNew').onclick = function () {
@@ -13055,10 +13096,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('saveAgain').onclick = deliver;
     $('usedDate').addEventListener('change', function () {
       var v = this.value; if (!v) return;
-      var cur = $('fileName').value;
-      if (/^sacrament-\d{4}-\d{2}-\d{2}$/.test(cur)) $('fileName').value = 'sacrament-' + v;
       changed();
     });
+    $('fileName').addEventListener('input', function () { ui.fileTyped = this.value; renderFileName(); });
+    $('fileName').addEventListener('change', function () {
+      if (mix.exportName) { setExportName(ExportName.clean(this.value)); this.value = defaultFileName(); }
+      else if (this.value === defaultFileName()) ui.fileTyped = null;
+      renderFileName();
+    });
+    $('fileRemember').addEventListener('change', function () {
+      if (!this.checked) { setExportName(null); return; }
+      var n = ExportName.clean($('fileName').value);
+      if (!n) { this.checked = false; return; }
+      setExportName(n);
+    });
+    $('fileAuto').onclick = function () { setExportName(null); };
 
     // trim dialog
     var cv = $('trimWave');
@@ -13768,6 +13820,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     resetHistory();
+    renderFileName();
   }
   async function openLinked(h) {
     Link.handle = h; Link.need = false; Link.err = '';
@@ -13897,7 +13950,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   window.addEventListener('focus', checkFolderOnReturn);
 
   /* ---------- start ---------- */
-  function defaultFileName() { return WS.id === 'karaoke' ? 'karaoke-' + ymd(new Date()) : 'sacrament-' + nextSunday(); }
+  function exportDate() { return WS.id === 'karaoke' ? ymd(new Date()) : ($('usedDate').value || nextSunday()); }
+  function defaultFileName() { return ExportName.auto({ name: mix.name, remembered: mix.exportName, workspace: WS.id, date: exportDate() }); }
   async function switchWorkspace(ev) {
     ev.preventDefault();
     flushSave();
@@ -13931,7 +13985,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     $('usedDate').value = nextSunday();
     $('markUsed').checked = WS.id !== 'karaoke';
-    $('fileName').value = defaultFileName();
     addSamples();
     var work = lsGet('hp.work');
     if (work && work.items && work.spoken && (work.items.length || work.spoken.length || (work.pictures && work.pictures.length))) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }

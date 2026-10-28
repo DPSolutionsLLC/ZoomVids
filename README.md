@@ -27,6 +27,8 @@ When you come back, Chrome may ask you to allow the folder again: press **Reconn
 
 **Saved playlists.** Type a name in the box at the top and the playlist is kept in the **Open** list. From then on it saves itself after every change; the note beside the name says **Saved**. An unnamed playlist is still kept in this browser, but it isn't in the list. Changing the name renames the saved playlist, and asks first if that name is already taken. **Save a copy** makes "<name> copy" and opens it, so the original stays as it was. **Delete saved** asks first, then leaves what's open without a name. Undo doesn't change the name. Saved playlists travel in `hymn-playlist-data.json` with everything else.
 
+**Export file name.** The file name box in Export fills itself with the playlist name and next Sunday's date (or the "used on" date, when you change it), and follows along when you open, rename or copy a playlist. An unnamed playlist exports as `sacrament-` and the date. To use your own name, type it in the box: a **Remember this name for this playlist** tick box appears. Tick it and that name is kept for this playlist, still with the date added; leave it unticked and the name is used once, then the box goes back to the playlist name. **Use automatic name** goes back to the playlist name. Undo doesn't change it.
+
 The folder can also hold videos (.mp4, .mov, .m4v, .webm) and pictures (.jpg, .png, .webp); see **Pictures and video clips** below.
 
 New downloads: drag them onto the page (they're copied into the folder you have open in the Library), or put them in the folder yourself and press **Rescan**. When you switch back to the app, it checks your music folder again on its own, so files you added, moved or removed show up without pressing anything. **Rescan** still does the same by hand.
@@ -121,7 +123,7 @@ Karaoke keeps its own music folder, library, saved projects and settings. Link a
 
 Added Google Fonts, recent background colors and the floating panel layout are also separate for each side. Backgrounds, pictures and video clips, text boxes, Undo and Redo and floating panels all work the same in both.
 
-Karaoke hides the parts that only make sense for sacrament meeting: the Hymn checklist, Talk references to send, the Scripture collection, Mark as used on export, the library's Show filter and the two "used" sorts. Exports are named `karaoke-` and today's date.
+Karaoke hides the parts that only make sense for sacrament meeting: the Hymn checklist, Talk references to send, the Scripture collection, Mark as used on export, the library's Show filter and the two "used" sorts. Exports are named after the project and today's date, or `karaoke-` and today's date before the project has a name.
 
 You can have both open in two tabs at once. Each keeps its own work. Two tabs on the *same* side still share one working copy, as before.
 
