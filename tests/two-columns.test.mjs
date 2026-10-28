@@ -36,32 +36,36 @@ describe('cleanSong with two columns', () => {
     const once = L.cleanSong(full());
     assert.equal(once.columns, true);
     assert.equal(once.roll.heading, 'Men');
-    assert.equal(once.second.heading, 'Women');
-    assert.deepEqual(once.second.frame, { x: 0.5, y: 0.2, w: 0.4, h: 0.6 });
-    assert.equal(once.second.size, 80);
-    assert.deepEqual(once.second.solo, { x: 0.06, y: 0.52, w: 0.88, h: 0.42 });
-    assert.equal(once.second.verses[0].lines[0].same, true);
-    assert.equal(once.second.verses[0].lines[1].same, undefined);
-    assert.equal(once.second.parked.texts[0].lyric.col, 2);
-    assert.deepEqual(once.second.parked.groups, [{ id: 'g1', name: 'Lines' }]);
+    assert.equal('second' in once, false);
+    assert.equal(once.more.length, 1);
+    assert.equal(once.more[0].heading, 'Women');
+    assert.deepEqual(once.more[0].frame, { x: 0.5, y: 0.2, w: 0.4, h: 0.6 });
+    assert.equal(once.more[0].size, 80);
+    assert.deepEqual(once.solo, { x: 0.06, y: 0.52, w: 0.88, h: 0.42 });
+    assert.equal(once.more[0].verses[0].lines[0].same, true);
+    assert.equal(once.more[0].verses[0].lines[1].same, undefined);
+    assert.equal(once.more[0].parked.texts[0].lyric.col, 2);
+    assert.deepEqual(once.more[0].parked.groups, [{ id: 'g1', name: 'Lines' }]);
     assert.deepEqual(L.cleanSong(once), once);
   });
   test('columns is turned off when the view is slides', () => {
     const out = L.cleanSong(Object.assign(full(), { view: 'slides' }));
     assert.equal(out.columns, undefined);
-    assert.ok(out.second, 'column 2 is kept while columns are off');
+    assert.ok(out.more, 'column 2 is kept while columns are off');
   });
   test('a song without columns gets no new keys', () => {
     const out = L.cleanSong({ view: 'roll' });
     assert.equal('columns' in out, false);
     assert.equal('second' in out, false);
+    assert.equal('more' in out, false);
+    assert.equal('solo' in out, false);
     assert.equal('heading' in out.roll, false);
   });
   test('an empty or blank heading becomes null, never an empty string', () => {
     assert.equal(L.cleanHeading(''), null);
     assert.equal(L.cleanHeading('   '), null);
     assert.equal(L.cleanHeading(5), null);
-    assert.equal(L.cleanSecond({ heading: '  ' }).heading, null);
+    assert.equal(L.cleanColumn({ heading: '  ' }).heading, null);
     assert.equal('heading' in L.cleanSong({ view: 'roll', roll: { heading: '' } }).roll, false);
   });
   test('a heading over 40 characters is cut', () => {
@@ -69,29 +73,30 @@ describe('cleanSong with two columns', () => {
     assert.equal(L.cleanHeading('  Men  '), 'Men');
   });
   test('size is clamped to 24 to 180 and defaults to the roll size', () => {
-    assert.equal(L.cleanSecond({ size: 5 }).size, 24);
-    assert.equal(L.cleanSecond({ size: 999 }).size, 180);
-    assert.equal(L.cleanSecond({}).size, L.ROLL_SIZE);
+    assert.equal(L.cleanColumn({ size: 5 }).size, 24);
+    assert.equal(L.cleanColumn({ size: 999 }).size, 180);
+    assert.equal(L.cleanColumn({}).size, L.ROLL_SIZE);
   });
   test('a bad frame falls back to the column 2 default, not the roll default', () => {
-    assert.deepEqual(L.cleanSecond({ frame: { x: 'a' } }).frame, L.COL2_FRAME);
-    assert.deepEqual(L.cleanSecond({}).frame, L.COL2_FRAME);
+    assert.deepEqual(L.cleanColumn({ frame: { x: 'a' } }).frame, L.COL2_FRAME);
+    assert.deepEqual(L.cleanColumn({}).frame, L.COL2_FRAME);
   });
   test('a bad solo frame is dropped', () => {
-    assert.equal('solo' in L.cleanSecond({ solo: { x: 1 } }), false);
+    assert.equal('solo' in L.cleanSong({ view: 'roll', columns: true, second: { solo: { x: 1 } } }), false);
   });
-  test('cleanSecond refuses anything that is not an object', () => {
-    assert.equal(L.cleanSecond(null), null);
-    assert.equal(L.cleanSecond([]), null);
-    assert.equal(L.cleanSecond('x'), null);
+  test('cleanColumn refuses anything that is not an object', () => {
+    assert.equal(L.cleanColumn(null), null);
+    assert.equal(L.cleanColumn([]), null);
+    assert.equal(L.cleanColumn('x'), null);
   });
 });
 
 describe('cleanSlide column mark', () => {
   const lyric = (col) => ({ lines: [line('a', 'Sing')], col });
-  test('keeps col 2 and drops anything else', () => {
+  test('keeps col 2 and higher and drops anything else', () => {
     assert.equal(L.cleanSlide(lyric(2)).col, 2);
-    [1, '2', 3, undefined].forEach((col) => assert.equal('col' in L.cleanSlide(lyric(col)), false, String(col)));
+    assert.equal(L.cleanSlide(lyric(3)).col, 3);
+    [1, '2', undefined].forEach((col) => assert.equal('col' in L.cleanSlide(lyric(col)), false, String(col)));
   });
 });
 
@@ -104,11 +109,11 @@ describe('parking', () => {
     assert.deepEqual(out.parked.texts.map((t) => t.id), ['a']);
   });
   test('column 2 parking drops texts without col 2', () => {
-    const out = L.cleanSecond({ parked: { texts: [{ id: 'a', lyric: { lines: [line('a', 'One')] } }, { id: 'b', lyric: { lines: [line('b', 'Two')], col: 2 } }] } });
+    const out = L.cleanColumn({ parked: { texts: [{ id: 'a', lyric: { lines: [line('a', 'One')] } }, { id: 'b', lyric: { lines: [line('b', 'Two')], col: 2 } }] } });
     assert.deepEqual(out.parked.texts.map((t) => t.id), ['b']);
   });
   test('column 2 parking with nothing left is left out', () => {
-    assert.equal('parked' in L.cleanSecond({ parked: { texts: [{ id: 'a', lyric: { lines: [line('a', 'One')] } }] } }), false);
+    assert.equal('parked' in L.cleanColumn({ parked: { texts: [{ id: 'a', lyric: { lines: [line('a', 'One')] } }] } }), false);
   });
 });
 

@@ -218,19 +218,53 @@ Slides without word timing look as they did before.
 - The video shows whichever view is on when you export. To get both looks, export, switch, and export again.
 - **Step aside for song and talk titles** doesn't apply to rolling lines.
 
-**Two columns.** **Show the lyrics as** has a third choice, **Two columns**: two rolling panels side by side, for example one for the men and one for the women. Each group of singers follows only its own column for the whole song.
+**Columns.** **Show the lyrics as** has a third choice, **Columns**: rolling panels side by side, for example one for the men and one for the women. Each group of singers follows only its own column for the whole song. A song starts with two columns and can have as many as you like.
 
-- The Lyrics box gets **Column 1** and **Column 2** tabs. Paste each column's lyrics in its tab and press **Make lines**. Each column's lines are their own group on the timeline ("<song> lines" and "<song> lines · Column 2", or the heading).
+- The Lyrics box gets a tab for each column (**Column 1**, **Column 2**, …, with the heading after it when there is one). Each column's lines are their own group on the timeline ("<song> lines", then "<song> lines · Column 2", or the heading).
+- **Add column** adds one on the right, **Remove this column** removes the picked one (it asks first if its lines have word timing, and Undo brings it back), and **Spread evenly** lays every column's box side by side across the space they use now. Adding or removing a column spreads them for you. Each is one Undo step.
 - Each column has its own **Heading** (optional, up to 40 characters, such as "Men" or "Women"), drawn at the top of its box with the lines rolling underneath. Each column also has its own box (drag it in the preview, or type **Left / Top / Width / Height** with its tab picked) and its own text **Size**. Everything else under Rolling lines and Look for the lines is shared.
-- **Shared lines.** In Column 2, start a line with `=` to share it with the same line in Column 1, for example `= Glo-ri-a in ex-cel-sis`. Case, punctuation and syllable marks don't matter, and lines are matched in order, so a repeated chorus links to each copy in turn. A shared line has no block in Column 2: it shows in both columns and is lit by Column 1's block. On the timeline that block's label starts with **Both ·**. A `=` line with no match in Column 1 keeps its own block, and Song settings says how many there are.
-- Time each column just like Rolling lines. **Record the whole song** with a Column 2 line selected records only Column 2's own lines.
-- With a line selected, **Show the other column** (in the bar under the timeline) shows the other column's blocks as a faint strip under the line, lined up in time, so you can match the two. It can't be clicked or dragged, and it isn't saved.
-- **Rests.** When a column's singing stops for at least the song's **Break of at least** value (or hasn't started yet while the other column is singing), a rest row goes in: three gently pulsing dots in the highlight color, in the current spot. Over the last 3 s before the next line starts, that line glides up into the current spot.
-- Turning Two columns off, or switching to Slides, keeps Column 2 and its timing. Switching back brings it back, and Column 1's box goes back to where it was before. Each switch is one Undo step.
-- Songs that don't use two columns look and behave exactly as before.
+- **Two ways to enter the lyrics.** Under Show the lyrics as, **Lyrics** picks **One box per column** or **One text with @ names**. Switching keeps every line and its timing, along with each column's box, size and heading. Separate boxes become one text in singing order, using the timing. Switching is one Undo step. Press Update (or Undo my typing) first if you have typing that isn't applied.
+- **One box per column.** Paste each column's lyrics in its tab and press **Make lines**. In Column 2 and up, start a line with `=` to share it with the same line in Column 1, for example `= Glo-ri-a in ex-cel-sis`. Case, punctuation and syllable marks don't matter, and lines are matched in order, so a repeated chorus links to each copy in turn. A shared line has no block of its own: it shows in both columns and is lit by Column 1's block. A `=` line with no match in Column 1 keeps its own block, and Song settings says how many there are.
+- **One text with @ names.** Type the whole song once, in singing order, and tag the lines:
 
-Known limits: no rest after a column's last line; in Page by page, a rest counts as a line; Copy timing doesn't cross columns; the rest timings (3 s glide, dot speed) are fixed for now.
+  ```
+  [Verse 1]
+  Come, all ye faithful
+  @Men
+  Joyful and triumphant
+  O come ye to Beth-le-hem
+  @Women
+  Come and behold him
+  @Men Born the King of an-gels
+  @Men @Women
+  O come let us a-dore him
+  @All
+  Christ the Lord
+  ```
 
+  - A line with only `@Men` sends every line after it to the Men column, until the next such line. It carries across blank lines and `[Labels]`.
+  - `@Men @Women` sends the lines after it to both columns. They're timed once and lit in both.
+  - `@All` sends the lines after it to every column.
+  - `@Men` at the start of a line with words sends only that line. The line after it goes back to the column before.
+  - Lines before the first `@` line go to every column.
+  - A new `@` name adds a column on the right, and a name you no longer use removes its column. Columns already there never change order. The heading starts as the name, with `_` shown as a space (`@Young_Women` → "Young Women"); you can change it like any heading.
+  - Edit the text and press **Update**. Every column is rebuilt, and lines whose words didn't change keep their timing, even when you move them to another column.
+- On the timeline, a shared block's label starts with **Both ·** (two columns) or **Shared ·** (three or more).
+- Time each column just like Rolling lines. **Record the whole song** with a line selected records only that column's own lines.
+- With a line selected, **Show the other columns** (in the bar under the timeline) shows each other column's blocks as a faint strip under the line, labelled with its heading and lined up in time, so you can match them. The strips can't be clicked or dragged, and they aren't saved.
+- **Rests.** When a column's singing stops for at least the song's **Break of at least** value (or hasn't started yet while another column is singing), a rest row goes in: three gently pulsing dots in the highlight color, in the current spot. Over the last 3 s before the next line starts, that line glides up into the current spot.
+- Turning Columns off, or switching to Slides, keeps every column and its timing. Switching back brings them back, and Column 1's box goes back to where it was before. A song entered as one text with @ names comes back that way. Each switch is one Undo step.
+- Songs that don't use columns look and behave exactly as before. Projects saved with the old Two columns open as two columns.
+
+Known limits: in separate boxes, `=` only links to Column 1; with many columns each one gets narrow, so lower each column's Size; a line shared by two columns other than Column 1 becomes two timed copies after switching to separate boxes; no rest after a column's last line; in Page by page, a rest counts as a line; Copy timing doesn't cross columns; the rest timings (3 s glide, dot speed) are fixed for now.
+
+**Lyrics box colors.** While you type, the Lyrics box shows how the app reads your text. You don't need to press anything.
+
+- Words with a part (after `High:`) get a light tint and an underline in the part's color. A new part name already shows the color it will get.
+- In a song with columns, each line has a colored stripe on its left and a light tint in its column's color. A line shared by two or more columns has a striped bar in two colors. Lines that go to every column have a grey stripe. A brand-new `@` name already shows the color its column will get.
+- Instructions such as `@Men`, `High:`, `[Chorus]` and `=` sit on a soft grey pill, so they stand apart from the sung words.
+- A blank line shows a faint dashed line.
+- With a line selected on the timeline, its verse is highlighted, as before.
 **Look for new lyric slides.** Also in Song settings, each song has a font, Bold and Italic, size, text color and **Behind the text** for its new slides. A song starts with Montserrat Bold, 72 px, white, with a solid black outline. Slides made with Make slides, and slides split off by a blank line, start with this look. Changing it doesn't touch slides you've already made. **Use on every slide in this song** gives all of the song's slides this look, including ones you changed by hand. It asks first, and one Undo puts them all back.
 
 **Two versions.** In karaoke, **Export** has a **Versions** choice: **Both, as two files**, **With vocals** or **Music only**. Both is the default, and each project remembers your choice. Both files have the same picture. In the music-only one, every track marked Vocal is silent and every track marked Instrumental plays, whatever their Sound ticks say. The files end in `-with-vocals` and `-music-only`. Both are built in one pass, so it takes about as long as one. Export shows when you last exported and which versions you made. If no track is marked Vocal, the choice is greyed out and you get one file, as before. Clips over the music keep their own sound in both versions.

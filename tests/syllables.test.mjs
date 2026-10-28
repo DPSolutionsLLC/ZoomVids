@@ -120,6 +120,10 @@ describe('markText', () => {
     assert.equal(S.markText('', 0, 0).marked, 0);
     assert.equal(S.markText(null, 0, 0).text, '');
   });
+  test('column tags are left alone and plain words are still marked', () => {
+    const out = S.markText('@Women\nGloria Women', 0, 0).text;
+    assert.equal(out, '@Women\nGlo-ri-a Wo-men');
+  });
 });
 
 describe('markText with Lyrics', () => {
