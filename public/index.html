@@ -72,6 +72,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .undonote:empty { display: none; }
 .savenote { color: var(--muted); font-size: 13px; min-width: 9ch; }
 .savenote.warn { color: var(--warn); font-weight: 600; }
+.finishnote { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.finishnote[hidden] { display: none; }
+#plFinished[aria-pressed="true"] { color: var(--accent); }
+#plOpen option.done { color: var(--muted); }
 
 /* the desk */
 .desk { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -506,6 +510,12 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
       <label for="plOpen" class="visually-hidden">Open a saved playlist</label>
       <select id="plOpen"></select>
       <button class="btn quiet" id="plCopy">Save a copy</button>
+      <button class="btn quiet" id="plFinished" aria-pressed="false">Mark finished</button>
+      <span class="finishnote" id="finishNote" role="status" aria-live="polite" hidden>
+        <span id="finishNoteText"></span>
+        <button class="btn small" id="finishKeep">Keep finished</button>
+        <button class="btn small quiet" id="finishReopen">Mark in progress</button>
+      </span>
       <button class="btn quiet" id="plDelete" hidden>Delete saved</button>
       <button class="btn quiet" id="plNew">New</button>
     </div>
@@ -2332,6 +2342,25 @@ var PlaylistSave = (function () {
     return { text: 'Saved', warn: false };
   }
   return { cleanName: cleanName, copyName: copyName, put: put, rename: rename, remove: remove, status: status };
+})();
+
+/* Finished marks on saved projects: cleaning, button label and Open-list groups. Pure functions. */
+var FinishedMark = (function () {
+  function clean(value) { return value === true; }
+  function label(finished) { return finished ? '✓ Finished' : 'Mark finished'; }
+  function title(finished, word) {
+    return finished ? 'This ' + word + ' is finished. Press to put it back in progress.' : 'Mark this ' + word + ' finished';
+  }
+  function groups(saved) {
+    var out = { open: [], done: [] };
+    Object.keys(saved).sort().forEach(function (name) {
+      if (saved[name] && saved[name].finished === true) out.done.push(name); else out.open.push(name);
+    });
+    return out;
+  }
+  function shouldAsk(state) { return !!state.finished && !state.answered && state.base !== state.now; }
+  function noteText(word) { return 'This ' + word + ' is marked finished.'; }
+  return { clean: clean, label: label, title: title, groups: groups, shouldAsk: shouldAsk, noteText: noteText };
 })();
 
 /* The order of text rows on the timeline and in the text list, kept apart from the drawing order. Pure functions; inputs are never changed. */
@@ -5922,6 +5951,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     parkedTexts(m.items || []).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); syncLyricText(tx, m.items); });
     if ('vocalExport' in m) m.vocalExport = VocalExport.clean(m.vocalExport);
     if ('exportName' in m) { var en = ExportName.clean(m.exportName); if (en) m.exportName = en; else delete m.exportName; }
+    if (FinishedMark.clean(m.finished)) m.finished = true; else delete m.finished;
     parkStrayColumnTwo(m);
     migrateLyrics(m);
     tidyGroups(m);
@@ -6692,12 +6722,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var UNDO_LIMIT = 50, UNDO_QUIET_MS = 1000;
   var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
-  // Collapsing a group is a view choice, and the name, export versions and export file name are file choices, so none is an Undo step.
-  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport' || k === 'exportName')) ? undefined : v; }); }
+  var finishAsk = { base: '', answered: false };
+  // Collapsing a group is a view choice, and the name, export versions, export file name and finished mark are file choices, so none is an Undo step.
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport' || k === 'exportName' || k === 'finished')) ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
     undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
     renderUndo();
+    finishAsk = { base: historyJson(), answered: false };
+    renderFinishNote(false);
+  }
+  // On open, changed() runs this before resetHistory(), which hides the note again before the page paints.
+  function askIfFinished() {
+    if (FinishedMark.shouldAsk({ finished: mix.finished, answered: finishAsk.answered, base: finishAsk.base, now: historyJson() })) renderFinishNote(true);
+  }
+  function renderFinishNote(show) {
+    $('finishNote').hidden = !show;
+    if (show) $('finishNoteText').textContent = FinishedMark.noteText(projectWord());
+  }
+  function projectWord() { return WS.id === 'karaoke' ? 'project' : 'playlist'; }
+  function setFinished(on) {
+    if (!mix.name) return;
+    if (on) mix.finished = true; else delete mix.finished;
+    finishAsk.answered = true; renderFinishNote(false); storeNow(); renderHead();
   }
   function checkpoint() {
     clearTimeout(undoTimer); undoWaiting = false;
@@ -6708,6 +6755,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var next = UndoStack.record(undoStack, json);
     if (next !== undoStack) undoStack = next;
     renderUndo();
+    askIfFinished();
   }
   function checkpointSoon() {
     clearTimeout(undoTimer); undoWaiting = true;
@@ -6730,6 +6778,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     after.name = mix.name;
     if (mix.vocalExport) after.vocalExport = mix.vocalExport; else delete after.vocalExport;
     if (mix.exportName) after.exportName = mix.exportName; else delete after.exportName;
+    if (mix.finished) after.finished = true; else delete after.finished;
     mix = upgradeMix(after); ui.picTool = null; ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
@@ -7276,13 +7325,23 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (gap > 0.5) { st.textContent = fmt(gap) + ' short of ' + fmt(mix.target); st.className = 'pill short'; }
     else { st.textContent = 'Covers ' + fmt(mix.target) + ' with ' + fmt(-gap) + ' to spare'; st.className = 'pill'; }
     if (document.activeElement !== $('plName')) $('plName').value = mix.name || '';
-    var saved = lsGet('hp.saved') || {}, names = Object.keys(saved).sort();
-    $('plOpen').innerHTML = '<option value="">' + (names.length ? 'Open a saved playlist' : 'No saved playlists yet') + '</option>' +
-      names.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+    var saved = lsGet('hp.saved') || {}, names = Object.keys(saved), g = FinishedMark.groups(saved);
+    function optionHtml(n, done) { return '<option value="' + esc(n) + '"' + (done ? ' class="done"' : '') + '>' + (done ? '✓ ' : '') + esc(n) + '</option>'; }
+    function optionsOf(list, done) { return list.map(function (n) { return optionHtml(n, done); }).join(''); }
+    var listHtml = g.done.length
+      ? (g.open.length ? '<optgroup label="In progress">' + optionsOf(g.open, false) + '</optgroup>' : '') +
+        '<optgroup label="Finished">' + optionsOf(g.done, true) + '</optgroup>'
+      : optionsOf(g.open, false);
+    $('plOpen').innerHTML = '<option value="">' + (names.length ? 'Open a saved playlist' : 'No saved playlists yet') + '</option>' + listHtml;
     $('plOpen').disabled = !names.length;
     $('plDelete').hidden = !(mix.name && saved[mix.name]);
     $('plCopy').disabled = !mix.name;
     $('plCopy').title = mix.name ? '' : 'Name this playlist first';
+    var fin = !!mix.finished;
+    $('plFinished').textContent = FinishedMark.label(fin);
+    $('plFinished').setAttribute('aria-pressed', String(fin));
+    $('plFinished').disabled = !mix.name;
+    $('plFinished').title = mix.name ? FinishedMark.title(fin, projectWord()) : 'Name this ' + projectWord() + ' first';
     if (!saveNoteTimer) renderSaveNote();
   }
 
@@ -13929,6 +13988,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       flushSave();
       var name = PlaylistSave.copyName(mix.name, lsGet('hp.saved') || {});
       mix.name = name; $('plName').value = name;
+      delete mix.finished;
       storeNow(); resetHistory(); renderHead(); renderFileName();
       if (!saveState.failed) flashSaveNote('Saved as “' + name + '”');
     };
@@ -13950,9 +14010,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!name) return;
       if (!confirm('Delete the saved playlist “' + name + '”? What’s open now stays open, without a name.')) return;
       if (!lsSet('hp.saved', PlaylistSave.remove(lsGet('hp.saved') || {}, name))) { flashSaveNote('Couldn’t delete it', true); return; }
-      mix.name = '';
+      mix.name = ''; delete mix.finished;
+      renderFinishNote(false);
       storeNow(); renderHead(); renderFileName();
     };
+    $('plFinished').onclick = function () { setFinished(!mix.finished); };
+    $('finishKeep').onclick = function () { finishAsk.answered = true; renderFinishNote(false); };
+    $('finishReopen').onclick = function () { setFinished(false); };
     var newArmed = null;
     $('plNew').onclick = function () {
       var b = this;
