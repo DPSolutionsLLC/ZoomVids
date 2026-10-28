@@ -4576,6 +4576,14 @@ var Lyrics = (function () {
       })
     };
   }
+  // Record lines no block maps to. A column with no blocks gets none here: its first Make lines builds them as one group.
+  function linesNeedingBlocks(lineCount, lineOf) {
+    if (!lineOf.length) return [];
+    var owned = {}, out = [];
+    lineOf.forEach(function (k) { if (k >= 0) owned[k] = true; });
+    for (var k = 0; k < lineCount; k++) if (!owned[k]) out.push(k);
+    return out;
+  }
   function cleanSlideLook(raw) {
     var src = isObject(raw) ? raw : {}, d = KARAOKE_LOOK;
     var font = typeof src.font === 'string' ? src.font.trim() : '';
@@ -4637,7 +4645,7 @@ var Lyrics = (function () {
     merge: merge, reId: reId, partsOf: partsOf, setPart: setPart, joinSlides: joinSlides, wordCount: wordCount, syllableCount: syllableCount,
     cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts, defaultHi: defaultHi,
     cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord,
-    LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines,
+    LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines, linesNeedingBlocks: linesNeedingBlocks,
     cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE,
     COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanSecond: cleanSecond, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks
   };
@@ -9341,7 +9349,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return tx;
   }
   // Points each line block at its record line (many blocks may share one), removes blocks whose words are gone,
-  // and adds a block for each record line that has none. Hidden takes keep their own timing.
+  // and adds a block for each record line that has none (only when the column had blocks). Hidden takes keep their own timing.
   function relinkLines(songId, blocks, sources, col) {
     var lines = recordLines(songId, col), counts = { updated: 0, added: 0, removed: 0, changed: [] }, gone = {}, owners = {};
     var lineOf = Lyrics.matchLines(lines, blocks.map(function (tx) { return tx.lyric; })).lineOf;
@@ -9355,9 +9363,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       counts.updated++;
     });
     mix.texts = mix.texts.filter(function (tx) { return !gone[tx.id]; });
+    var needs = {};
+    Lyrics.linesNeedingBlocks(lines.length, lineOf).forEach(function (k) { needs[k] = true; });
     var firstBlock = blocks.filter(function (tx) { return !gone[tx.id]; })[0] || null, previous = null;
     lines.forEach(function (rl, k) {
       if (owners[k]) { previous = owners[k]; return; }
+      if (!needs[k]) return;
       var anchors = previous || [null], made = [];
       anchors.forEach(function (after) {
         var tx = addBlockAfter(songId, after, { lines: [rl.line] }, rl.verseId, sources, col);

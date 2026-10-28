@@ -1027,6 +1027,34 @@ describe('matchLines', () => {
   });
 });
 
+describe('linesNeedingBlocks', () => {
+  const line = (...wordIds) => ({ words: wordIds.map((id) => ({ id, syls: [{ id: 's' + id, text: id }] })) });
+  const block = (...lines) => ({ lines });
+  test('first Make lines in column 1: no blocks yet, so none are added here', () => {
+    const rec = [line('a', 'b'), line('c'), line('d', 'e')];
+    assert.deepEqual(L.linesNeedingBlocks(rec.length, L.matchLines(rec, []).lineOf), []);
+  });
+  test('first Make lines in column 2: its own lines with no blocks get none here', () => {
+    const rec = [line('f'), line('g', 'h')];
+    assert.deepEqual(L.linesNeedingBlocks(rec.length, L.matchLines(rec, []).lineOf), []);
+  });
+  test('an Update adds only the lines no block matches', () => {
+    const rec = [line('a'), line('b'), line('c'), line('d')];
+    const lineOf = L.matchLines(rec, [block(line('a')), block(line('c'))]).lineOf;
+    assert.deepEqual(lineOf, [0, 2]);
+    assert.deepEqual(L.linesNeedingBlocks(rec.length, lineOf), [1, 3]);
+  });
+  test('duplicated takes of one line count once', () => {
+    assert.deepEqual(L.linesNeedingBlocks(2, [0, 0, 1]), []);
+  });
+  test('every word replaced on Update: old blocks all map to -1 and every line gets a new block', () => {
+    assert.deepEqual(L.linesNeedingBlocks(3, [-1, -1]), [0, 1, 2]);
+  });
+  test('a shrunk record ignores block indexes past its end', () => {
+    assert.deepEqual(L.linesNeedingBlocks(2, [0, 1, 2]), []);
+  });
+});
+
 describe('cleanSong part labels', () => {
   const partWith = (label) => L.cleanSong({ parts: [{ name: 'High', color: '#123456', label }] }).parts[0];
   test('a part with no label gets no label key, and an empty song keeps its old shape', () => {
