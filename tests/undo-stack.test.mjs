@@ -177,3 +177,12 @@ test('describe leaves the row order out when a text changed too', () => {
   const after = playlist({ textRows: ['b', 'a'], texts: [] });
   assert.doesNotMatch(UndoStack.describe(json(before), json(after)), /row order/);
 });
+
+test('describe counts changed animations, including recorded beats', () => {
+  const anims = [{ id: 'a1', kind: 'clap', start: 2, dur: 8, beats: [] }, { id: 'a2', kind: 'ball', start: 4, dur: 8, beats: [] }];
+  const before = playlist({ anims });
+  const beats = playlist({ anims: [{ ...anims[0], beats: [{ t: 1, d: 0.2 }] }, anims[1]] });
+  assert.equal(UndoStack.describe(json(before), json(beats)), 'change to 1 animation');
+  const both = playlist({ anims: anims.map((a) => ({ ...a, color: '#ff0000' })) });
+  assert.equal(UndoStack.describe(json(before), json(both)), 'change to 2 animations');
+});

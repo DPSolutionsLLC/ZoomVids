@@ -275,9 +275,36 @@ Press **Choose a stretch** in the Scripture collection, then click a gap between
 
 **Large videos.** A clip's sound is read from the whole file the first time you use it, so a smaller download (720p or 360p) is quicker and uses less memory than 1080p. The picture is read a little at a time. Some downloads use a "streaming" MP4 format the app can't read; it says so, and a regular MP4 download works. If a video or picture can't be read, its row says why, and an export stops with the reason instead of leaving it out.
 
+### Animations (karaoke)
+
+The **Animations** section (karaoke only) has ten small moving cues you can put anywhere on screen and time to the music by holding Space, the same way you time words. They have no sound.
+
+| Animation | Between beats | On a beat |
+|---|---|---|
+| Clap | Two hands apart | The hands meet, with little burst lines |
+| Stomp | A shoe lifted over the floor | The shoe comes down, with impact lines |
+| Snap | Thumb and finger together | The finger snaps down, with a spark |
+| Pat knees | Two hands over two knees | The hands press onto the knees |
+| Bouncing ball | Arcs from one beat to the next | Lands, squashed, while you hold Space |
+| Pulsing dot | A small dot | The dot grows, with a ring spreading out |
+| Count-in 1 2 3 4 | A dim number | The next number lights up: 1, 2, 3, 4, then 1 again |
+| Arrow / cue | Faint arrow or words | Lights up and grows. **Style** picks Up, Down, Your turn or Echo me |
+| Stars | One resting star | Five sparkles burst out |
+| Conductor | A faint 4-beat pattern | The dot moves to the next point (down, left, right, up) and glides toward the one after |
+
+- **Adding.** Click an animation in the library at the top of the section. It goes on the timeline at the playhead for 8 seconds, on its own row under the pictures, and appears at the right of the preview. Several can be on screen at once.
+- **Placing.** Select it, then drag inside its box in the preview to move it or drag an edge or corner to resize it, like a picture. It snaps to the center and the text place lines; hold **Shift** to place it freely.
+- **Color.** Click it in the section's list to open its settings. Pick a swatch or any color with the color box. **Style** (Arrow / cue only), **Starts at** and **Shows for** are there too.
+- **Stretching the block.** Drag the block on the timeline to move it, or drag either end to change how long it shows. Dragging the start keeps recorded beats where they are in the song. Beats that end up outside the block are kept but not shown, and the timeline bar says how many.
+- **Fade.** Each block fades in over 0.3 s at its start and out over 0.3 s at its end. It stays on screen, resting, between beats.
+- **Recording beats.** Select the block on the timeline. The bar under the timeline has **Speed** (1×, 0.75× or 0.5×, shared with word timing) and **Record beats**. Playback starts 2 s before the block. Hold **Space** for each beat; how long you hold is how long the beat lasts. **Backspace** takes back the last beat and jumps back a moment. **Esc** (or **Stop**) ends the run. Recording again replaces the block's beats, and one **Undo** brings the old ones back. **Clear beats** in the settings removes them all.
+- **Fixing beats.** With the block selected, its beats show in a strip under its row. Drag a beat to move it, drag its edges to change its length, or click it and use the arrow keys (**Alt** for small steps, **Shift** for big ones). **Delete** removes the selected beat, **Esc** lets go of it. Clicking a beat moves the playhead to it.
+- The preview and the exported video look the same. A video with animations is built at 30 frames a second so the beats look smooth.
+- Not yet: copying beats from one block to another, and using your own GIFs or video clips as animations.
+
 ### Undo and redo
 
-Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, pictures and video clips, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
+Press **Undo** and **Redo** at the top, or **Ctrl+Z** and **Ctrl+Y** (**⌘Z** and **⌘⇧Z** on a Mac). You can go back up to 50 steps. Undo covers everything in the open playlist: text items, pictures and video clips, animations, songs and talks, mix settings and the tap queue. A whole drag counts as one step. While you are typing in a box, Ctrl+Z undoes your typing as usual. Some things are not undone: copying files into the music folder, Rescan, reconnecting a missing recording, choosing a folder, the motion background and still graphic, and opening another playlist. Undo history starts fresh when you open the app or switch playlists. **Backspace** still undoes the last tap while placing.
 
 ### Reading time
 

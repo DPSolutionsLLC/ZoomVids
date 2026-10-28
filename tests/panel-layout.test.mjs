@@ -12,7 +12,7 @@ test('constants match the plan', () => {
   assert.equal(PanelLayout.MIN_H, 120);
   assert.equal(PanelLayout.MARGIN, 8);
   assert.equal(PanelLayout.SNAP, 12);
-  assert.deepEqual(PanelLayout.IDS, ['timeline', 'preview', 'library', 'order', 'spoken', 'screen', 'song', 'texts', 'pictures', 'titles', 'talkref', 'scriptures', 'settings', 'export']);
+  assert.deepEqual(PanelLayout.IDS, ['timeline', 'preview', 'library', 'order', 'spoken', 'screen', 'song', 'texts', 'pictures', 'anims', 'titles', 'talkref', 'scriptures', 'settings', 'export']);
 });
 
 test('clean gives an empty layout for missing or non-object input', () => {
