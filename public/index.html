@@ -655,9 +655,9 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             </div>
             <label id="songColHeadRow" hidden>Heading <input type="text" id="songColHead" maxlength="40" placeholder="Optional, e.g. Men"></label>
             <p class="note" id="songColNote" hidden></p>
-            <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it.</p>
+            <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
             <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
-            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><span class="note" id="songLyricsState"></span></div>
+            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><button class="btn small" id="songLyricsMark">Mark all</button><button class="btn small quiet" id="songLyricsOriginal" hidden>Back to my original</button><span class="note" id="songLyricsState"></span></div>
             <p class="msg" id="songLyricsMsg" role="status"></p>
             <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this song"></div>
             <div class="btnrow"><label>Part <select id="lyricPart"></select></label><button class="btn small" id="lyricApply" disabled>Set part</button><span class="note" id="lyricPickNote"></span></div>
@@ -4043,6 +4043,167 @@ var TrackAlign = (function () {
   };
 })();
 
+/* Syllable dashes added to pasted lyrics (Gloria → Glo-ri-a), split the way words are sung. Pure functions. */
+var Syllables = (function () {
+  var TAG_RE = /^([A-Za-z][A-Za-z0-9]{0,14}):$/;
+  var LABEL_RE = /^\[([^\[\]\n]{1,40})\]$/;
+  var LETTER_RE = /[A-Za-zÀ-ÖØ-öø-ÿ]/;
+  var VOWEL_RE = /[aeiouàáâãäåæèéêëìíîïòóôõöøùúûü]/;
+  var APOS_RE = /['’]/;
+  var EXCEPTIONS = {
+    heaven: 'heav-en', heavens: 'heav-ens', every: 'ev-ery', savior: 'sav-ior', saviour: 'sav-iour', beyond: 'be-yond',
+    anything: 'an-y-thing', everything: 'ev-ery-thing', something: 'some-thing', nothing: 'noth-ing',
+    immanuel: 'im-man-u-el', emmanuel: 'em-man-u-el', israel: 'is-ra-el', alleluia: 'al-le-lu-ia',
+    creation: 'cre-a-tion', create: 'cre-ate', created: 'cre-at-ed', jehovah: 'je-ho-vah', messiah: 'mes-si-ah',
+    eternal: 'e-ter-nal', evening: 'eve-ning', given: 'giv-en', forgiven: 'for-giv-en', seven: 'sev-en',
+    ever: 'ev-er', never: 'nev-er', forever: 'for-ev-er', many: 'man-y', only: 'on-ly', lowly: 'low-ly',
+    holy: 'ho-ly', glory: 'glo-ry', spirit: 'spir-it', christian: 'chris-tian', power: 'pow-er',
+    fire: 'fire', hour: 'hour', our: 'our'
+  };
+  var SUFFIXES = ['ness', 'less', 'ment', 'ful', 'ing', 'eth', 'est', 'ed', 'ly'];
+  var HIATUS = ['ia', 'io', 'iu', 'eo', 'ua', 'uo', 'ii'];
+  var KEEP_UNITS = ['tion', 'sion', 'cious', 'tious', 'cial', 'tial'];
+  var DIGRAPHS = ['ch', 'sh', 'th', 'ph', 'wh', 'gh', 'ck'];
+  var ONSETS = ['bl', 'br', 'cl', 'cr', 'dr', 'fl', 'fr', 'gl', 'gr', 'pl', 'pr', 'tr', 'wr', 'thr', 'chr', 'shr', 'phr'];
+  function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+  function isVowelLetter(ch) { return !!ch && VOWEL_RE.test(ch); }
+  function vowelFlags(w) {
+    var flags = [];
+    for (var i = 0; i < w.length; i++) {
+      var ch = w.charAt(i), prev = w.charAt(i - 1), next = w.charAt(i + 1), v;
+      if (ch === 'u' && (prev === 'q' || (prev === 'g' && isVowelLetter(next)))) v = false;
+      else if (ch === 'y') v = i > 0 && !isVowelLetter(next);
+      else if (ch === 'w') v = i > 0 && flags[i - 1] && (!next || !isVowelLetter(next) || w.substr(i + 1, 2) === 'er' || w.substr(i + 1, 2) === 'el');
+      else v = isVowelLetter(ch);
+      flags.push(v);
+    }
+    return flags;
+  }
+  function keepsUnit(w, i) {
+    return KEEP_UNITS.some(function (u) { return w.substr(i - 1, u.length) === u; });
+  }
+  function vowelGroups(w) {
+    var flags = vowelFlags(w), groups = [], cur = null;
+    for (var i = 0; i < w.length; i++) {
+      if (!flags[i]) { cur = null; continue; }
+      var afterGlide = w.charAt(i - 1) === 'w' || w.charAt(i - 1) === 'y';
+      if (cur && !afterGlide && !(HIATUS.indexOf(w.substr(i - 1, 2)) >= 0 && !keepsUnit(w, i - 1))) cur.end = i + 1;
+      else { cur = { start: i, end: i + 1 }; groups.push(cur); }
+    }
+    return groups;
+  }
+  function isConsonantAt(w, i) { var ch = w.charAt(i); return !!ch && LETTER_RE.test(ch) && !isVowelLetter(ch); }
+  function silentLast(w, groups) {
+    if (groups.length < 2) return false;
+    var last = groups[groups.length - 1], n = w.length;
+    if (last.end - last.start !== 1 || w.charAt(last.start) !== 'e') return false;
+    if (last.start === n - 1) return isConsonantAt(w, n - 2) && !(w.charAt(n - 2) === 'l' && isConsonantAt(w, n - 3));
+    if (last.start !== n - 2) return false;
+    var end = w.charAt(n - 1), before = w.charAt(n - 3);
+    if (!isConsonantAt(w, n - 3)) return false;
+    if (end === 'd') return before !== 't' && before !== 'd' && !(before === 'r' && isConsonantAt(w, n - 4));
+    if (end === 's') return 'sxzcg'.indexOf(before) < 0 && !(before === 'h' && 'cs'.indexOf(w.charAt(n - 4)) >= 0);
+    return false;
+  }
+  function consonantUnits(c) {
+    var units = [];
+    for (var i = 0; i < c.length;) {
+      var two = c.substr(i, 2);
+      if (DIGRAPHS.indexOf(two) >= 0 || (two === 'ng' && i + 2 < c.length)) { units.push(two); i += 2; }
+      else { units.push(c.charAt(i)); i += 1; }
+    }
+    return units;
+  }
+  function cutBetween(w, a, b) {
+    var units = consonantUnits(w.slice(a.end, b.start));
+    if (!units.length) return b.start;
+    if (units.length === 1) return units[0] === 'x' || units[0] === 'ck' || units[0] === 'gh' ? b.start : a.end;
+    var tail = units[units.length - 2] + units[units.length - 1];
+    if (ONSETS.indexOf(tail) >= 0) return b.start - tail.length;
+    return units.length === 2 ? a.end + units[0].length : b.start - units[units.length - 1].length;
+  }
+  function suffixCut(w) {
+    for (var i = 0; i < SUFFIXES.length; i++) {
+      var suf = SUFFIXES[i], stem = w.slice(0, w.length - suf.length);
+      if (w.length <= suf.length || w.slice(-suf.length) !== suf || stem.length < 2 || !vowelGroups(stem).length) continue;
+      var lastCh = stem.charAt(stem.length - 1);
+      if ((suf === 'ly' || suf === 'est' || suf === 'eth') && !isConsonantAt(stem, stem.length - 1)) continue;
+      if (suf === 'est' && stem.length < 3) continue;
+      if (suf === 'ed' && lastCh !== 't' && lastCh !== 'd') continue;
+      return cutsOf(stem).concat([stem.length]);
+    }
+    return null;
+  }
+  function cutsOf(w) {
+    if (has(EXCEPTIONS, w)) {
+      var marked = EXCEPTIONS[w], cuts = [], pos = 0;
+      for (var i = 0; i < marked.length; i++) { if (marked.charAt(i) === '-') cuts.push(pos); else pos++; }
+      return cuts;
+    }
+    var bySuffix = suffixCut(w);
+    if (bySuffix) return bySuffix;
+    var groups = vowelGroups(w);
+    if (silentLast(w, groups)) groups = groups.slice(0, -1);
+    var out = [];
+    for (var g = 1; g < groups.length; g++) out.push(cutBetween(w, groups[g - 1], groups[g]));
+    return out;
+  }
+  function splitWord(core) {
+    var word = String(core), letters = [], places = [];
+    for (var i = 0; i < word.length; i++) if (!APOS_RE.test(word.charAt(i))) { letters.push(word.charAt(i).toLowerCase()); places.push(i); }
+    var cuts = [];
+    cutsOf(letters.join('')).forEach(function (k) {
+      if (k <= 0 || k >= places.length) return;
+      var at = places[k];
+      if (APOS_RE.test(word.charAt(at - 1))) at = places[k - 1];
+      if (at <= 0 || APOS_RE.test(word.charAt(at - 1)) || cuts.indexOf(at) >= 0 || (cuts.length && at < cuts[cuts.length - 1])) return;
+      cuts.push(at);
+    });
+    var pieces = [], from = 0;
+    cuts.forEach(function (at) { pieces.push(word.slice(from, at)); from = at; });
+    pieces.push(word.slice(from));
+    return pieces;
+  }
+  function markWord(token) {
+    var s = String(token);
+    if (/[0-9-]/.test(s)) return s;
+    var a = 0, b = s.length;
+    while (a < b && !LETTER_RE.test(s.charAt(a))) a++;
+    while (b > a && !LETTER_RE.test(s.charAt(b - 1))) b--;
+    var core = s.slice(a, b);
+    if (!core) return s;
+    for (var i = 0; i < core.length; i++) { var ch = core.charAt(i); if (!LETTER_RE.test(ch) && !APOS_RE.test(ch)) return s; }
+    return s.slice(0, a) + splitWord(core).join('-') + s.slice(b);
+  }
+  function markText(text, from, to) {
+    var src = String(text == null ? '' : text), all = !(to > from), changes = [], rowStart = 0;
+    function markRow(row, offset) {
+      if (LABEL_RE.test(row.trim())) return;
+      var re = /\S+/g, m, first = true;
+      while ((m = re.exec(row))) {
+        var tok = m[0], start = offset + m.index, end = start + tok.length, isFirst = first;
+        first = false;
+        if (!all && !(start < to && end > from)) continue;
+        if (isFirst && tok.charAt(0) === '=') { tok = tok.slice(1); start += 1; if (!tok) continue; }
+        if (tok === '-:' || TAG_RE.test(tok)) continue;
+        var next = markWord(tok);
+        if (next !== tok) changes.push({ start: start, end: end, text: next });
+      }
+    }
+    for (;;) {
+      var rest = src.slice(rowStart), nl = rest.search(/\r\n|\r|\n/), rowEnd = nl < 0 ? src.length : rowStart + nl;
+      markRow(src.slice(rowStart, rowEnd), rowStart);
+      if (nl < 0) break;
+      rowStart = rowEnd + (src.substr(rowEnd, 2) === '\r\n' ? 2 : 1);
+    }
+    if (!changes.length) return { text: src, marked: 0, from: null, to: null, replacement: null };
+    var lo = changes[0].start, hi = changes[changes.length - 1].end, replacement = '', at = lo;
+    changes.forEach(function (c) { replacement += src.slice(at, c.start) + c.text; at = c.end; });
+    return { text: src.slice(0, lo) + replacement + src.slice(hi), marked: changes.length, from: lo, to: hi, replacement: replacement };
+  }
+  return { EXCEPTIONS: EXCEPTIONS, splitWord: splitWord, markWord: markWord, markText: markText };
+})();
+
 /* Song lyrics pasted as slides: syllables, parts, and keeping ids stable across edits. Pure functions; inputs are never changed. */
 var Lyrics = (function () {
   var PART_RE = /^[A-Za-z][A-Za-z0-9]{0,14}$/;
@@ -5253,7 +5414,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -9591,6 +9752,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (res.cancelled) return false;
     if (res.error) { songLyricsSay(res.error, true); return false; }
     delete ui.lyricDrafts[draftKey(songId, col)];
+    delete ui.lyricOriginals[draftKey(songId, col)];
     var msg, roll = songLyrics(songId).view === 'roll', one = roll ? 'line' : 'slide', many = roll ? 'lines' : 'slides';
     if (!hadSlides) {
       var made = roll ? makeSongLines(songId, col) : makeSongSlides(songId);
@@ -9618,9 +9780,52 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function resetSongLyrics() {
     var songId = $('songSetSong').value, col = songCol(songId);
     delete ui.lyricDrafts[draftKey(songId, col)];
+    delete ui.lyricOriginals[draftKey(songId, col)];
     $('songLyrics').value = Lyrics.recordText(songRecord(songId, col));
     songLyricsSay('', false);
     renderSongSettings();
+  }
+  // Goes through the browser's own typing so Ctrl+Z in the box can take it back. Returns false when that wasn't possible.
+  function replaceBoxText(box, from, to, replacement) {
+    var expected = box.value.slice(0, from) + replacement + box.value.slice(to), ok = false;
+    box.focus();
+    box.setSelectionRange(from, to);
+    try { ok = document.execCommand('insertText', false, replacement); } catch (err) { ok = false; }
+    if (ok && box.value === expected) return true;
+    box.value = expected;
+    onSongLyricsInput();
+    return false;
+  }
+  function markSongLyrics() {
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || ui.rec) return;
+    var box = $('songLyrics'), key = draftKey(songId, songCol(songId)), start = box.selectionStart, end = box.selectionEnd, before = box.value;
+    var res = Syllables.markText(before, start, end);
+    if (!res.marked) {
+      songLyricsSay(start !== end ? 'Nothing to mark in the highlighted words.' : 'Nothing to mark: every word is one syllable or already marked.', false);
+      return;
+    }
+    if (ui.lyricOriginals[key] == null) ui.lyricOriginals[key] = before;
+    var undoable = replaceBoxText(box, res.from, res.to, res.replacement), grew = res.text.length - before.length;
+    if (start !== end) box.setSelectionRange(start, end + grew);
+    else { var caret = Math.min(start, box.value.length); box.setSelectionRange(caret, caret); }
+    renderSongSettings();
+    songLyricsSay('Marked ' + plural(res.marked, 'word', 'words') + (res.marked === 1 ? '. Check it' : '. Check them') + ', then press ' + $('songLyricsGo').textContent + '.' + (undoable ? '' : ' Ctrl+Z can’t take this back here; use Back to my original.'), false);
+  }
+  function restoreSongLyrics() {
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || ui.rec) return;
+    var key = draftKey(songId, songCol(songId)), original = ui.lyricOriginals[key], box = $('songLyrics');
+    if (original == null) return;
+    replaceBoxText(box, 0, box.value.length, original);
+    delete ui.lyricOriginals[key];
+    renderSongSettings();
+    songLyricsSay('Back to your original lyrics.', false);
+  }
+  function syncMarkButton() {
+    var box = $('songLyrics'), btn = $('songLyricsMark');
+    btn.textContent = box.selectionStart !== box.selectionEnd ? 'Mark selection' : 'Mark all';
+    btn.disabled = box.disabled || !box.value.trim();
   }
   function onSongLyricsInput() {
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
@@ -9651,6 +9856,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLyricsGo').disabled = !has || locked;
     $('songLyricsReset').hidden = !drafting;
     $('songLyricsReset').disabled = false;
+    $('songLyricsOriginal').hidden = !(has && ui.lyricOriginals[key] != null);
+    $('songLyricsOriginal').disabled = locked;
+    syncMarkButton();
     $('songLyricsState').textContent = locked ? 'Stop recording to change the lyrics.' : drafting ? 'Not applied yet' : '';
     renderLyricWords(id, has, drafting || locked);
     var partSel = $('lyricPart'), keep = partSel.value, parts = has ? songLyrics(id).parts : [];
@@ -12501,6 +12709,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('lyricOpenSong').onclick = openSongLyrics;
     $('songLyricsGo').onclick = pressSongLyrics;
     $('songLyricsReset').onclick = resetSongLyrics;
+    $('songLyricsMark').onclick = markSongLyrics;
+    $('songLyricsOriginal').onclick = restoreSongLyrics;
+    ['select', 'keyup', 'mouseup', 'input', 'focus'].forEach(function (name) { $('songLyrics').addEventListener(name, syncMarkButton); });
     $('songLyrics').addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); if (!$('songLyricsGo').disabled) pressSongLyrics(); } });
     $('songLyrics').addEventListener('scroll', function () { $('songLyricsHl').scrollTop = this.scrollTop; });
     $('lyricWords').addEventListener('click', pickLyricWords);
