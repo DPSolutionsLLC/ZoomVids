@@ -16,7 +16,7 @@ function rollFields(roll) {
 }
 function showFields(song) {
   const out = {};
-  ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen'].forEach((k) => { out[k] = song[k]; });
+  ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen', 'appear', 'whenDone', 'gaps', 'hideGap'].forEach((k) => { out[k] = song[k]; });
   return out;
 }
 function threeColumns() {
@@ -95,7 +95,7 @@ describe('migration of columns saved before they had settings', () => {
 describe('songs without columns are unchanged', () => {
   test('cleanSong adds no new keys to a single-column song', () => {
     const out = L.cleanSong({ view: 'roll', highlight: 'word', parts: [{ name: 'Men' }] });
-    assert.deepEqual(Object.keys(out).sort(), ['breakGap', 'countLen', 'countdown', 'highlight', 'keepLit', 'parts', 'roll', 'showParts', 'singColor', 'slideLook', 'view'].sort());
+    assert.deepEqual(Object.keys(out).sort(), ['appear', 'breakGap', 'countLen', 'countdown', 'gaps', 'hideGap', 'highlight', 'keepLit', 'parts', 'roll', 'showParts', 'singColor', 'slideLook', 'view', 'whenDone'].sort());
   });
 });
 

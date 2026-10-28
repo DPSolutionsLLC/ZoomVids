@@ -687,6 +687,13 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <div class="texted" id="songColCopy" hidden><div role="group" id="songColCopyBody"></div><p class="note">The box and heading aren’t copied.</p><div class="btnrow"><button type="button" class="btn small primary" id="songColCopyGo">Apply</button><button type="button" class="btn small quiet" id="songColCopyCancel">Cancel</button></div></div>
             <p class="note" id="songColScope" hidden></p>
             <label id="songColHeadRow" hidden>Heading <input type="text" id="songColHead" maxlength="40" placeholder="Optional, e.g. Men"></label>
+            <div class="btnrow" id="songColShowRow" hidden>
+              <label>Shows up <select id="lyricAppear"><option value="start">From the start of the song</option><option value="first">When its first line comes in</option></select></label>
+              <label>After its last line <select id="lyricWhenDone"><option value="stay">Stays on screen</option><option value="fade">Fades out</option></select></label>
+              <label>During long breaks <select id="lyricGaps"><option value="dots">Shows the rest dots</option><option value="hide">Fades out and back in</option></select></label>
+              <label>Hide after a break of at least <input type="number" id="lyricHideGap" min="6" max="60" step="0.5" style="width:5em"> s</label>
+            </div>
+            <p class="note" id="songColShowNote" hidden>Shorter breaks still show the rest dots (Break of at least, under While it's sung).</p>
             <p class="note" id="songColNote" hidden></p>
             <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
             <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
@@ -704,6 +711,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
             </div>
             <div id="lyricParts" class="btnrow lyricparts"></div>
+            <div class="btnrow"><button type="button" class="btn small quiet" id="lyricPartsClean">Remove unused parts</button><span class="note" id="lyricPartsCleanNote"></span></div>
             <div class="btnrow">
               <label>Countdown after a break <select id="lyricCountdown"><option value="dots">Dots</option><option value="bar">Bar</option><option value="off">Off</option></select></label>
               <label>Break of at least <input type="number" id="lyricBreakGap" min="2" max="30" step="0.5" style="width:5em"> s</label>
@@ -4295,10 +4303,11 @@ var Lyrics = (function () {
   var COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
   var LABEL_RE = /^\[([^\[\]\n]{1,40})\]$/;
   var PALETTE = ['#FFD54A', '#4FC3F7', '#F48FB1', '#A5D6A7', '#FFAB91', '#CE93D8'];
-  var SHOW_DEFAULTS = { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3 };
+  var SHOW_DEFAULTS = { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3, appear: 'start', whenDone: 'stay', gaps: 'dots', hideGap: 8 };
   var KARAOKE_LOOK = { font: 'montserrat', bold: true, italic: false, size: 72, color: '#FFFFFF', look: 'solid', solidColor: '#000000', solidWidth: 6 };
   var ROLL_DEFAULTS = { frame: { x: 0.06, y: 0.52, w: 0.88, h: 0.42 }, align: 'center', above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'mark' };
   var ROLL_SIZE = 64;
+  var SHELF_MAX = 50;
   var COL1_FRAME = { x: 0.03, y: 0.30, w: 0.45, h: 0.64 };
   var COL2_FRAME = { x: 0.52, y: 0.30, w: 0.45, h: 0.64 };
   var DEFAULT_AREA = { x: 0.03, y: 0.30, w: 0.94, h: 0.64 };
@@ -4741,7 +4750,7 @@ var Lyrics = (function () {
     return String(base).toLowerCase() === String(singColor).toLowerCase() ? '#FFFFFF' : singColor;
   }
   var ROLL_SET_KEYS = ['align', 'above', 'below', 'move', 'motion', 'verses', 'look'];
-  var SHOW_SET_KEYS = ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen'];
+  var SHOW_SET_KEYS = ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen', 'appear', 'whenDone', 'gaps', 'hideGap'];
   function cleanShowFields(raw, fallback) {
     var src = isObject(raw) ? raw : {}, d = fallback;
     function num(v, lo, hi, step, fb) {
@@ -4755,7 +4764,11 @@ var Lyrics = (function () {
       singColor: COLOR_RE.test(src.singColor) ? src.singColor : d.singColor,
       countdown: src.countdown === 'dots' || src.countdown === 'bar' || src.countdown === 'off' ? src.countdown : d.countdown,
       breakGap: num(src.breakGap, 2, 30, 0.5, d.breakGap),
-      countLen: num(src.countLen, 1, 10, 1, d.countLen)
+      countLen: num(src.countLen, 1, 10, 1, d.countLen),
+      appear: src.appear === 'first' || src.appear === 'start' ? src.appear : d.appear,
+      whenDone: src.whenDone === 'fade' || src.whenDone === 'stay' ? src.whenDone : d.whenDone,
+      gaps: src.gaps === 'hide' || src.gaps === 'dots' ? src.gaps : d.gaps,
+      hideGap: num(src.hideGap, 6, 60, 0.5, d.hideGap)
     };
   }
   function cleanPartEntry(raw) {
@@ -4872,6 +4885,10 @@ var Lyrics = (function () {
       countdown: show.countdown,
       breakGap: show.breakGap,
       countLen: show.countLen,
+      appear: show.appear,
+      whenDone: show.whenDone,
+      gaps: show.gaps,
+      hideGap: show.hideGap,
       slideLook: cleanSlideLook(raw.slideLook),
       view: raw.view === 'roll' ? 'roll' : 'slides',
       roll: cleanRoll(raw.roll)
@@ -4898,7 +4915,84 @@ var Lyrics = (function () {
     if (parked) out.parked = parked;
     var rec = cleanRecord(raw.verses, tagged ? { tags: true } : undefined);
     if (rec) out.verses = rec.verses;
+    var shelf = cleanShelf(raw.shelvedParts, seen);
+    if (shelf.length) out.shelvedParts = shelf;
     return out;
+  }
+  // Parts taken off the song by Remove unused parts, newest last. A name still in parts (lowercase keys in taken) is dropped.
+  function cleanShelf(raw, taken) {
+    var out = [], seen = {};
+    (Array.isArray(raw) ? raw : []).slice().reverse().forEach(function (e) {
+      if (!isObject(e) || typeof e.name !== 'string' || !PART_RE.test(e.name)) return;
+      var key = e.name.toLowerCase();
+      if (seen[key] || taken[key]) return;
+      var entry = cleanPartEntry(e);
+      if (!entry) return;
+      seen[key] = true;
+      var kept = { name: e.name, color: entry.color, hi: entry.hi };
+      if (entry.label) kept.label = entry.label;
+      var cols = {};
+      if (isObject(e.cols)) Object.keys(e.cols).forEach(function (k) {
+        if (!/^[0-9]+$/.test(k) || parseInt(k, 10) < 2) return;
+        var colEntry = cleanPartEntry(e.cols[k]);
+        if (colEntry) cols[String(parseInt(k, 10))] = colEntry;
+      });
+      if (Object.keys(cols).length) kept.cols = cols;
+      out.push(kept);
+    });
+    return out.reverse().slice(-SHELF_MAX);
+  }
+  // Every part name a word uses anywhere in the song or in slides (lyric objects), as { lowercaseName: true }. Takes a cleaned song.
+  function usedPartNames(song, slides) {
+    var used = {};
+    function scan(slide) {
+      if (!isObject(slide) || !Array.isArray(slide.lines)) return;
+      slide.lines.forEach(function (line) {
+        (isObject(line) && Array.isArray(line.words) ? line.words : []).forEach(function (w) {
+          if (isObject(w) && typeof w.part === 'string' && w.part) used[w.part.toLowerCase()] = true;
+        });
+      });
+    }
+    function scanParked(parked) {
+      (isObject(parked) && Array.isArray(parked.texts) ? parked.texts : []).forEach(function (tx) { if (isObject(tx)) scan(tx.lyric); });
+    }
+    var s = isObject(song) ? song : {};
+    (Array.isArray(s.verses) ? s.verses : []).forEach(scan);
+    scanParked(s.parked);
+    (Array.isArray(s.more) ? s.more : []).forEach(function (c) {
+      if (!isObject(c)) return;
+      (Array.isArray(c.verses) ? c.verses : []).forEach(scan);
+      scanParked(c.parked);
+    });
+    (Array.isArray(slides) ? slides : []).forEach(scan);
+    return used;
+  }
+  // Moves every part no word uses onto the shelf, with its colors, label and column overrides. Returns { song, removed: [names] }.
+  function shelveUnusedParts(song, slides) {
+    var clean = cleanSong(song);
+    if (!clean) return { song: song, removed: [] };
+    var used = usedPartNames(clean, slides);
+    var unused = clean.parts.filter(function (p) { return !used[p.name.toLowerCase()]; });
+    if (!unused.length) return { song: song, removed: [] };
+    var out = copy(clean), more = Array.isArray(out.more) ? out.more : [], shelf = Array.isArray(out.shelvedParts) ? out.shelvedParts : [];
+    unused.forEach(function (p) {
+      var entry = { name: p.name, color: p.color, hi: p.hi }, cols = {};
+      if (p.label) entry.label = copy(p.label);
+      more.forEach(function (c, i) {
+        var parts = c.set && c.set.parts;
+        if (!isObject(parts) || !parts.hasOwnProperty(p.name)) return;
+        cols[String(i + 2)] = copy(parts[p.name]);
+        delete parts[p.name];
+      });
+      if (Object.keys(cols).length) entry.cols = cols;
+      shelf = shelf.filter(function (e) { return e.name.toLowerCase() !== p.name.toLowerCase(); });
+      shelf.push(entry);
+    });
+    var gone = {};
+    unused.forEach(function (p) { gone[p.name] = true; });
+    out.parts = out.parts.filter(function (p) { return !gone[p.name]; });
+    out.shelvedParts = shelf;
+    return { song: out, removed: unused.map(function (p) { return p.name; }) };
   }
   function cleanFrame(raw, fallback) {
     var d = fallback || ROLL_DEFAULTS.frame;
@@ -5056,6 +5150,20 @@ var Lyrics = (function () {
       if (typeof name !== 'string' || !PART_RE.test(name)) return;
       var taken = out.parts.some(function (p) { return p.name.toLowerCase() === name.toLowerCase(); });
       if (taken) return;
+      var shelf = Array.isArray(out.shelvedParts) ? out.shelvedParts : [], key = name.toLowerCase();
+      var kept = shelf.filter(function (e) { return e.name.toLowerCase() === key; })[0];
+      if (kept) {
+        var part = { name: name, color: kept.color, hi: kept.hi };
+        if (kept.label) part.label = copy(kept.label);
+        out.parts.push(part);
+        if (isObject(kept.cols)) Object.keys(kept.cols).forEach(function (k) {
+          var c = Array.isArray(out.more) ? out.more[parseInt(k, 10) - 2] : null;
+          if (c && isObject(c.set) && isObject(c.set.parts)) c.set.parts[name] = copy(kept.cols[k]);
+        });
+        out.shelvedParts = shelf.filter(function (e) { return e !== kept; });
+        if (!out.shelvedParts.length) delete out.shelvedParts;
+        return;
+      }
       var color = choices[out.parts.length % choices.length];
       out.parts.push({ name: name, color: color, hi: defaultHi(color, out.singColor) });
     });
@@ -5315,7 +5423,7 @@ var Lyrics = (function () {
     cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts, defaultHi: defaultHi,
     cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord,
     LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines, linesNeedingBlocks: linesNeedingBlocks,
-    cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE,
+    cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE, usedPartNames: usedPartNames, shelveUnusedParts: shelveUnusedParts, SHELF_MAX: SHELF_MAX,
     columnDefaults: columnDefaults, cleanColumnSet: cleanColumnSet, columnSettings: columnSettings, withColumnSettings: withColumnSettings, copyColumnSettings: copyColumnSettings,
     COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanColumn: cleanColumn, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks,
     TAG_NAME_RE: TAG_NAME_RE, DEFAULT_AREA: DEFAULT_AREA, COLUMN_COLORS: COLUMN_COLORS, tagToken: tagToken, tagDisplay: tagDisplay, ownerCol: ownerCol, lineInCol: lineInCol,
@@ -6138,9 +6246,46 @@ var LyricView = (function () {
 
 /* Rolling lines: which line is current, which lines show, where (in rows) and how bright, at any moment. Pure functions; no text measuring. */
 var RollView = (function () {
-  var SCROLL = 0.4, LABEL_ROWS = 0.7, REST_ROWS = 1, APPROACH = 3, DOT_PERIOD = 1.2, REST_FADE = 0.5;
+  var SCROLL = 0.4, LABEL_ROWS = 0.7, REST_ROWS = 1, APPROACH = 3, DOT_PERIOD = 1.2, REST_FADE = 0.5, HIDE_FADE = 0.75, HIDE_HOLD = 1;
   function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
   function ease(a) { return a * a * (3 - 2 * a); }
+  // How visible one column is at t (0 to 1). lines: the column's own lines in time order, [{ start, end, quiet }].
+  // opts: { songStart, songEnd, ownStart, appear, whenDone, gaps, hideGap, approach, fade, edgeFade }.
+  function columnAlpha(lines, t, opts) {
+    if (!lines || !lines.length) return 0;
+    var o = opts || {}, songStart = o.songStart, songEnd = o.songEnd, approach = o.approach, fade = o.fade, edge = o.edgeFade;
+    if (t < songStart || t > songEnd) return 0;
+    var envelope = ease(clamp(Math.min((t - songStart) / edge, (songEnd - t) / edge), 0, 1));
+    var lastEnd = lines.reduce(function (m, ln) { return Math.max(m, ln.end); }, -Infinity);
+    var from = songStart, fadeInFrom = null;
+    if (o.appear === 'first') {
+      from = Math.max(songStart, Math.min(o.ownStart, lines[0].start - approach));
+      fadeInFrom = Math.max(songStart, from - fade);
+    }
+    var windows = [{ from: from, fadeInFrom: fadeInFrom, to: null }];
+    if (o.gaps === 'hide') {
+      var quiet = -Infinity;
+      for (var i = 0; i + 1 < lines.length; i++) {
+        var a = lines[i], b = lines[i + 1];
+        quiet = Math.max(quiet, typeof a.quiet === 'number' ? a.quiet : a.end);
+        var close = quiet + HIDE_HOLD, reopen = b.start - approach;
+        if (b.start - quiet < o.hideGap || reopen - fade <= close + fade) continue;
+        windows[windows.length - 1].to = close;
+        windows.push({ from: reopen, fadeInFrom: reopen - fade, to: null });
+      }
+    }
+    var last = windows[windows.length - 1];
+    if (o.whenDone === 'fade') last.to = lastEnd;
+    var best = 0;
+    windows.forEach(function (w) {
+      var rampIn = 1, rampOut = 1;
+      if (w.fadeInFrom !== null) rampIn = w.from > w.fadeInFrom ? ease(clamp((t - w.fadeInFrom) / (w.from - w.fadeInFrom), 0, 1)) : t >= w.from ? 1 : 0;
+      if (w.to !== null) rampOut = ease(clamp(1 - (t - w.to) / fade, 0, 1));
+      best = Math.max(best, Math.min(rampIn, rampOut));
+    });
+    best = Math.round(best * 1e6) / 1e6;
+    return best === 1 ? envelope : best * envelope;
+  }
   function lerp(a, b, f) { return a + (b - a) * f; }
   function labels(verses) {
     var out = {}, n = 0;
@@ -6261,7 +6406,7 @@ var RollView = (function () {
   function restDots(t) {
     return [0, 1, 2].map(function (i) { return Math.round((0.35 + 0.65 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / DOT_PERIOD - i * 0.9))) * 1000) / 1000; });
   }
-  return { SCROLL: SCROLL, LABEL_ROWS: LABEL_ROWS, REST_ROWS: REST_ROWS, APPROACH: APPROACH, DOT_PERIOD: DOT_PERIOD, REST_FADE: REST_FADE, withRests: withRests, restAlpha: restAlpha, restDots: restDots, ease: ease, labels: labels, current: current, slot: slot, changedAt: changedAt, tops: tops, pages: pages, view: view };
+  return { SCROLL: SCROLL, LABEL_ROWS: LABEL_ROWS, REST_ROWS: REST_ROWS, APPROACH: APPROACH, DOT_PERIOD: DOT_PERIOD, REST_FADE: REST_FADE, HIDE_FADE: HIDE_FADE, HIDE_HOLD: HIDE_HOLD, columnAlpha: columnAlpha, withRests: withRests, restAlpha: restAlpha, restDots: restDots, ease: ease, labels: labels, current: current, slot: slot, changedAt: changedAt, tops: tops, pages: pages, view: view };
 })();
 
 
@@ -8698,6 +8843,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var a = clamp(Math.min((t - start) / LyricView.FADE, (end - t) / LyricView.FADE), 0, 1);
     return a * a * (3 - 2 * a);
   }
+  // A column's panel alpha in a song with columns: the song's window, plus the column's own show-up, fade-out and break choices.
+  function columnPanelAlpha(songId, ownBlocks, both, t, col) {
+    var show = colShow(songId, col), first = both[0], start = txSpan(first).start, end = start;
+    both.forEach(function (tx) { var sp = txSpan(tx); end = Math.max(end, sp.start + sp.dur); });
+    var clip = songClip(songId);
+    function withCountdown(tx, from) {
+      var w = WordTiming.span(tx.lyric);
+      if (show.countdown === 'off' || !w) return from;
+      from = Math.min(from, from + w.first - show.countLen);
+      return clip ? Math.max(from, clip.start) : from;
+    }
+    start = withCountdown(first, start);
+    var own = ownBlocks.slice().sort(function (a, b) { return txSpan(a).start - txSpan(b).start; });
+    var lines = own.map(function (tx) {
+      var sp = txSpan(tx), words = WordTiming.span(tx.lyric), lineEnd = sp.start + sp.dur;
+      return { start: sp.start, end: lineEnd, quiet: words ? sp.start + words.last : lineEnd };
+    });
+    return RollView.columnAlpha(lines, t, {
+      songStart: start, songEnd: end, ownStart: withCountdown(own[0], lines[0].start),
+      appear: show.appear, whenDone: show.whenDone, gaps: show.gaps, hideGap: show.hideGap,
+      approach: RollView.APPROACH, fade: RollView.HIDE_FADE, edgeFade: LyricView.FADE
+    });
+  }
   // One rolling panel: a song's lines, or in a song with columns one column's lines.
   function layoutRoll(g, W, H, songId, t, col) {
     var two = hasColumns(songId), c = two ? col || 1 : 1, picked = two ? columnLines(songId, c) : { blocks: slidesForSong(songId), verses: {} }, blocks = picked.blocks;
@@ -8755,7 +8923,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var content = out.length && isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
     var curLine = null;
     for (var k = Math.max(0, v.cur); v.cur >= 0 && k < lines.length && !curLine; k++) curLine = lines[k].tx || null;
-    var result = { frame: frame, px: px, lh: lh, look: look, labels: labels, align: cs.align, alpha: rollPanelAlpha(songId, both, t, c), active: v.active, cur: curLine, lines: out, content: content };
+    var result = { frame: frame, px: px, lh: lh, look: look, labels: labels, align: cs.align, alpha: two ? columnPanelAlpha(songId, blocks, both, t, c) : rollPanelAlpha(songId, both, t, c), active: v.active, cur: curLine, lines: out, content: content };
     if (headInfo) result.heading = headInfo;
     return result;
   }
@@ -11393,7 +11561,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songViewSlides').checked = !roll; $('songViewRoll').checked = roll && !two; $('songViewCols').checked = two;
     $('songViewSlides').disabled = $('songViewRoll').disabled = $('songViewCols').disabled = !has || !!ui.rec;
     var count = two ? columnCount(id) : 1, tagged = two && isTagged(id);
-    $('songColTabs').hidden = $('songColHeadRow').hidden = $('songEntryRow').hidden = $('songColActs').hidden = !two;
+    $('songColTabs').hidden = $('songColHeadRow').hidden = $('songEntryRow').hidden = $('songColActs').hidden = $('songColShowRow').hidden = !two;
     $('songEntryBoxes').checked = !tagged; $('songEntryTags').checked = tagged;
     $('songEntryBoxes').disabled = $('songEntryTags').disabled = !has || !!ui.rec;
     var tabs = '';
@@ -11442,6 +11610,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     set('lyricCountdown', cs.countdown);
     set('lyricBreakGap', cs.breakGap); set('lyricCountLen', cs.countLen);
     $('lyricBreakGap').disabled = $('lyricCountLen').disabled = !has || cs.countdown === 'off';
+    set('lyricAppear', cs.appear); set('lyricWhenDone', cs.whenDone); set('lyricGaps', cs.gaps); set('lyricHideGap', cs.hideGap);
+    $('lyricHideGap').disabled = !has || cs.gaps !== 'hide';
+    $('songColShowNote').hidden = !two || cs.gaps !== 'hide';
+    $('lyricPartsClean').disabled = !has || !cs.parts.length || !!ui.rec;
     setHTML($('songLookFont'), fontOptionsHTML(TextFont.entries(addedFonts())));
     var rf = TextFont.resolve(lk, addedFonts());
     set('songLookFont', rf.entry.id);
@@ -11623,6 +11795,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     songSetSay('', false);
     setPartLabel(songId, name, patch);
   }
+  // Takes off every part no word uses, as one Undo step. A removed part comes back with its colors when its name is used again.
+  function removeUnusedParts() {
+    var songId = $('songSetSong').value; if (!songClip(songId)) return;
+    if (ui.rec) { songSetSay('Stop recording first.', true); return; }
+    var slides = mix.texts.filter(function (tx) { return tx.lyric && tx.lyric.song === songId; }).map(function (tx) { return tx.lyric; });
+    var res = Lyrics.shelveUnusedParts(songLyrics(songId), slides);
+    if (!res.removed.length) { $('lyricPartsCleanNote').textContent = 'Every part is in use.'; return; }
+    if (!writeSongLyrics(songId, res.song)) return;
+    if (ui.labelOpen && ui.labelOpen.song === songId && res.removed.indexOf(ui.labelOpen.part) >= 0) ui.labelOpen = null;
+    changed();
+    $('lyricPartsCleanNote').textContent = 'Removed ' + res.removed.join(', ') + '. Type a name again to bring it back with its colors.';
+  }
   function onLyricPartsClick(ev) {
     var btn = ev.target.closest('button');
     if (!btn || btn.disabled) return;
@@ -11635,7 +11819,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     if (btn.getAttribute('data-label') === 'reset') setPartLabel(songId, btn.getAttribute('data-part'), null);
   }
-  var SHOW_FIELDS = { lyricHighlight: 'highlight', lyricKeepLit: 'keepLit', lyricSingColor: 'singColor', lyricCountdown: 'countdown', lyricBreakGap: 'breakGap', lyricCountLen: 'countLen' };
+  var SHOW_FIELDS = { lyricHighlight: 'highlight', lyricKeepLit: 'keepLit', lyricSingColor: 'singColor', lyricCountdown: 'countdown', lyricBreakGap: 'breakGap', lyricCountLen: 'countLen', lyricAppear: 'appear', lyricWhenDone: 'whenDone', lyricGaps: 'gaps', lyricHideGap: 'hideGap' };
   function setSongShow(songId, key, value) {
     var patch = {};
     patch[key] = value;
@@ -11743,7 +11927,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function onSongSetEvent(ev, final) {
     var target = ev.target;
-    if (target.id === 'songSetSong') { if (final) { ui.songSet = target.value; songSetSay('', false); songLyricsSay('', false); renderSongSettings(); } return; }
+    if (target.id === 'songSetSong') { if (final) { ui.songSet = target.value; songSetSay('', false); songLyricsSay('', false); $('lyricPartsCleanNote').textContent = ''; renderSongSettings(); } return; }
     if (target.id === 'songLyrics') { if (!final) onSongLyricsInput(); return; }
     if (target.id === 'lyricPart') return;
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
@@ -14582,6 +14766,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLyrics').addEventListener('scroll', function () { $('songLyricsHl').scrollTop = this.scrollTop; });
     $('lyricWords').addEventListener('click', pickLyricWords);
     $('lyricParts').addEventListener('click', onLyricPartsClick);
+    $('lyricPartsClean').onclick = removeUnusedParts;
     $('lyricApply').onclick = applyLyricPart;
     $('recSlide').onclick = function () { var tx = selText(); if (tx && tx.lyric) startRecording({ songId: tx.lyric.song, slideId: tx.id }); };
     $('recSong').onclick = function () { var tx = selText(); if (tx && tx.lyric) startRecording({ songId: tx.lyric.song, col: colOf(tx) }); };
