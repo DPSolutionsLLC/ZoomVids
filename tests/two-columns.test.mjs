@@ -40,7 +40,7 @@ describe('cleanSong with two columns', () => {
     assert.equal(once.more.length, 1);
     assert.equal(once.more[0].heading, 'Women');
     assert.deepEqual(once.more[0].frame, { x: 0.5, y: 0.2, w: 0.4, h: 0.6 });
-    assert.equal(once.more[0].size, 80);
+    assert.equal(once.more[0].set.look.size, 80);
     assert.deepEqual(once.solo, { x: 0.06, y: 0.52, w: 0.88, h: 0.42 });
     assert.equal(once.more[0].verses[0].lines[0].same, true);
     assert.equal(once.more[0].verses[0].lines[1].same, undefined);
@@ -73,9 +73,9 @@ describe('cleanSong with two columns', () => {
     assert.equal(L.cleanHeading('  Men  '), 'Men');
   });
   test('size is clamped to 24 to 180 and defaults to the roll size', () => {
-    assert.equal(L.cleanColumn({ size: 5 }).size, 24);
-    assert.equal(L.cleanColumn({ size: 999 }).size, 180);
-    assert.equal(L.cleanColumn({}).size, L.ROLL_SIZE);
+    assert.equal(L.cleanColumn({ size: 5 }).set.look.size, 24);
+    assert.equal(L.cleanColumn({ size: 999 }).set.look.size, 180);
+    assert.equal(L.cleanColumn({}).set.look.size, L.ROLL_SIZE);
   });
   test('a bad frame falls back to the column 2 default, not the roll default', () => {
     assert.deepEqual(L.cleanColumn({ frame: { x: 'a' } }).frame, L.COL2_FRAME);

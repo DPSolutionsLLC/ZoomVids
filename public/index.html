@@ -683,7 +683,9 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <p class="note" id="songSetEmpty" hidden>Add a song to Order of music first.</p>
             <h4 class="edhead">Lyrics</h4>
             <div class="btnrow" role="radiogroup" aria-label="Which column" id="songColTabs" hidden></div>
-            <div class="btnrow" id="songColActs" hidden><button type="button" class="btn small" id="songColAdd">Add column</button><button type="button" class="btn small quiet" id="songColRemove">Remove this column</button><button type="button" class="btn small quiet" id="songColSpread">Spread evenly</button></div>
+            <div class="btnrow" id="songColActs" hidden><button type="button" class="btn small" id="songColAdd">Add column</button><button type="button" class="btn small quiet" id="songColRemove">Remove this column</button><button type="button" class="btn small quiet" id="songColSpread">Spread evenly</button><button type="button" class="btn small" id="songColApplyOpen">Apply settings to other columns…</button><button type="button" class="btn small" id="songColCopyOpen">Copy settings from…</button></div>
+            <div class="texted" id="songColCopy" hidden><div role="group" id="songColCopyBody"></div><p class="note">The box and heading aren’t copied.</p><div class="btnrow"><button type="button" class="btn small primary" id="songColCopyGo">Apply</button><button type="button" class="btn small quiet" id="songColCopyCancel">Cancel</button></div></div>
+            <p class="note" id="songColScope" hidden></p>
             <label id="songColHeadRow" hidden>Heading <input type="text" id="songColHead" maxlength="40" placeholder="Optional, e.g. Men"></label>
             <p class="note" id="songColNote" hidden></p>
             <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
@@ -4738,10 +4740,118 @@ var Lyrics = (function () {
   function defaultHi(base, singColor) {
     return String(base).toLowerCase() === String(singColor).toLowerCase() ? '#FFFFFF' : singColor;
   }
+  var ROLL_SET_KEYS = ['align', 'above', 'below', 'move', 'motion', 'verses', 'look'];
+  var SHOW_SET_KEYS = ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen'];
+  function cleanShowFields(raw, fallback) {
+    var src = isObject(raw) ? raw : {}, d = fallback;
+    function num(v, lo, hi, step, fb) {
+      if (typeof v !== 'number' || !isFinite(v)) return fb;
+      return Math.round(Math.min(hi, Math.max(lo, v)) / step) * step;
+    }
+    return {
+      showParts: typeof src.showParts === 'boolean' ? src.showParts : d.showParts === true,
+      highlight: src.highlight === 'word' ? 'word' : src.highlight === 'syllable' || src.highlight === 'sweep' ? 'syllable' : d.highlight,
+      keepLit: typeof src.keepLit === 'boolean' ? src.keepLit : d.keepLit === true,
+      singColor: COLOR_RE.test(src.singColor) ? src.singColor : d.singColor,
+      countdown: src.countdown === 'dots' || src.countdown === 'bar' || src.countdown === 'off' ? src.countdown : d.countdown,
+      breakGap: num(src.breakGap, 2, 30, 0.5, d.breakGap),
+      countLen: num(src.countLen, 1, 10, 1, d.countLen)
+    };
+  }
+  function cleanPartEntry(raw) {
+    if (!isObject(raw) || !COLOR_RE.test(raw.color) || !COLOR_RE.test(raw.hi)) return null;
+    var out = { color: raw.color, hi: raw.hi }, label = cleanPartLabel(raw.label);
+    if (label) out.label = label;
+    return out;
+  }
+  // The settings a new column starts with: what a brand-new song gets.
+  function columnDefaults() {
+    var roll = cleanRoll({}), out = {};
+    ROLL_SET_KEYS.forEach(function (key) { out[key] = copy(roll[key]); });
+    Object.assign(out, cleanShowFields({}, SHOW_DEFAULTS));
+    out.parts = {};
+    return out;
+  }
+  // One column's settings, cleaned with the same rules as the roll and the song; a missing or bad field takes inherit's.
+  function cleanColumnSet(raw, inherit) {
+    var src = isObject(raw) ? raw : {}, base = isObject(inherit) ? inherit : columnDefaults();
+    var roll = cleanRoll(src, base), show = cleanShowFields(src, base), out = {};
+    ROLL_SET_KEYS.forEach(function (key) { out[key] = roll[key]; });
+    Object.assign(out, show);
+    out.parts = {};
+    if (isObject(src.parts)) Object.keys(src.parts).forEach(function (name) {
+      if (!PART_RE.test(name)) return;
+      var entry = cleanPartEntry(src.parts[name]);
+      if (entry) out.parts[name] = entry;
+    });
+    return out;
+  }
+  // Column 1's settings: lyrics.roll and the song's own fields. Takes a cleaned song.
+  function songColumnSettings(song) {
+    var roll = isObject(song.roll) ? song.roll : cleanRoll({}), out = {};
+    ROLL_SET_KEYS.forEach(function (key) { out[key] = copy(roll[key]); });
+    SHOW_SET_KEYS.forEach(function (key) { out[key] = song[key]; });
+    out.parts = {};
+    (song.parts || []).forEach(function (p) {
+      var entry = { color: p.color, hi: p.hi };
+      if (p.label) entry.label = copy(p.label);
+      out.parts[p.name] = entry;
+    });
+    return out;
+  }
+  // Any column's settings, with every song part filled in (a column's own part entry wins over Column 1's). Takes a cleaned song.
+  function columnSettings(song, col) {
+    var first = songColumnSettings(song);
+    if (!(col >= 2)) return first;
+    var entry = (Array.isArray(song.more) ? song.more : [])[col - 2];
+    var out = entry && isObject(entry.set) ? copy(entry.set) : columnDefaults(), own = isObject(out.parts) ? out.parts : {};
+    out.parts = {};
+    (song.parts || []).forEach(function (p) { out.parts[p.name] = copy(own.hasOwnProperty(p.name) ? own[p.name] : first.parts[p.name]); });
+    return out;
+  }
+  function samePartEntry(a, b) {
+    if (!a || !b) return false;
+    return a.color === b.color && a.hi === b.hi && JSON.stringify(cleanPartLabel(a.label)) === JSON.stringify(cleanPartLabel(b.label));
+  }
+  // A new raw song with one column's settings replaced. Never touches a column's box, heading, lyrics or parked blocks.
+  function withColumnSettings(song, col, bundle) {
+    var out = copy(song), b = isObject(bundle) ? bundle : {};
+    if (!(col >= 2)) {
+      out.roll = isObject(out.roll) ? out.roll : {};
+      ROLL_SET_KEYS.forEach(function (key) { if (b.hasOwnProperty(key)) out.roll[key] = copy(b[key]); });
+      SHOW_SET_KEYS.forEach(function (key) { if (b.hasOwnProperty(key)) out[key] = b[key]; });
+      (Array.isArray(out.parts) ? out.parts : []).forEach(function (p) {
+        var entry = isObject(b.parts) ? b.parts[p.name] : null;
+        if (!isObject(entry)) return;
+        p.color = entry.color; p.hi = entry.hi;
+        if (entry.label) p.label = copy(entry.label); else delete p.label;
+      });
+      return out;
+    }
+    var more = Array.isArray(out.more) ? out.more : [], first = songColumnSettings(song).parts, set = {};
+    while (more.length < col - 1) more.push(cleanColumn({}));
+    Object.keys(b).forEach(function (key) { if (key !== 'parts') set[key] = copy(b[key]); });
+    set.parts = {};
+    if (isObject(b.parts)) Object.keys(b.parts).forEach(function (name) {
+      if (!samePartEntry(b.parts[name], first[name])) set.parts[name] = copy(b.parts[name]);
+    });
+    more[col - 2] = Object.assign({}, more[col - 2], { set: set });
+    out.more = more;
+    return out;
+  }
+  // A new raw song with column from's settings copied into each column in toList (from itself and missing columns are skipped).
+  function copyColumnSettings(song, from, toList) {
+    var count = 1 + (Array.isArray(song.more) ? song.more.length : 0), bundle = columnSettings(song, from), out = copy(song);
+    (Array.isArray(toList) ? toList : []).forEach(function (k) {
+      if (k === from || typeof k !== 'number' || k % 1 !== 0 || k < 1 || k > count) return;
+      out = withColumnSettings(out, k, bundle);
+    });
+    return out;
+  }
   function cleanSong(raw) {
     if (!isObject(raw)) return null;
-    var d = SHOW_DEFAULTS;
-    var singColor = COLOR_RE.test(raw.singColor) ? raw.singColor : d.singColor;
+    var show = cleanShowFields(raw, SHOW_DEFAULTS);
+    var singColor = show.singColor;
     var parts = [], seen = {};
     (Array.isArray(raw.parts) ? raw.parts : []).forEach(function (p) {
       if (!isObject(p) || typeof p.name !== 'string' || !PART_RE.test(p.name)) return;
@@ -4754,25 +4864,21 @@ var Lyrics = (function () {
       if (label) part.label = label;
       parts.push(part);
     });
-    function num(v, lo, hi, step, fallback) {
-      if (typeof v !== 'number' || !isFinite(v)) return fallback;
-      return Math.round(Math.min(hi, Math.max(lo, v)) / step) * step;
-    }
     var out = {
-      showParts: raw.showParts === true, parts: parts,
-      highlight: raw.highlight === 'word' ? 'word' : raw.highlight === 'syllable' || raw.highlight === 'sweep' ? 'syllable' : d.highlight,
-      keepLit: raw.keepLit === true,
+      showParts: show.showParts, parts: parts,
+      highlight: show.highlight,
+      keepLit: show.keepLit,
       singColor: singColor,
-      countdown: raw.countdown === 'dots' || raw.countdown === 'bar' || raw.countdown === 'off' ? raw.countdown : d.countdown,
-      breakGap: num(raw.breakGap, 2, 30, 0.5, d.breakGap),
-      countLen: num(raw.countLen, 1, 10, 1, d.countLen),
+      countdown: show.countdown,
+      breakGap: show.breakGap,
+      countLen: show.countLen,
       slideLook: cleanSlideLook(raw.slideLook),
       view: raw.view === 'roll' ? 'roll' : 'slides',
       roll: cleanRoll(raw.roll)
     };
     if (raw.columns === true && out.view === 'roll') out.columns = true;
-    var legacy = isObject(raw.second) ? raw.second : null;
-    var more = Array.isArray(raw.more) ? raw.more.map(function (c) { return cleanColumn(c); }).filter(Boolean) : legacy ? [cleanColumn(legacy)] : [];
+    var legacy = isObject(raw.second) ? raw.second : null, first = songColumnSettings(out);
+    var more = Array.isArray(raw.more) ? raw.more.map(function (c) { return cleanColumn(c, null, first); }).filter(Boolean) : legacy ? [cleanColumn(legacy, null, first)] : [];
     var solo = isFrame(raw.solo) ? cleanFrame(raw.solo) : legacy && isFrame(legacy.solo) ? cleanFrame(legacy.solo) : null;
     var tagged = raw.entry === 'tags' && out.columns === true;
     var names = tagged ? cleanCols(raw.tagNames) : null;
@@ -4780,6 +4886,9 @@ var Lyrics = (function () {
       while (more.length < names.length - 1) more.push(cleanColumn({}));
       more = more.slice(0, names.length - 1);
     }
+    var partNamesKept = {};
+    parts.forEach(function (p) { partNamesKept[p.name] = true; });
+    more.forEach(function (c) { Object.keys(c.set.parts).forEach(function (name) { if (!partNamesKept[name]) delete c.set.parts[name]; }); });
     if (more.length) out.more = more;
     if (solo) out.solo = solo;
     if (tagged) out.entry = 'tags';
@@ -4800,8 +4909,8 @@ var Lyrics = (function () {
     var w = r4(Math.min(1, Math.max(0.05, raw.w))), h = r4(Math.min(1, Math.max(0.05, raw.h)));
     return { x: r4(Math.min(1 - w, Math.max(0, raw.x))), y: r4(Math.min(1 - h, Math.max(0, raw.y))), w: w, h: h };
   }
-  function cleanRoll(raw) {
-    var src = isObject(raw) ? raw : {}, d = ROLL_DEFAULTS;
+  function cleanRoll(raw, fallback) {
+    var src = isObject(raw) ? raw : {}, d = isObject(fallback) ? fallback : ROLL_DEFAULTS, baseLook = isObject(fallback) && isObject(fallback.look) ? fallback.look : {};
     function whole(v, lo, hi, fallback) { return typeof v === 'number' && isFinite(v) ? Math.round(Math.min(hi, Math.max(lo, v))) : fallback; }
     function pick(v, allowed, fallback) { return allowed.indexOf(v) >= 0 ? v : fallback; }
     var out = {
@@ -4812,7 +4921,7 @@ var Lyrics = (function () {
       move: pick(src.move, ['stay', 'page'], d.move),
       motion: pick(src.motion, ['smooth', 'jump'], d.motion),
       verses: pick(src.verses, ['mark', 'screen', 'none'], d.verses),
-      look: cleanSlideLook(Object.assign({ size: ROLL_SIZE }, isObject(src.look) ? src.look : {}))
+      look: cleanSlideLook(Object.assign({ size: ROLL_SIZE }, baseLook, isObject(src.look) ? src.look : {}))
     };
     var heading = cleanHeading(src.heading);
     if (heading) out.heading = heading;
@@ -4843,13 +4952,18 @@ var Lyrics = (function () {
   function isFrame(raw) {
     return isObject(raw) && ['x', 'y', 'w', 'h'].every(function (k) { return typeof raw[k] === 'number' && isFinite(raw[k]); });
   }
-  function cleanColumn(raw, fallbackFrame) {
+  // A column with no settings of its own (saved before columns had them) takes inherit (the song's), plus its old size.
+  function cleanColumn(raw, fallbackFrame, inherit) {
     if (!isObject(raw)) return null;
-    var out = {}, rec = cleanRecord(raw.verses, { same: true });
+    var out = {}, rec = cleanRecord(raw.verses, { same: true }), base = isObject(inherit) ? inherit : columnDefaults();
     if (rec) out.verses = rec.verses;
     out.heading = cleanHeading(raw.heading);
     out.frame = cleanFrame(raw.frame, fallbackFrame || COL2_FRAME);
-    out.size = typeof raw.size === 'number' && isFinite(raw.size) ? Math.round(Math.min(180, Math.max(24, raw.size))) : ROLL_SIZE;
+    if (isObject(raw.set)) out.set = cleanColumnSet(raw.set, base);
+    else {
+      var legacySize = typeof raw.size === 'number' && isFinite(raw.size) ? Math.round(Math.min(180, Math.max(24, raw.size))) : ROLL_SIZE;
+      out.set = cleanColumnSet({ look: Object.assign({}, base.look, { size: legacySize }) }, base);
+    }
     if (isObject(raw.parked)) {
       var texts = [];
       (Array.isArray(raw.parked.texts) ? raw.parked.texts : []).forEach(function (tx) {
@@ -5202,6 +5316,7 @@ var Lyrics = (function () {
     cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord,
     LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines, linesNeedingBlocks: linesNeedingBlocks,
     cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE,
+    columnDefaults: columnDefaults, cleanColumnSet: cleanColumnSet, columnSettings: columnSettings, withColumnSettings: withColumnSettings, copyColumnSettings: copyColumnSettings,
     COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanColumn: cleanColumn, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks,
     TAG_NAME_RE: TAG_NAME_RE, DEFAULT_AREA: DEFAULT_AREA, COLUMN_COLORS: COLUMN_COLORS, tagToken: tagToken, tagDisplay: tagDisplay, ownerCol: ownerCol, lineInCol: lineInCol,
     taggedText: taggedText, taggedRanges: taggedRanges, mergeTagNames: mergeTagNames, spreadFrames: spreadFrames, frameArea: frameArea,
@@ -6247,7 +6362,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -8549,14 +8664,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     };
   }
   // The sung part of each piece, filled again on top in the singing color with no glow or shadow.
-  function paintLit(g, pieces, x0, y, px, lh, rel, show, rowEnd, songId) {
+  function paintLit(g, pieces, x0, y, px, lh, rel, show, rowEnd, songId, col) {
+    var colors = null;
     pieces.forEach(function (p) {
       var f = LyricView.lit(p, rel, { highlight: show.highlight, keepLit: show.keepLit, rowEnd: rowEnd });
       if (f === null) return;
       var x = x0 + p.dx;
       g.save();
       g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetX = 0; g.shadowOffsetY = 0;
-      var pc = p.part ? partColors(songId, p.part) : null;
+      if (p.part && !colors) colors = partColorMap(songId, col);
+      var pc = p.part ? colors[p.part] || null : null;
       g.fillStyle = (pc && pc.hi) || show.singColor;
       if (f < 1) { g.beginPath(); g.rect(x, y - px * lh / 2, p.w * f, px * lh); g.clip(); }
       g.fillText(p.text, x, y);
@@ -8566,12 +8683,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- rolling lines: one panel per song, drawn from that song's line blocks ---------- */
   var rollWraps = {};
   function rollFrame(songId, W, H, col) { var f = colSettings(songId, col).frame; return { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H }; }
-  // Columns 2+ share every roll setting except their box, text size and heading.
-  function rollLook(songId, col) { var look = songLyrics(songId).roll.look; return col >= 2 ? Object.assign({}, look, { size: extraOf(songId, col).size }) : look; }
+  function rollLook(songId, col) { return colShow(songId, col).look; }
   function rollHeading(songId, col) { return hasColumns(songId) ? colSettings(songId, col).heading || null : null; }
   // When the panel shows: from its first line (earlier if the countdown needs room) to its last line, fading at both ends.
-  function rollPanelAlpha(songId, blocks, t) {
-    var show = songLyrics(songId), first = blocks[0], start = txSpan(first).start, end = start;
+  function rollPanelAlpha(songId, blocks, t, col) {
+    var show = colShow(songId, col), first = blocks[0], start = txSpan(first).start, end = start;
     blocks.forEach(function (tx) { var sp = txSpan(tx); end = Math.max(end, sp.start + sp.dur); });
     var w = WordTiming.span(first.lyric), clip = songClip(songId);
     if (show.countdown !== 'off' && w) {
@@ -8592,29 +8708,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       for (var k = 1; k <= columnCount(songId); k++) both = both.concat(slidesForSong(songId, k));
       both.sort(function (a, b) { return txSpan(a).start - txSpan(b).start || mix.texts.indexOf(a) - mix.texts.indexOf(b); });
     }
-    var lyr = songLyrics(songId), roll = lyr.roll, look = rollLook(songId, c), s = H / 1080, px = Math.max(8, Math.round(look.size * s)), lh = 1.25;
+    var cs = colShow(songId, c), look = cs.look, s = H / 1080, px = Math.max(8, Math.round(look.size * s)), lh = 1.25;
     var frame = rollFrame(songId, W, H, c), font = textFont(look, px);
     function measure(text, size) { g.font = textFont(look, size); return g.measureText(text).width; }
     function verseOf(tx) { return picked.verses[tx.id] || tx.lyric.verse; }
-    var labels = labelLookMap(songId, look), labelWidth = labelMeasurer(g, labels), labelKey = JSON.stringify(labels);
+    var labels = labelLookMap(songId, look, c), labelWidth = labelMeasurer(g, labels), labelKey = JSON.stringify(labels);
     var lines = blocks.map(function (tx, i) {
-      var key = [songId, px, frame.w, font, lyr.showParts, tx.text, JSON.stringify(tx.lyric), labelKey].join('|'), cacheId = c + ':' + tx.id, hit = rollWraps[cacheId];
+      var key = [songId, px, frame.w, font, cs.showParts, tx.text, JSON.stringify(tx.lyric), labelKey].join('|'), cacheId = c + ':' + tx.id, hit = rollWraps[cacheId];
       if (!hit || hit.key !== key) {
         var rowList = LyricView.rows(tx.lyric);
-        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, lyr.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }) };
+        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, cs.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }) };
       }
       var sp = txSpan(tx), words = WordTiming.span(tx.lyric);
       return { tx: tx, wrap: hit, start: sp.start, end: sp.start + sp.dur, sung: words ? sp.start + words.last : null, h: Math.max(1, hit.rows.length), verse: verseOf(tx), verseStart: i === 0 || verseOf(blocks[i - 1]) !== verseOf(tx) };
     });
-    var viewOpts = { above: roll.above, below: roll.below, move: roll.move, motion: roll.motion, verses: roll.verses };
+    var viewOpts = { above: cs.above, below: cs.below, move: cs.move, motion: cs.motion, verses: cs.verses };
     if (two) {
-      lines = RollView.withRests(lines, txSpan(both[0]).start, { gap: lyr.breakGap, approach: RollView.APPROACH });
+      lines = RollView.withRests(lines, txSpan(both[0]).start, { gap: cs.breakGap, approach: RollView.APPROACH });
       viewOpts.approach = RollView.APPROACH;
     }
     var v = RollView.view(lines, t, viewOpts);
     var names = RollView.labels(songRecord(songId, c)), rowH = px * lh;
     var heading = rollHeading(songId, c), headPx = Math.max(6, Math.round(px * 0.7)), headH = heading ? headPx * 1.25 : 0, headInfo = null;
-    function startX(w) { return roll.align === 'left' ? frame.x : frame.x + (frame.w - w) / 2; }
+    function startX(w) { return cs.align === 'left' ? frame.x : frame.x + (frame.w - w) / 2; }
     if (heading) {
       g.font = textFont(Object.assign({}, look, { bold: true }), headPx);
       var headW = g.measureText(heading).width;
@@ -8639,7 +8755,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var content = out.length && isFinite(x0) ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
     var curLine = null;
     for (var k = Math.max(0, v.cur); v.cur >= 0 && k < lines.length && !curLine; k++) curLine = lines[k].tx || null;
-    var result = { frame: frame, px: px, lh: lh, look: look, labels: labels, align: roll.align, alpha: rollPanelAlpha(songId, both, t), active: v.active, cur: curLine, lines: out, content: content };
+    var result = { frame: frame, px: px, lh: lh, look: look, labels: labels, align: cs.align, alpha: rollPanelAlpha(songId, both, t, c), active: v.active, cur: curLine, lines: out, content: content };
     if (headInfo) result.heading = headInfo;
     return result;
   }
@@ -8665,7 +8781,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
   }
   function paintRollPanel(g, W, H, t, boxes, selTx, songId, col) {
-    var lay = layoutRoll(g, W, H, songId, t, col), show = songLyrics(songId), colors = partColorMap(songId);
+    var lay = layoutRoll(g, W, H, songId, t, col), show = colShow(songId, col), colors = partColorMap(songId, col);
     var selected = !!(boxes && selTx && selTx.lyric && selTx.lyric.song === songId && colOf(selTx) === col);
     if (lay && lay.alpha > 0 && lay.lines.length) {
       var lk = TextLook.resolve(lay.look), px = lay.px, lh = lay.lh, c = lay.content, labelPx = Math.max(6, Math.round(px * 0.55));
@@ -8704,7 +8820,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
             r.pieces.forEach(function (p) { inkLyricPiece(g, p, r.x + p.dx, r.y, c); });
           });
           if (pass === 'stroke' || ln.state !== 'current') return;
-          ln.rows.forEach(function (r) { paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId); });
+          ln.rows.forEach(function (r) { paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId, col); });
         });
         if (lay.heading) g.restore();
       };
@@ -8957,11 +9073,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function paintCountdowns(g, W, H, t) {
     mix.items.forEach(function (it) {
       if (!it.lyrics) return;
-      var show = songLyrics(it.id);
-      if (show.countdown === 'off') return;
       var two = hasColumns(it.id), cols = [];
       for (var k = 1; k <= columnCount(it.id); k++) cols.push(k);
       cols.forEach(function (col) {
+        var show = colShow(it.id, col);
+        if (show.countdown === 'off') return;
         var syls = [];
         (two ? columnLines(it.id, col).blocks : slidesForSong(it.id)).forEach(function (tx) {
           var at = txSpan(tx).start;
@@ -9009,7 +9125,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var x = clamp(place.x, 0, Math.max(0, W - place.w)), y = clamp(place.y, place.h / 2, H - place.h / 2);
     g.save();
     g.globalAlpha = cd.alpha;
-    var pc = piece.part ? partColors(songId, piece.part) : null;
+    var pc = piece.part ? partColors(songId, piece.part, col) : null;
     g.fillStyle = (pc && pc.hi) || show.singColor;
     g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 0.2 * px;
     if (show.countdown === 'bar') g.fillRect(x, y - place.h / 2, place.w * cd.fraction, place.h);
@@ -9341,18 +9457,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function songOf(tx) { return tx.lyric ? findItem('items', tx.lyric.song) : null; }
   function songLyrics(songId) { var song = findItem('items', songId); return song && song.lyrics ? song.lyrics : Lyrics.cleanSong({}); }
   function partNames(songId) { return songLyrics(songId).parts.map(function (p) { return p.name; }); }
-  function partColorMap(songId) {
+  function partColorMap(songId, col) {
     var map = {};
-    songLyrics(songId).parts.forEach(function (p) { map[p.name] = { base: p.color, hi: p.hi }; });
+    colShow(songId, col || 1).parts.forEach(function (p) { map[p.name] = { base: p.color, hi: p.hi }; });
     return map;
   }
-  function partColors(songId, name) { return partColorMap(songId)[name] || null; }
+  function partColors(songId, name, col) { return partColorMap(songId, col)[name] || null; }
   // Each styled part label's look: label settings first, then the lyric look (baseLook) and the part color.
   // Parts with no label settings are left out, so they draw exactly like the lyrics.
-  function labelLookMap(songId, baseLook) {
-    var lyr = songLyrics(songId), map = {};
-    if (!lyr.showParts) return map;
-    lyr.parts.forEach(function (p) {
+  function labelLookMap(songId, baseLook, col) {
+    var show = colShow(songId, col || 1), map = {};
+    if (!show.showParts) return map;
+    show.parts.forEach(function (p) {
       var label = p.label;
       if (!label) return;
       var own = function (key) { return label.hasOwnProperty(key); };
@@ -9380,7 +9496,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function lyricText(slide, items) {
     var song = null;
     for (var i = 0; i < items.length; i++) if (items[i].id === slide.song) song = items[i];
-    return Lyrics.display(slide, !!(song && song.lyrics && song.lyrics.showParts));
+    if (!song || !song.lyrics) return Lyrics.display(slide, false);
+    var lyr = song.lyrics, col = slide.col >= 2 && lyr.view === 'roll' && lyr.columns === true ? slide.col : 1;
+    return Lyrics.display(slide, !!Lyrics.columnSettings(lyr, col).showParts);
   }
   // The only writer of a lyric slide's text: it always follows the lyric and the song's settings.
   function syncLyricText(tx, items) { if (tx.lyric) tx.text = lyricText(tx.lyric, items || mix.items); }
@@ -9392,12 +9510,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     syncSongSlides(songId);
     return true;
   }
-  function setShowParts(songId, on) { if (writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { showParts: !!on }))) changed(); }
+  function setShowParts(songId, on) { if (writeColumnSettings(songId, songCol(songId), { showParts: !!on })) changed(); }
+  // A column's parts as { name: { color, hi, label? } }, ready to change and write back.
+  function partsByName(songId, col) {
+    var map = {};
+    colShow(songId, col).parts.forEach(function (p) { var e = { color: p.color, hi: p.hi }; if (p.label) e.label = clone(p.label); map[p.name] = e; });
+    return map;
+  }
   function setPartColor(songId, name, key, color) {
     if (key !== 'color' && key !== 'hi') return;
-    var next = clone(songLyrics(songId));
-    next.parts.forEach(function (p) { if (p.name === name) p[key] = color; });
-    if (writeSongLyrics(songId, next)) changed();
+    var col = songCol(songId), parts = partsByName(songId, col);
+    if (!parts[name]) return;
+    parts[name][key] = color;
+    if (writeColumnSettings(songId, col, { parts: parts })) changed();
   }
   function addSongParts(songId, names) { if (writeSongLyrics(songId, Lyrics.addParts(songLyrics(songId), names))) changed(); }
   function newLyricSlide(slide, songId) {
@@ -10301,10 +10426,22 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function isTagged(songId) { return hasColumns(songId) && songLyrics(songId).entry === 'tags'; }
   function tagNamesOf(songId) { return songLyrics(songId).tagNames || []; }
   function extraOf(songId, col) { return (songLyrics(songId).more || [])[col - 2] || Lyrics.cleanColumn({}); }
+  // The only reader of a column's settings (Column 1 for a song without columns). parts is a list in song order.
+  function colShow(songId, col) {
+    var lyr = songLyrics(songId), out = Lyrics.columnSettings(lyr, hasColumns(songId) ? col || 1 : 1), byName = out.parts;
+    out.parts = lyr.parts.map(function (p) { return Object.assign({ name: p.name }, byName[p.name]); });
+    return out;
+  }
+  // The only writer of a column's settings: patch keys replace the column's own.
+  function writeColumnSettings(songId, col, patch) {
+    var lyr = songLyrics(songId), c = hasColumns(songId) ? col || 1 : 1;
+    var merged = Object.assign(Lyrics.columnSettings(lyr, c), patch);
+    return writeSongLyrics(songId, Lyrics.withColumnSettings(lyr, c, merged));
+  }
   function colSettings(songId, col) {
     if (!(col >= 2)) { var roll = songLyrics(songId).roll; return { frame: roll.frame, size: roll.look.size, heading: roll.heading || null }; }
     var c = extraOf(songId, col);
-    return { frame: c.frame, size: c.size, heading: c.heading };
+    return { frame: c.frame, size: colShow(songId, col).look.size, heading: c.heading };
   }
   function columnFrames(songId) {
     var out = [];
@@ -10412,27 +10549,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var counts = rebuildSong(songId, res, old, col);
     return { ok: true, counts: counts };
   }
-  // Tagged text: the @ names found decide the columns. Kept names keep their column's box, size and heading;
-  // new names add a column on the right; names no longer used remove theirs. Blocks follow their named column.
+  // Tagged text: the @ names found decide the columns. Kept names keep their column's box, heading and settings;
+  // new names add a column on the right with the default settings; names no longer used remove theirs. Blocks follow their named column.
   function applyTagNames(songId, found) {
     var oldNames = tagNamesOf(songId), merged = Lyrics.mergeTagNames(oldNames, found), names = merged.names, map = merged.map.slice();
-    var oldCount = columnCount(songId), old = [];
-    for (var k = 1; k <= oldCount; k++) old.push(colSettings(songId, k));
+    var oldCount = columnCount(songId), old = [], lyr = songLyrics(songId);
+    for (var k = 1; k <= oldCount; k++) old.push(Object.assign({ settings: Lyrics.columnSettings(lyr, k) }, colSettings(songId, k)));
     if (!oldNames.length) map = names.map(function (n, i) { return i < oldCount ? i : -1; });
     var area = Lyrics.frameArea(old.map(function (s) { return s.frame; }));
     var next = names.map(function (name, i) {
       var j = map[i];
-      if (j >= 0 && old[j]) return { frame: old[j].frame, size: old[j].size, heading: old[j].heading || (oldNames.length ? null : Lyrics.tagDisplay(name)) };
-      return { frame: null, size: old[0].size, heading: Lyrics.tagDisplay(name) };
+      if (j >= 0 && old[j]) return { frame: old[j].frame, settings: old[j].settings, heading: old[j].heading || (oldNames.length ? null : Lyrics.tagDisplay(name)) };
+      return { frame: null, settings: Lyrics.columnDefaults(), heading: Lyrics.tagDisplay(name) };
     });
-    var lyr = songLyrics(songId), roll = clone(lyr.roll);
+    var base = lyr;
     if (next.length) {
-      if (next[0].frame) roll.frame = clone(next[0].frame);
-      roll.look = Object.assign({}, roll.look, { size: next[0].size });
-      if (next[0].heading) roll.heading = next[0].heading; else delete roll.heading;
+      base = Lyrics.withColumnSettings(lyr, 1, next[0].settings);
+      if (next[0].frame) base.roll.frame = clone(next[0].frame);
+      if (next[0].heading) base.roll.heading = next[0].heading; else delete base.roll.heading;
     }
-    var more = next.slice(1).map(function (s) { return { heading: s.heading, frame: clone(s.frame || Lyrics.COL2_FRAME), size: s.size }; });
-    writeSongLyrics(songId, Object.assign({}, lyr, { roll: roll, more: more.length ? more : undefined, tagNames: names.length ? names : undefined }));
+    var more = next.slice(1).map(function (s) { return { heading: s.heading, frame: clone(s.frame || Lyrics.COL2_FRAME) }; });
+    var out = Object.assign({}, base, { more: more.length ? more : undefined, tagNames: names.length ? names : undefined });
+    next.slice(1).forEach(function (s, i) { out = Lyrics.withColumnSettings(out, i + 2, s.settings); });
+    writeSongLyrics(songId, out);
     var newCol = {};
     map.forEach(function (j, i) { if (j >= 0) newCol[j + 1] = i + 1; });
     songBlocksAll(songId).forEach(function (tx) { var c = colOf(tx); if (newCol[c] && newCol[c] !== c) withCol(tx.lyric, newCol[c]); });
@@ -10881,7 +11020,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (ui.rec) { songSetSay('Stop recording first.', true); return; }
     if (!hasColumns(songId) || isTagged(songId)) return;
     var area = Lyrics.frameArea(columnFrames(songId)), more = (songLyrics(songId).more || []).slice();
-    more.push({ heading: null, size: colSettings(songId, 1).size });
+    more.push(Lyrics.cleanColumn({}));
     writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { more: more }));
     spreadColumns(songId, area);
     ui.songCol = columnCount(songId);
@@ -11196,7 +11335,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function boxStructureHTML(songId, text, range) {
     var has = !!songId && !!songClip(songId), lyr = songLyrics(songId), tagged = has && isTagged(songId), cols = has && hasColumns(songId), col = has ? songCol(songId) : 1;
     var rows = Lyrics.boxRows(text, { tags: tagged, same: cols && !tagged && col >= 2, knownParts: has ? partNames(songId) : [], tagNames: tagged ? tagNamesOf(songId) : [] });
-    var known = {}, newParts = [];
+    var known = {}, newParts = [], colParts = colShow(songId, col).parts;
     lyr.parts.forEach(function (p) { known[p.name.toLowerCase()] = true; });
     rows.forEach(function (r) { r.segs.forEach(function (s) { if (s.part && !known[s.part.toLowerCase()] && newParts.indexOf(s.part) < 0) newParts.push(s.part); }); });
     var anyTags = tagged && rows.some(function (r) { return r.segs.some(function (s) { return s.kind === 'tag'; }); });
@@ -11216,7 +11355,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var body = markRange(s.text, p, range);
         p += s.text.length;
         if (s.kind === 'tag' || s.kind === 'mark' || s.kind === 'label') inner += '<span class="hl-tag">' + body + '</span>';
-        else if (s.kind === 'part') inner += '<span class="hl-part" style="--p:' + esc(Lyrics.partColorFor(s.part, lyr.parts, newParts, lyr.singColor)) + '">' + body + '</span>';
+        else if (s.kind === 'part') inner += '<span class="hl-part" style="--p:' + esc(Lyrics.partColorFor(s.part, colParts, newParts, lyr.singColor)) + '">' + body + '</span>';
         else inner += body;
       });
       at = p + 1;
@@ -11246,7 +11385,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function renderSongSettings() {
     if (WS !== Workspace.KARAOKE) return;
     var id = settingsSongId(), has = !!id, lyr = songLyrics(id), roll = has && lyr.view === 'roll', two = has && hasColumns(id), col = has ? songCol(id) : 1;
-    var lk = roll ? rollLook(id, col) : lyr.slideLook;
+    var cs = colShow(id, col), lk = roll ? cs.look : lyr.slideLook;
     function set(elId, v) { var el = $(elId); if (document.activeElement !== el) el.value = v; }
     fillSongSelect($('songSetSong'), id);
     $('songSetEmpty').hidden = has;
@@ -11269,37 +11408,40 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songColRemove').disabled = !has || !!ui.rec || col === 1 || count <= 2;
     $('songColRemove').textContent = col >= 2 ? 'Remove column ' + col : 'Remove this column';
     $('songColSpread').disabled = !has || !!ui.rec;
+    $('songColApplyOpen').disabled = $('songColCopyOpen').disabled = !has;
+    $('songColScope').hidden = !two;
+    $('songColScope').textContent = two ? 'Every setting below is for ' + columnName(id, col) + ' only.' : '';
+    renderColumnCopy(id, two, col, count);
     set('songColHead', two ? rollHeading(id, col) || '' : '');
     var colNote = tagged ? TAG_NOTE + (tagNamesOf(id).length ? '' : ' Add an @ name to split the lines into columns.') : two && col >= 2 ? columnNote(id, col) : null;
     $('songColNote').hidden = colNote === null;
     $('songColNote').textContent = colNote || '';
     $('songRoll').hidden = !roll;
-    var rs = lyr.roll, box = two ? colSettings(id, col).frame : rs.frame;
-    set('songRollAbove', rs.above); set('songRollBelow', rs.below);
-    set('songRollMove', rs.move); set('songRollMotion', rs.motion); set('songRollVerses', rs.verses); set('songRollAlign', rs.align);
+    var box = two ? colSettings(id, col).frame : lyr.roll.frame;
+    set('songRollAbove', cs.above); set('songRollBelow', cs.below);
+    set('songRollMove', cs.move); set('songRollMotion', cs.motion); set('songRollVerses', cs.verses); set('songRollAlign', cs.align);
     set('songRollX', pct(box.x)); set('songRollY', pct(box.y)); set('songRollW', pct(box.w)); set('songRollH', pct(box.h));
-    $('songLookSizeLabel').textContent = two ? 'Size (column ' + col + ')' : 'Size';
     $('songLookHead').textContent = roll ? 'Look for the lines' : 'Look for new lyric slides';
     $('songLookNote').textContent = roll ? 'Every line uses this look, at exactly this size.' : 'New slides for this song start with this look. Slides already made keep theirs.';
     $('songLookAll').closest('.btnrow').hidden = roll;
     renderSongLyrics(id, has);
-    set('lyricHighlight', lyr.highlight);
-    $('lyricKeepLit').checked = lyr.keepLit;
-    set('lyricSingColor', lyr.singColor);
-    $('lyricShowParts').checked = !!lyr.showParts;
+    set('lyricHighlight', cs.highlight);
+    $('lyricKeepLit').checked = cs.keepLit;
+    set('lyricSingColor', cs.singColor);
+    $('lyricShowParts').checked = !!cs.showParts;
     var open = has && ui.labelOpen && ui.labelOpen.song === id ? ui.labelOpen.part : null;
-    setHTML($('lyricParts'), lyr.parts.map(function (p) {
+    setHTML($('lyricParts'), cs.parts.map(function (p) {
       function picker(kind, label, value) { return '<label>' + label + ' <input type="color" data-part="' + esc(p.name) + '" data-kind="' + kind + '" value="' + esc(value) + '"' + (has ? '' : ' disabled') + '></label>'; }
-      var isOpen = lyr.showParts && open === p.name;
-      var toggle = lyr.showParts ? ' <button type="button" class="btn small quiet" data-labelopen="' + esc(p.name) + '" aria-expanded="' + isOpen + '"' + (has ? '' : ' disabled') + '>Label look</button>' : '';
+      var isOpen = cs.showParts && open === p.name;
+      var toggle = cs.showParts ? ' <button type="button" class="btn small quiet" data-labelopen="' + esc(p.name) + '" aria-expanded="' + isOpen + '"' + (has ? '' : ' disabled') + '>Label look</button>' : '';
       return '<span class="lyricpart"><b>' + esc(p.name) + '</b> ' + picker('color', 'Words', p.color) + ' ' + picker('hi', 'Highlight', p.hi) + toggle + '</span>' +
         (isOpen ? partLabelPanelHTML(p, lk, has) : '');
-    }).join('') + (lyr.parts.length && !lyr.showParts ? '<p class="note labellooknote">Turn on Show part names to style the labels.</p>' : ''));
+    }).join('') + (cs.parts.length && !cs.showParts ? '<p class="note labellooknote">Turn on Show part names to style the labels.</p>' : ''));
     $('lyricParts').querySelectorAll('[data-value]').forEach(function (el) { if (document.activeElement !== el) el.value = el.getAttribute('data-value'); });
     $('lyricParts').querySelectorAll('input[type="checkbox"][data-label]').forEach(function (el) { el.checked = el.hasAttribute('checked'); });
-    set('lyricCountdown', lyr.countdown);
-    set('lyricBreakGap', lyr.breakGap); set('lyricCountLen', lyr.countLen);
-    $('lyricBreakGap').disabled = $('lyricCountLen').disabled = !has || lyr.countdown === 'off';
+    set('lyricCountdown', cs.countdown);
+    set('lyricBreakGap', cs.breakGap); set('lyricCountLen', cs.countLen);
+    $('lyricBreakGap').disabled = $('lyricCountLen').disabled = !has || cs.countdown === 'off';
     setHTML($('songLookFont'), fontOptionsHTML(TextFont.entries(addedFonts())));
     var rf = TextFont.resolve(lk, addedFonts());
     set('songLookFont', rf.entry.id);
@@ -11319,6 +11461,72 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var unmatched = sharedLinksOf(songId, col).unmatched.length;
     return 'Start a line with = to share it with the same line in column 1. It shows in both columns and is timed there.' +
       (unmatched ? ' ' + (unmatched === 1 ? '1 line marked = has' : unmatched + ' lines marked = have') + ' no matching line in column 1, so ' + (unmatched === 1 ? 'it’s' : 'they’re') + ' timed in column ' + col + '.' : '');
+  }
+  function columnName(songId, k) { return colSettings(songId, k).heading || 'Column ' + k; }
+  function nameList(names) { return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]; }
+  function otherColumns(col, count) {
+    var out = [];
+    for (var k = 1; k <= count; k++) if (k !== col) out.push(k);
+    return out;
+  }
+  // The inline panel for Apply settings to other columns… (mode 'to') and Copy settings from… (mode 'from').
+  // It closes when the song, the column tab or the number of columns changes.
+  function renderColumnCopy(songId, two, col, count) {
+    var st = ui.colCopy;
+    if (st && (!two || st.song !== songId || st.col !== col || st.count !== count)) st = ui.colCopy = null;
+    $('songColApplyOpen').setAttribute('aria-expanded', String(!!st && st.mode === 'to'));
+    $('songColCopyOpen').setAttribute('aria-expanded', String(!!st && st.mode === 'from'));
+    $('songColCopy').hidden = !st;
+    if (!st) { setHTML($('songColCopyBody'), ''); return; }
+    var others = otherColumns(col, count), body = $('songColCopyBody'), html;
+    if (st.mode === 'to') {
+      html = '<p><b>' + esc('Copy ' + columnName(songId, col) + '’s settings to:') + '</b></p><div class="btnrow"><label><input type="checkbox" id="songColAll"> All columns</label>' +
+        others.map(function (k) { return '<label><input type="checkbox" data-copycol="' + k + '"> ' + esc(columnName(songId, k)) + '</label>'; }).join('') + '</div>';
+    } else {
+      html = '<label>' + esc('Copy settings into ' + columnName(songId, col) + ' from:') + ' <select id="songColFrom">' +
+        others.map(function (k) { return '<option value="' + k + '">' + esc(columnName(songId, k)) + '</option>'; }).join('') + '</select></label>';
+    }
+    setHTML(body, html);
+    body.setAttribute('aria-label', st.mode === 'to' ? 'Columns to copy to' : 'Column to copy from');
+    var ticked = others.filter(function (k) { return !!st.ticked[k]; });
+    if (st.mode === 'to') {
+      $('songColAll').checked = ticked.length === others.length;
+      body.querySelectorAll('[data-copycol]').forEach(function (el) { el.checked = !!st.ticked[parseInt(el.getAttribute('data-copycol'), 10)]; });
+    } else {
+      if (others.indexOf(st.from) < 0) st.from = others[0];
+      $('songColFrom').value = String(st.from);
+    }
+    $('songColCopyGo').textContent = st.mode === 'to' ? 'Apply' : 'Copy';
+    $('songColCopyGo').disabled = st.mode === 'to' && !ticked.length;
+  }
+  function openColumnCopy(mode) {
+    var id = $('songSetSong').value;
+    if (!songClip(id) || !hasColumns(id)) return;
+    var col = songCol(id), count = columnCount(id), was = ui.colCopy;
+    ui.colCopy = was && was.song === id && was.mode === mode ? null : { song: id, mode: mode, col: col, count: count, ticked: {}, from: otherColumns(col, count)[0] };
+    songSetSay('', false);
+    renderSongSettings();
+  }
+  function editColumnCopy(target) {
+    var st = ui.colCopy;
+    if (!st) return;
+    if (target.id === 'songColFrom') st.from = parseInt(target.value, 10);
+    else if (target.id === 'songColAll') otherColumns(st.col, st.count).forEach(function (k) { st.ticked[k] = target.checked; });
+    else st.ticked[parseInt(target.getAttribute('data-copycol'), 10)] = target.checked;
+    renderSongSettings();
+  }
+  // Copies every setting but the box and heading, as one Undo step.
+  function copyColumnSettingsUI(songId) {
+    var st = ui.colCopy;
+    if (!st || st.song !== songId || !hasColumns(songId)) return;
+    var col = songCol(songId), count = columnCount(songId), from = st.mode === 'to' ? col : st.from;
+    var targets = st.mode === 'to' ? otherColumns(col, count).filter(function (k) { return !!st.ticked[k]; }) : [col];
+    if (!targets.length || !(from >= 1 && from <= count) || targets.indexOf(from) >= 0) return;
+    if (!writeSongLyrics(songId, Lyrics.copyColumnSettings(songLyrics(songId), from, targets))) return;
+    ui.colCopy = null;
+    changed();
+    songSetSay(st.mode === 'to' ? 'Copied ' + columnName(songId, from) + '’s settings to ' + nameList(targets.map(function (k) { return columnName(songId, k); })) + '.'
+      : 'Copied ' + columnName(songId, from) + '’s settings into ' + columnName(songId, col) + '.', false);
   }
   // The one writer of a column's heading. Typing only redraws; the change is one Undo step.
   function setColumnHeading(songId, col, text, final) {
@@ -11384,16 +11592,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   // The only writer of a part's label look. A patch key set to null or '' removes that setting; patch null removes them all.
   function setPartLabel(songId, name, patch) {
-    var next = clone(songLyrics(songId)), found = false;
-    next.parts.forEach(function (p) {
-      if (p.name !== name) return;
-      found = true;
-      var label = patch ? Object.assign({}, p.label || {}) : {};
-      Object.keys(patch || {}).forEach(function (key) { if (patch[key] === null || patch[key] === '') delete label[key]; else label[key] = patch[key]; });
-      if (Object.keys(label).length) p.label = label; else delete p.label;
-    });
-    if (!found) return false;
-    if (writeSongLyrics(songId, next)) changed();
+    var col = songCol(songId), parts = partsByName(songId, col), p = parts[name];
+    if (!p) return false;
+    var label = patch ? Object.assign({}, p.label || {}) : {};
+    Object.keys(patch || {}).forEach(function (key) { if (patch[key] === null || patch[key] === '') delete label[key]; else label[key] = patch[key]; });
+    if (Object.keys(label).length) p.label = label; else delete p.label;
+    if (writeColumnSettings(songId, col, { parts: parts })) changed();
     return true;
   }
   var LABEL_NUMBERS = { size: true, glowOpacity: true, glowWidth: true, glowSoft: true, solidWidth: true };
@@ -11433,18 +11637,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   var SHOW_FIELDS = { lyricHighlight: 'highlight', lyricKeepLit: 'keepLit', lyricSingColor: 'singColor', lyricCountdown: 'countdown', lyricBreakGap: 'breakGap', lyricCountLen: 'countLen' };
   function setSongShow(songId, key, value) {
-    var next = Object.assign({}, songLyrics(songId));
-    next[key] = value;
-    if (writeSongLyrics(songId, next)) changed();
+    var patch = {};
+    patch[key] = value;
+    if (writeColumnSettings(songId, songCol(songId), patch)) changed();
   }
   function editSongShow(songId, input) {
     var key = SHOW_FIELDS[input.id];
     if (input.type === 'checkbox') { setSongShow(songId, key, input.checked); return; }
     if (input.type !== 'number') { setSongShow(songId, key, input.value); return; }
-    var stored = songLyrics(songId)[key], typed = parseFloat(input.value);
+    var stored = colShow(songId, songCol(songId))[key], typed = parseFloat(input.value);
     if (!isFinite(typed)) { input.value = stored; songSetSay('Type a number of seconds.', true); return; }
     var probe = {}; probe[key] = typed;
-    var allowed = Lyrics.cleanSong(probe)[key];
+    var allowed = Lyrics.cleanColumnSet(probe, Lyrics.columnDefaults())[key];
     setSongShow(songId, key, allowed);
     input.value = allowed;
     songSetSay(allowed !== typed ? 'Set to ' + allowed + ' s, the nearest allowed value.' : '', false);
@@ -11463,13 +11667,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songRollX').value = pct(f.x); $('songRollY').value = pct(f.y); $('songRollW').value = pct(f.w); $('songRollH').value = pct(f.h);
   }
   function editSongRoll(songId, input) {
-    var roll = clone(songLyrics(songId).roll);
-    if (ROLL_CHOICES.hasOwnProperty(input.id)) { roll[ROLL_CHOICES[input.id]] = input.value; writeSongRoll(songId, roll); songSetSay('', false); return; }
+    var roll = clone(songLyrics(songId).roll), setCol = songCol(songId), patch = {};
+    if (ROLL_CHOICES.hasOwnProperty(input.id)) {
+      patch[ROLL_CHOICES[input.id]] = input.value;
+      if (writeColumnSettings(songId, setCol, patch)) changed();
+      songSetSay('', false);
+      return;
+    }
     if (ROLL_COUNTS.hasOwnProperty(input.id)) {
       var key = ROLL_COUNTS[input.id], raw = input.value.trim(), typed = parseInt(raw, 10);
-      if (!isFinite(typed)) { input.value = roll[key]; songSetSay('Type a whole number.', true); return; }
-      roll[key] = typed;
-      var allowed = writeSongRoll(songId, roll)[key];
+      if (!isFinite(typed)) { input.value = colShow(songId, setCol)[key]; songSetSay('Type a whole number.', true); return; }
+      patch[key] = typed;
+      if (writeColumnSettings(songId, setCol, patch)) changed();
+      var allowed = colShow(songId, setCol)[key];
       input.value = allowed;
       songSetSay(String(allowed) !== raw ? 'Set to ' + allowed + ', the nearest allowed value.' : '', false);
       return;
@@ -11513,13 +11723,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (!isNaN(opacity)) next.boxOpacity = opacity;
       }
     }
-    var patch = roll ? { roll: Object.assign({}, songLyrics(songId).roll, { look: next }) } : { slideLook: next };
-    if (roll && col >= 2) {
-      patch.roll.look = Object.assign({}, next, { size: songLyrics(songId).roll.look.size });
-      patch.more = (songLyrics(songId).more || []).slice();
-      patch.more[col - 2] = Object.assign({}, extraOf(songId, col), { size: next.size });
-    }
-    if (!writeSongLyrics(songId, Object.assign({}, songLyrics(songId), patch))) return;
+    var ok = roll ? writeColumnSettings(songId, col, { look: next }) : writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { slideLook: next }));
+    if (!ok) return;
     songSetSay(fit.dropped ? entry.family + ' has no ' + styleName(wantBold, wantItalic) + ', so ' + (fit.dropped === 'both' ? 'Bold and Italic were' : fit.dropped === 'bold' ? 'Bold was' : 'Italic was') + ' turned off.' : '', false);
     changed();
   }
@@ -11552,6 +11757,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       $('lyricWords').querySelectorAll('[data-word]').forEach(function (b) { if (b.getAttribute('data-wpart') === name) b.style.setProperty('--part', target.value); });
       return;
     }
+    if (target.id === 'songColAll' || target.id === 'songColFrom' || target.hasAttribute('data-copycol')) { if (final) editColumnCopy(target); return; }
     if (target.name === 'songView') { if (final && target.checked && !showSongAs(songId, target.value)) renderSongSettings(); return; }
     if (target.name === 'songEntry') { if (final && target.checked && !setEntryMethod(songId, target.value)) renderSongSettings(); return; }
     if (target.name === 'songCol') { if (final && target.checked) { ui.songCol = parseInt(target.value, 10) || 1; songLyricsSay('', false); renderSongSettings(); } return; }
@@ -11575,6 +11781,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function renderLyricWords(songId, has, locked) {
     var col = has ? songCol(songId) : 1, verses = has ? songRecord(songId, col) : [], shown = {}, roll = has && songLyrics(songId).view === 'roll', names = RollView.labels(verses);
+    var wordColors = has ? partColorMap(songId, col) : {};
     if (has) (isTagged(songId) ? songBlocksAll(songId) : songSlides(songId, col)).forEach(function (tx) { shown[tx.lyric.verse] = true; });
     if (has && col >= 2) sharedFor(songId, col).forEach(function (s) { shown[s.verse] = true; });
     setHTML($('lyricWords'), verses.map(function (v, vi) {
@@ -11585,7 +11792,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         v.lines.map(function (line, li) {
           return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + vi + ':' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
             line.words.map(function (w) {
-              var pc = w.part ? partColors(songId, w.part) : null, color = pc ? pc.base : null;
+              var pc = w.part ? wordColors[w.part] || null : null, color = pc ? pc.base : null;
               return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
                 w.syls.map(function (s) { return esc(s.text); }).join('<span class="dot" aria-hidden="true">·</span>') + '</button>';
             }).join('') + '</div>';
@@ -14353,6 +14560,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLookAll').onclick = useSongLookEverywhere;
     $('songColAdd').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) addColumn(id); };
     $('songColRemove').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) removeColumn(id, songCol(id)); };
+    $('songColApplyOpen').onclick = function () { openColumnCopy('to'); };
+    $('songColCopyOpen').onclick = function () { openColumnCopy('from'); };
+    $('songColCopyCancel').onclick = function () { ui.colCopy = null; songSetSay('', false); renderSongSettings(); };
+    $('songColCopyGo').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) copyColumnSettingsUI(id); };
     $('songColSpread').onclick = function () {
       var id = $('songSetSong').value;
       if (!songClip(id) || !hasColumns(id)) return;

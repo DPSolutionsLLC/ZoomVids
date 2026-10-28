@@ -29,7 +29,7 @@ describe('cleanSong with any number of columns', () => {
     assert.equal('second' in out, false);
     assert.equal(out.more.length, 1);
     assert.equal(out.more[0].heading, 'Women');
-    assert.equal(out.more[0].size, 80);
+    assert.equal(out.more[0].set.look.size, 80);
     assert.equal('solo' in out.more[0], false);
     assert.deepEqual(out.solo, { x: 0.06, y: 0.52, w: 0.88, h: 0.42 });
     assert.equal(out.more[0].parked.texts[0].id, 't1');
@@ -101,7 +101,7 @@ describe('cleanSlide and parking with column numbers', () => {
     assert.deepEqual(out.parked.texts.map((t) => t.id), ['b', 'c']);
   });
   test('cleanColumn of nothing is the defaults', () => {
-    assert.deepEqual(L.cleanColumn({}), { heading: null, frame: L.COL2_FRAME, size: L.ROLL_SIZE });
+    assert.deepEqual(L.cleanColumn({}), { heading: null, frame: L.COL2_FRAME, set: L.columnDefaults() });
   });
 });
 
