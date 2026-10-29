@@ -707,6 +707,19 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <label><input type="checkbox" id="lyricKeepLit"> Keep sung words lit until the line ends</label>
             </div>
             <div class="btnrow">
+              <label><input type="checkbox" id="lyricPulseOn"> Pulse on the beat</label>
+              <label>Pulse size <input type="range" id="lyricPulseSize" min="105" max="150" step="1"><output id="lyricPulseSizeOut" class="num"></output></label>
+              <label>Smoothness <input type="range" id="lyricPulseEase" min="0.02" max="0.3" step="0.01"><output id="lyricPulseEaseOut" class="num"></output></label>
+              <label>Grow from <select id="lyricPulseFrom"><option value="base">The line (baseline)</option><option value="center">The middle</option></select></label>
+            </div>
+            <div class="btnrow">
+              <span class="note" id="lyricPulseShortest"></span>
+              <button type="button" class="btn small" id="lyricPulsePlay" data-play="pulse" data-label="Preview the shortest"></button>
+              <label><input type="checkbox" id="lyricPulseLoop"> Loop</label>
+              <label><input type="checkbox" id="lyricPulseSound"> Sound</label>
+            </div>
+            <p class="note">Pulse on the beat is for the whole project: every song and every column. Each syllable grows for as long as it was held when you recorded the timing.</p>
+            <div class="btnrow">
               <label>Highlight for words with no part <input type="color" id="lyricSingColor"></label>
               <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
             </div>
@@ -6244,6 +6257,54 @@ var LyricView = (function () {
   };
 })();
 
+/* Pulse on the beat: a timed syllable grows while it's sung. Pure functions; inputs are never changed. */
+var Pulse = (function () {
+  var DEFAULTS = { on: false, size: 115, ease: 0.1, from: 'base' };
+  var MIN_SIZE = 105, MAX_SIZE = 150, MIN_EASE = 0.02, MAX_EASE = 0.3, LEAD_IN = 1.5, LEAD_OUT = 1;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  function smooth(a) { return a * a * (3 - 2 * a); }
+  function clean(raw) {
+    var out = Object.assign({}, DEFAULTS);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    out.on = raw.on === true;
+    if (isNum(raw.size)) out.size = Math.round(clamp(raw.size, MIN_SIZE, MAX_SIZE));
+    if (isNum(raw.ease)) out.ease = Math.round(clamp(raw.ease, MIN_EASE, MAX_EASE) * 100) / 100;
+    out.from = raw.from === 'center' ? 'center' : 'base';
+    return out;
+  }
+  function peak(dur, ease) { return smooth(Math.min(1, dur / Math.max(ease, MIN_EASE))); }
+  function amount(start, dur, now, ease) {
+    if (!isNum(start) || !isNum(dur) || !isNum(now) || dur <= 0) return 0;
+    var e = Math.max(isNum(ease) ? ease : DEFAULTS.ease, MIN_EASE), held = now - start;
+    if (held < 0 || held >= dur + e) return 0;
+    if (held <= dur) return smooth(Math.min(1, held / e));
+    return peak(dur, e) * (1 - smooth((held - dur) / e));
+  }
+  function scale(piece, rel, set) {
+    if (!set || !set.on || !piece || piece.kind !== 'syl' || !isNum(piece.t) || !isNum(piece.d) || piece.d <= 0) return 1;
+    return 1 + (set.size / 100 - 1) * amount(piece.t, piece.d, rel, set.ease);
+  }
+  function place(x, y, w, s, shift, from) {
+    return { x: x - w * (s - 1) / 2, y: from === 'center' ? y : y + (s - 1) * shift };
+  }
+  function shortest(list) {
+    var best = null;
+    (Array.isArray(list) ? list : []).forEach(function (it) {
+      if (!it || !isNum(it.d) || it.d <= 0) return;
+      if (!best || it.d < best.d || (it.d === best.d && it.at < best.at)) best = it;
+    });
+    return best;
+  }
+  function previewWindow(at, dur, total) {
+    return { from: Math.max(0, at - LEAD_IN), to: Math.min(total, at + dur + LEAD_OUT) };
+  }
+  return {
+    DEFAULTS: DEFAULTS, MIN_SIZE: MIN_SIZE, MAX_SIZE: MAX_SIZE, MIN_EASE: MIN_EASE, MAX_EASE: MAX_EASE, LEAD_IN: LEAD_IN, LEAD_OUT: LEAD_OUT,
+    clean: clean, amount: amount, peak: peak, scale: scale, place: place, shortest: shortest, previewWindow: previewWindow
+  };
+})();
+
 /* Rolling lines: which line is current, which lines show, where (in rows) and how bright, at any moment. Pure functions; no text measuring. */
 var RollView = (function () {
   var SCROLL = 0.4, LABEL_ROWS = 0.7, REST_ROWS = 1, APPROACH = 3, DOT_PERIOD = 1.2, REST_FADE = 0.5, HIDE_FADE = 0.75, HIDE_HOLD = 1;
@@ -6490,7 +6551,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   /* ---------- state ---------- */
   var DEFAULTS = {
     level: true, trimSilence: true, defaultXf: 5, fadeIn: 2, fadeOut: 8, duckDb: -14,
-    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'color', bgStyle: 'fade', bgTop: '#16231d', bgBottom: '#0b110e', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150
+    showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'color', bgStyle: 'fade', bgTop: '#16231d', bgBottom: '#0b110e', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150,
+    pulse: Pulse.clean(null)
   };
   var lib = {}, libOrder = [];
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
@@ -6507,7 +6569,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null
+    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
+    pulsePlay: null, pulseLoop: true, pulseSound: true
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -6515,6 +6578,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function upgradeMix(m) {
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
     m.opts = BgColor.cleanOpts(m.opts);
+    m.opts.pulse = Pulse.clean(m.opts.pulse);
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     m.anims = (m.anims || []).map(Anim.cleanItem).filter(Boolean);
@@ -7169,9 +7233,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!Player.ctx) { var AC = window.AudioContext || window.webkitAudioContext; try { Player.ctx = new AC({ sampleRate: SR }); } catch (e) { Player.ctx = new AC(); } }
       if (Player.ctx.state === 'suspended') Player.ctx.resume();
       Player.tag = tag; Player.from = from; Player.to = to; Player.started = false;
-      Player.rate = tag === 'rec' ? ui.rec.speed : isMixTag(tag) ? ui.speed : 1;
+      Player.rate = tag === 'rec' ? ui.rec.speed : tag === 'pulse' ? 1 : isMixTag(tag) ? ui.speed : 1;
       syncPlay();
-      var pos = Math.round(from * SR), end = Math.round(to * SR), when = 0, first = true;
+      var pos = Math.round(from * SR), end = Math.round(to * SR), when = 0, first = true, out = Player.ctx.destination;
+      if (tag === 'pulse' && !ui.pulseSound) { out = Player.ctx.createGain(); out.gain.value = 0; out.connect(Player.ctx.destination); }
       try {
         while (pos < end && my === Player.token) {
           var n = Math.min(first ? 2 * SR : 6 * SR, end - pos);
@@ -7181,7 +7246,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           var ab = Player.ctx.createBuffer(2, n, SR);
           ab.getChannelData(0).set(blk.L); ab.getChannelData(1).set(blk.R);
           var src = Player.ctx.createBufferSource();
-          src.buffer = ab; src.playbackRate.value = Player.rate; src.connect(Player.ctx.destination);
+          src.buffer = ab; src.playbackRate.value = Player.rate; src.connect(out);
           var ct = Player.ctx.currentTime;
           if (first) { when = ct + 0.08; Player.t0 = when; Player.started = true; first = false; requestAnimationFrame(frame); }
           else if (when < ct + 0.01) { var lag = ct + 0.05 - when; Player.t0 += lag; when += lag; }
@@ -7192,13 +7257,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           while (my === Player.token && when - Player.ctx.currentTime > 2.5) await sleep(120);
         }
         while (my === Player.token && Player.ctx.currentTime < when) await sleep(80);
-        if (my === Player.token) { if (tag === 'mix') ui.cursor = 0; Player.stop(); drawScreen(); }
+        if (my === Player.token) {
+          if (tag === 'pulse' && ui.pulseLoop && ui.pulsePlay) { startPulsePreview(); return; }
+          if (tag === 'mix') ui.cursor = 0;
+          Player.stop(); drawScreen();
+        }
       } catch (err) {
         if (my === Player.token) { Player.stop(); say('That recording could not be played. ' + (err && err.message ? err.message : ''), true); }
       }
     }
   };
-  function isMixTag(t) { return t === 'mix' || t === 'rec' || (t && (t.indexOf('seam:') === 0 || t.indexOf('voice:') === 0)); }
+  function isMixTag(t) { return t === 'mix' || t === 'rec' || t === 'pulse' || (t && (t.indexOf('seam:') === 0 || t.indexOf('voice:') === 0)); }
   function heardNow() {
     var lag = (Player.ctx && (Player.ctx.outputLatency || Player.ctx.baseLatency)) || 0;
     return Math.max(0, Player.now() - lag * Player.rate);
@@ -7263,10 +7332,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     Player.play(plan, from, to == null ? plan.total : Math.min(to, plan.total), tag || 'mix');
   }
   function toggle(tag, start) { if (Player.tag === tag) Player.stop(); else start(); }
+  // Plays the shortest timed syllable with a little before and after, at 1×. Looked up again on every pass,
+  // so a timing change while it loops is picked up.
+  function startPulsePreview() {
+    if (ui.rec || !mix.opts.pulse.on) return;
+    var hit = shortestSyllable();
+    if (!hit) { ui.pulsePlay = null; renderSongSettings(); return; }
+    ui.pulsePlay = Pulse.previewWindow(hit.at, hit.d, plan.total);
+    playMix(ui.pulsePlay.from, ui.pulsePlay.to, 'pulse');
+  }
   function setSpeed(s) {
     if (SPEEDS.indexOf(s) < 0) return;
     ui.speed = s;
-    if (Player.tag && isMixTag(Player.tag) && Player.tag !== 'rec') playMix(Player.now());
+    if (Player.tag && isMixTag(Player.tag) && Player.tag !== 'rec' && Player.tag !== 'pulse') playMix(Player.now());
     syncPlay();
   }
   function pauseMix() {
@@ -8732,16 +8810,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // In the 'stroke' pass only the outlines are drawn, so there is no highlight.
   function paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, pass, lk) {
     var k = lay.karaoke, px = lay.px, lh = lay.L.lh, song = tx.lyric.song;
-    var c = { W: W, px: px, font: textFont(tx, px), labels: k.labels, colors: partColorMap(song), plain: tx.color || '#FFFFFF', inkAt: inkAt, lk: lk, pass: pass, inks: {} };
+    var c = { W: W, px: px, font: textFont(tx, px), fontAt: function (size) { return textFont(tx, size); }, labels: k.labels, colors: partColorMap(song), plain: tx.color || '#FFFFFF', inkAt: inkAt, lk: lk, pass: pass, inks: {} };
     k.lines.forEach(function (line) {
       var lineAlpha = line.preview ? (k.previewShown ? LyricView.DIM : 0) : k.states[line.row] === 'upcoming' ? LyricView.DIM : 1;
       if (lineAlpha <= 0) return;
-      var y = line.y + lift;
+      var y = line.y + lift, scales = line.preview ? null : pulseScales(line.pieces, k.rel);
       g.globalAlpha = alpha * lineAlpha;
       g.font = c.font;
-      line.pieces.forEach(function (p) { inkLyricPiece(g, p, line.x + p.dx, y, c); });
+      line.pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, line.x + p.dx, y, c); });
       if (line.preview || pass === 'stroke') return;
-      paintLit(g, line.pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song);
+      paintLit(g, line.pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song, undefined, scales);
+      if (scales) paintPulsed(g, line.pieces, scales, line.x, y, c, { rel: k.rel, show: k.show, rowEnd: k.rowEnds[line.row], lh: lh, songId: song });
     });
   }
   function anySolidLabel(labels) {
@@ -8809,19 +8888,52 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     };
   }
   // The sung part of each piece, filled again on top in the singing color with no glow or shadow.
-  function paintLit(g, pieces, x0, y, px, lh, rel, show, rowEnd, songId, col) {
+  function paintLit(g, pieces, x0, y, px, lh, rel, show, rowEnd, songId, col, skip) {
     var colors = null;
-    pieces.forEach(function (p) {
+    pieces.forEach(function (p, i) {
+      if (skip && skip[i]) return;
       var f = LyricView.lit(p, rel, { highlight: show.highlight, keepLit: show.keepLit, rowEnd: rowEnd });
       if (f === null) return;
-      var x = x0 + p.dx;
-      g.save();
-      g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetX = 0; g.shadowOffsetY = 0;
       if (p.part && !colors) colors = partColorMap(songId, col);
       var pc = p.part ? colors[p.part] || null : null;
-      g.fillStyle = (pc && pc.hi) || show.singColor;
-      if (f < 1) { g.beginPath(); g.rect(x, y - px * lh / 2, p.w * f, px * lh); g.clip(); }
-      g.fillText(p.text, x, y);
+      litPiece(g, p, x0 + p.dx, y, px, lh, f, (pc && pc.hi) || show.singColor);
+    });
+  }
+  function litPiece(g, p, x, y, px, lh, f, color) {
+    g.save();
+    g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetX = 0; g.shadowOffsetY = 0;
+    g.fillStyle = color;
+    if (f < 1) { g.beginPath(); g.rect(x, y - px * lh / 2, p.w * f, px * lh); g.clip(); }
+    g.fillText(p.text, x, y);
+    g.restore();
+  }
+  // Which pieces of a row are pulsing right now, as a scale per piece; null when none are (or the pulse is off).
+  function pulseScales(pieces, rel) {
+    var set = mix.opts.pulse;
+    if (!set || !set.on) return null;
+    var scales = pieces.map(function (p) { return Pulse.scale(p, rel, set); });
+    return scales.some(function (s) { return s > 1; }) ? scales : null;
+  }
+  // Pulsing syllables, drawn after the rest of the row so they sit on top: outline, base color, then the sung color.
+  // lit: { rel, show, rowEnd, lh, songId, col }
+  function paintPulsed(g, pieces, scales, x0, y, c, lit) {
+    var shift = baselineShift(g, c.font), colors = null;
+    pieces.forEach(function (p, i) {
+      var s = scales[i];
+      if (!(s > 1)) return;
+      var sp = Math.round(c.px * s * 100) / 100, ink = makeInk(g, c.W, c.lk, sp);
+      var pos = Pulse.place(x0 + p.dx, y, p.w, s, shift, mix.opts.pulse.from);
+      g.save();
+      g.font = c.fontAt(sp);
+      if (c.lk.look === 'solid') ink(p.text, pos.x, pos.y, 'stroke');
+      g.fillStyle = (p.part && c.colors[p.part] && c.colors[p.part].base) || c.plain;
+      ink(p.text, pos.x, pos.y, 'fill');
+      var f = LyricView.lit(p, lit.rel, { highlight: lit.show.highlight, keepLit: lit.show.keepLit, rowEnd: lit.rowEnd });
+      if (f !== null) {
+        if (p.part && !colors) colors = partColorMap(lit.songId, lit.col);
+        var pc = p.part ? colors[p.part] || null : null;
+        litPiece(g, { text: p.text, w: p.w * s }, pos.x, pos.y, sp, lit.lh, f, (pc && pc.hi) || lit.show.singColor);
+      }
       g.restore();
     });
   }
@@ -8961,7 +9073,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (lk.look === 'box') { g.fillStyle = TextLook.rgba(lk.boxColor, lk.boxOpacity); g.fillRect(bx, by, bw, bh); }
       else if (lk.look === 'shadow') { g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = px * 0.3; g.shadowOffsetY = px * 0.04; }
       var ink = makeInk(g, W, lk, px), inkLabel = makeInk(g, W, lk, labelPx), inkHead = lay.heading ? makeInk(g, W, lk, lay.heading.px) : null;
-      var c = { W: W, px: px, font: textFont(lay.look, px), labels: lay.labels, colors: colors, plain: lay.look.color, inkAt: ink, lk: lk, pass: 'fill', inks: {} };
+      var c = { W: W, px: px, font: textFont(lay.look, px), fontAt: function (size) { return textFont(lay.look, size); }, labels: lay.labels, colors: colors, plain: lay.look.color, inkAt: ink, lk: lk, pass: 'fill', inks: {} };
       var drawAll = function (pass) {
         g.textBaseline = 'middle';
         if (lay.heading && (pass === 'fill' || lk.look === 'solid')) {
@@ -8984,11 +9096,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           }
           g.globalAlpha = a; g.font = c.font; g.textAlign = 'left';
           c.pass = pass;
-          ln.rows.forEach(function (r) {
-            r.pieces.forEach(function (p) { inkLyricPiece(g, p, r.x + p.dx, r.y, c); });
+          var rowScales = ln.rows.map(function (r) { return ln.state === 'current' ? pulseScales(r.pieces, t - ln.start) : null; });
+          ln.rows.forEach(function (r, ri) {
+            var scales = rowScales[ri];
+            r.pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, r.x + p.dx, r.y, c); });
           });
           if (pass === 'stroke' || ln.state !== 'current') return;
-          ln.rows.forEach(function (r) { paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId, col); });
+          ln.rows.forEach(function (r, ri) {
+            var scales = rowScales[ri];
+            paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId, col, scales);
+            if (scales) paintPulsed(g, r.pieces, scales, r.x, r.y, c, { rel: t - ln.start, show: show, rowEnd: ln.rowEnds[r.row], lh: lh, songId: songId, col: col });
+          });
         });
         if (lay.heading) g.restore();
       };
@@ -11627,6 +11745,33 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var count = has ? songSlides(id).length : 0;
     $('songLookAll').textContent = 'Use on every slide in this song (' + count + ')';
     $('songLookAll').disabled = !count;
+    renderPulse(has, set);
+  }
+  function renderPulse(has, set) {
+    var p = mix.opts.pulse, hit = shortestSyllable();
+    $('lyricPulseOn').checked = p.on;
+    set('lyricPulseSize', p.size); set('lyricPulseEase', p.ease); set('lyricPulseFrom', p.from);
+    $('lyricPulseSizeOut').textContent = p.size + '%';
+    $('lyricPulseEaseOut').textContent = p.ease.toFixed(2) + ' s';
+    $('lyricPulseLoop').checked = ui.pulseLoop;
+    $('lyricPulseSound').checked = ui.pulseSound;
+    $('lyricPulseSize').disabled = $('lyricPulseEase').disabled = $('lyricPulseFrom').disabled = !has || !p.on;
+    $('lyricPulsePlay').disabled = !has || !p.on || !hit || !!ui.rec;
+    var reach = hit ? Pulse.peak(hit.d, p.ease) : 1;
+    $('lyricPulseShortest').textContent = hit
+      ? 'Shortest: “' + hit.text + '” in “' + hit.word + '”, ' + hit.song + ', ' + hit.d.toFixed(2) + ' s' + (reach < 0.999 ? ' — at this smoothness it reaches about ' + Math.round(reach * 100) + '% of full size.' : '')
+      : 'No timed syllables yet. Record word timing first.';
+  }
+  var PULSE_FIELDS = { lyricPulseOn: 'on', lyricPulseSize: 'size', lyricPulseEase: 'ease', lyricPulseFrom: 'from' };
+  function editPulse(input, final) {
+    var patch = {};
+    patch[PULSE_FIELDS[input.id]] = input.type === 'checkbox' ? input.checked : input.type === 'range' ? parseFloat(input.value) : input.value;
+    mix.opts.pulse = Pulse.clean(Object.assign({}, mix.opts.pulse, patch));
+    $('lyricPulseSizeOut').textContent = mix.opts.pulse.size + '%';
+    $('lyricPulseEaseOut').textContent = mix.opts.pulse.ease.toFixed(2) + ' s';
+    if (!final) { drawScreen(); return; }
+    if (!mix.opts.pulse.on && Player.tag === 'pulse') Player.stop();
+    changed();
   }
   var TAG_NOTE = 'Put @Name on its own line to send the lines after it to that column, or at the start of a line to send only that line. @Men @Women means both; @All means every column. A new name adds a column.';
   function columnNote(songId, col) {
@@ -11930,6 +12075,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (target.id === 'songSetSong') { if (final) { ui.songSet = target.value; songSetSay('', false); songLyricsSay('', false); $('lyricPartsCleanNote').textContent = ''; renderSongSettings(); } return; }
     if (target.id === 'songLyrics') { if (!final) onSongLyricsInput(); return; }
     if (target.id === 'lyricPart') return;
+    if (target.id === 'lyricPulseLoop') { if (final) ui.pulseLoop = target.checked; return; }
+    if (target.id === 'lyricPulseSound') { if (final) { ui.pulseSound = target.checked; if (Player.tag === 'pulse') startPulsePreview(); } return; }
+    if (PULSE_FIELDS.hasOwnProperty(target.id)) { editPulse(target, final); return; }
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
     if (target.id === 'lyricShowParts') { if (final) setShowParts(songId, target.checked); return; }
     if (SHOW_FIELDS.hasOwnProperty(target.id)) { if (final) editSongShow(songId, target); return; }
@@ -12081,6 +12229,29 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return mix.texts.filter(function (tx) { return tx.lyric && tx.lyric.song === songId && !tx.hidden && colOf(tx) === c; })
       .sort(function (a, b) { return txSpan(a).start - txSpan(b).start || mix.texts.indexOf(a) - mix.texts.indexOf(b); });
   }
+  // Every timed syllable on the timeline, for Pulse on the beat's shortest-syllable preview.
+  function pulseCandidates() {
+    var out = [];
+    mix.items.forEach(function (it) {
+      if (!it.lyrics || !songClip(it.id)) return;
+      var song = songTitle(it.id) || songName(it);
+      for (var k = 1; k <= columnCount(it.id); k++) {
+        slidesForSong(it.id, k).forEach(function (tx) {
+          var start = txSpan(tx).start;
+          tx.lyric.lines.forEach(function (line) {
+            line.words.forEach(function (w) {
+              w.syls.forEach(function (s) {
+                if (typeof s.t !== 'number' || !isFinite(s.t) || typeof s.d !== 'number' || !isFinite(s.d) || s.d <= 0) return;
+                out.push({ d: s.d, at: start + s.t, text: s.text, word: w.syls.map(function (x) { return x.text; }).join(''), song: song });
+              });
+            });
+          });
+        });
+      }
+    });
+    return out;
+  }
+  function shortestSyllable() { return Pulse.shortest(pulseCandidates()); }
   function wordEntry(tx, sylId) {
     var all = WordTiming.list(tx.lyric);
     for (var i = 0; i < all.length; i++) if (all[i].sylId === sylId) return all[i];
@@ -14742,6 +14913,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songSet').addEventListener('input', function (ev) { onSongSetEvent(ev, false); });
     $('songSet').addEventListener('change', function (ev) { onSongSetEvent(ev, true); });
     $('songLookAll').onclick = useSongLookEverywhere;
+    $('lyricPulsePlay').onclick = function () {
+      if (Player.tag === 'pulse') { Player.stop(); drawScreen(); return; }
+      startPulsePreview();
+    };
     $('songColAdd').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) addColumn(id); };
     $('songColRemove').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) removeColumn(id, songCol(id)); };
     $('songColApplyOpen').onclick = function () { openColumnCopy('to'); };
