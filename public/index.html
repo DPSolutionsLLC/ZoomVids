@@ -3486,6 +3486,20 @@ var GroupFill = (function () {
   }
   return { MODES: MODES, LABELS: LABELS, modeOf: modeOf, packedLength: packedLength, packed: packed, stretched: stretched, minLength: minLength, dragWindow: dragWindow, unionSpan: unionSpan };
 })();
+var TimelineSpan = (function () {
+  function longest(ends) {
+    var most = 0;
+    (ends || []).forEach(function (end) { if (typeof end === 'number' && isFinite(end)) most = Math.max(most, end); });
+    return most;
+  }
+  function span(parts) {
+    return Math.max(parts.target, parts.total, longest(parts.ends), 60) * 1.04;
+  }
+  function hold(current, next, dragging) {
+    return dragging && typeof current === 'number' && isFinite(current) && current > 0 ? current : next;
+  }
+  return { span: span, hold: hold };
+})();
 
 /* Floating preview preset and saved widths. Pure functions. */
 var FloatSizes = (function () {
@@ -6569,7 +6583,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
-    format: 'mp3', cursor: 0, span: 1200, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
+    format: 'mp3', cursor: 0, span: 1200, spanHold: false, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
     pulsePlay: null, pulseLoop: true, pulseSound: true
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
@@ -8028,10 +8042,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function renderTimeline() {
     pruneWordSel();
     pruneBeatSel();
-    var picEnd = 0;
-    mix.pictures.forEach(function (it) { picEnd = Math.max(picEnd, it.start + it.dur); });
-    mix.anims.forEach(function (it) { picEnd = Math.max(picEnd, it.start + it.dur); });
-    var span = Math.max(mix.target, plan.total, picEnd, 60) * 1.04;
+    var ends = [];
+    mix.pictures.forEach(function (it) { ends.push(it.start + it.dur); });
+    mix.anims.forEach(function (it) { ends.push(it.start + it.dur); });
+    mix.texts.forEach(function (tx) { if (tx.whole) return; var sp = tspan[tx.id] || tx; ends.push(sp.start + sp.dur); });
+    var span = TimelineSpan.hold(ui.span, TimelineSpan.span({ target: mix.target, total: plan.total, ends: ends }), !!ui.spanHold);
     ui.span = span;
     var tl = $('tl');
     tl.style.width = (ui.zoom * 100) + '%';
@@ -11004,9 +11019,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function makeSongSlides(songId) {
     var clip = songClip(songId), title = songTitle(songId);
-    var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor;
+    var t = clip.start;
     if (Player.tag) Player.stop();
-    if (!(t >= clip.start && t < clip.start + clip.len)) t = clip.start;
     var items = songRecord(songId).map(function (v) { return newLyricSlide({ lines: clone(v.lines), verse: v.id }, songId); });
     if (!items.length) return 0;
     var g = { id: 'g' + nid(), name: TextGroup.cleanName(title, TextGroup.nextName(mix.groups, 'Lyrics')), fill: 'packed' };
@@ -11446,9 +11460,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function makeSongLines(songId, col) {
     var clip = songClip(songId);
-    var t = Player.tag && isMixTag(Player.tag) ? Player.now() : ui.cursor;
+    var t = clip.start;
     if (Player.tag) Player.stop();
-    if (!(t >= clip.start && t < clip.start + clip.len)) t = clip.start;
     var items = [];
     recordLines(songId, col).forEach(function (rl) { items.push(newLyricSlide(withCol({ lines: [clone(rl.line)], verse: rl.verseId }, col), songId)); });
     if (!items.length) return 0;
@@ -14254,6 +14267,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }
     });
     tl.addEventListener('pointermove', function (ev) {
+      if (drag) ui.spanHold = true;
       if (drag && drag.word) {
         var w = drag.word, wdx = ev.clientX - w.x0;
         if (!drag.moved && Math.abs(wdx) <= 3) return;
@@ -14403,6 +14417,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       live(); renderTextEditor();
     });
     function endDrag(ev) {
+      ui.spanHold = false;
       if (!drag) return;
       var d = drag; drag = null;
       if (d.beat) {
