@@ -184,6 +184,8 @@ To fix mistakes:
 
 **Copying to repeats.** When other slides of the song have the same words (capitals and punctuation don't count), the slide offers **Copy this timing to them**. You can also pick one slide in **Copy timing to**. If the other slide's first syllable is already timed, the copy lines up on it. Otherwise it lands at the same place in that slide, and you drag the slide to line it up. Each copy is one Undo step.
 
+**Line labels.** Tick **Show line labels** (under the Lyrics box in Song settings) to number every line: Line 1, Line 2… straight through the song. Verse breaks and `[Chorus]` labels don't restart the count. The numbers show in the Lyrics box (in a narrow strip on the left, following what you type even before Update), on the word chips, on the timeline blocks, in the recording bar and beside each line in the preview. In a song with columns, each column counts from Line 1 and the label names the column, like "Women · Line 4". While labels are on, the line being sung lights up in the Lyrics box and scrolls into view as you play, scrub or record. Labels are only there while you work: they're never in the exported video. The setting is remembered in this browser only. It isn't saved with the project or the music folder, and it isn't an Undo step.
+
 Dragging a slide or its group moves its words with it. **Fill**, **Reset** and stretching a group re-arrange its slides, so the words move with them too; Undo puts them back. Moving a song in Order of music doesn't move its slides.
 
 **Song settings.** In karaoke, the **Song settings** section (above Your text on screen) holds everything that's for a whole song. Pick the song at the top. Opening a lyric slide switches it to that slide's song. Each change is one step for Undo.

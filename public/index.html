@@ -477,6 +477,15 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .lyrichl .hl-part { background: color-mix(in srgb, var(--p) 30%, transparent); text-decoration: underline 2px; text-decoration-color: var(--p); text-underline-offset: 3px; border-radius: 2px; }
 .lyrichl .hl-tag { background: color-mix(in srgb, var(--muted, #888) 22%, transparent); border-radius: 3px; }
 .texted #songLyrics { position: relative; display: block; background: transparent; width: 100%; overflow-wrap: anywhere; scrollbar-gutter: stable; }
+.lyricrec { --gut: 2.6rem; }
+.lyricrec.labels .lyrichl, .texted .lyricrec.labels #songLyrics { padding-left: calc(10px + var(--gut)); }
+.lyrichl .hlrow .lnum { position: absolute; left: calc(-1 * var(--gut)); top: 0; width: calc(var(--gut) - 12px); text-align: right; font-size: 11px; line-height: calc(16px * 1.4); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lyrichl .hlrow .lnum b { font-weight: 700; }
+.lyrichl .hlrow.now { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.lyrichl .hlrow.now .lnum { color: var(--accent); font-weight: 700; }
+.lyricline .lline.on { color: var(--accent); font-weight: 600; }
+.tl .clip .lnlbl { font-size: 10px; font-weight: 700; opacity: 0.75; }
+.recbar .recline .lnlbl { font-size: 12px; padding: 1px 8px; vertical-align: 2px; }
 .lyricverse { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px; border-radius: var(--r); }
 .lyricverse + .lyricverse { border-top: 1px solid var(--line); }
 .lyricverse.current { outline: 2px solid var(--accent-soft); }
@@ -697,7 +706,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <p class="note" id="songColNote" hidden></p>
             <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
             <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
-            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><button class="btn small" id="songLyricsMark">Mark all</button><button class="btn small quiet" id="songLyricsOriginal" hidden>Back to my original</button><span class="note" id="songLyricsState"></span></div>
+            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><button class="btn small" id="songLyricsMark">Mark all</button><button class="btn small quiet" id="songLyricsOriginal" hidden>Back to my original</button><span class="note" id="songLyricsState"></span><label><input type="checkbox" id="lineLabelsOn"> Show line labels</label><span class="note">Only while you work. Never in the video.</span></div>
             <p class="msg" id="songLyricsMsg" role="status"></p>
             <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this song"></div>
             <div class="btnrow"><label>Part <select id="lyricPart"></select></label><button class="btn small" id="lyricApply" disabled>Set part</button><span class="note" id="lyricPickNote"></span></div>
@@ -6484,6 +6493,63 @@ var RollView = (function () {
   return { SCROLL: SCROLL, LABEL_ROWS: LABEL_ROWS, REST_ROWS: REST_ROWS, APPROACH: APPROACH, DOT_PERIOD: DOT_PERIOD, REST_FADE: REST_FADE, HIDE_FADE: HIDE_FADE, HIDE_HOLD: HIDE_HOLD, columnAlpha: columnAlpha, withRests: withRests, restAlpha: restAlpha, restDots: restDots, ease: ease, labels: labels, current: current, slot: slot, changedAt: changedAt, tops: tops, pages: pages, view: view };
 })();
 
+/* Line labels: running line numbers per column (Line 1, Line 2…) and the line sung at a moment. Worked out fresh, never stored. Pure functions. */
+var LineLabels = (function () {
+  var KEY = 'hp.lineLabels', HOLD = 1.5;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function cleanOn(raw) { return raw === true; }
+  function columnsOf(cols, total) {
+    var out = [];
+    if (cols === null || cols === undefined) { for (var c = 1; c <= total; c++) out.push(c); return out; }
+    (Array.isArray(cols) ? cols : []).forEach(function (p) { if (Number.isInteger(p) && p >= 1 && p <= total && out.indexOf(p) < 0) out.push(p); });
+    if (!out.length) out.push(1);
+    return out.sort(function (a, b) { return a - b; });
+  }
+  function numbers(lines, count) {
+    var total = Math.max(1, Math.floor(isNum(count) ? count : 1)), seen = [];
+    for (var c = 0; c < total; c++) seen.push(0);
+    return (lines || []).map(function (line) {
+      var cols = columnsOf(line ? line.cols : null, total);
+      return { owner: cols[0], nums: cols.map(function (p) { seen[p - 1]++; return { col: p, n: seen[p - 1] }; }) };
+    });
+  }
+  function numberFor(entry, col) {
+    var own = null, hit = null;
+    entry.nums.forEach(function (x) { if (x.col === col) hit = x; if (x.col === entry.owner) own = x; });
+    return hit || own || entry.nums[0];
+  }
+  function text(entry, opts) {
+    if (!entry || !entry.nums || !entry.nums.length) return null;
+    var o = opts || {}, names = o.names || [];
+    function name(c) { return names[c - 1] || 'Column ' + c; }
+    if (!o.multi) return 'Line ' + numberFor(entry, o.col).n;
+    if (isNum(o.col)) { var x = numberFor(entry, o.col); return name(x.col) + ' · Line ' + x.n; }
+    return entry.nums.map(function (y) { return name(y.col) + ' · Line ' + y.n; }).join(', ');
+  }
+  function short(entry, col) {
+    if (!entry || !entry.nums || !entry.nums.length) return null;
+    return String(numberFor(entry, col).n);
+  }
+  function rowLines(rows) {
+    var k = 0;
+    return (rows || []).map(function (row) {
+      if (!row || row.kind !== 'line') return null;
+      var words = (row.segs || []).some(function (s) { return (s.kind === 'text' || s.kind === 'part') && /\S/.test(s.text); });
+      if (!words) return null;
+      return { line: k++, cols: row.cols ? row.cols.slice() : null };
+    });
+  }
+  function lineAt(spans, t, hold) {
+    var h = isNum(hold) ? hold : HOLD, best = null;
+    (spans || []).forEach(function (s) {
+      if (!s || !isNum(s.start) || !isNum(s.end) || s.start > t || t > s.end + h) return;
+      if (!best || s.start > best.start) best = s;
+    });
+    return best ? best.key : null;
+  }
+  return { KEY: KEY, HOLD: HOLD, cleanOn: cleanOn, numbers: numbers, text: text, short: short, rowLines: rowLines, lineAt: lineAt };
+})();
+
 
 var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,277.18,329.63,440],"seconds":95,"scale":1,"info":{"kind":"song","title":"Sample tone 1","credit":"Your song titles appear here"},"meta":{"v":2,"duration":95,"peak":0.3205,"lufs":-20.0586,"head":0,"tail":95,"bins":[45,63,68,71,80,104,116,122,127,128,130,127,130,124,119,114,104,99,101,109,114,122,123,121,119,116,116,116,115,116,117,114,115,112,111,111,107,110,107,107,107,109,118,122,124,123,122,111,108,97,98,94,103,103,108,109,116,117,119,120,116,111,98,90,85,101,112,119,119,118,115,114,114,105,104,104,105,106,109,109,109,108,105,97,99,91,98,102,107,108,106,106,101,105,104,105,101,100,97,96,92,99,103,109,115,121,121,116,115,105,104,92,94,100,109,115,117,125,126,124,129,120,108,99,88,97,111,115,121,122,120,117,118,117,114,113,102,98,96,102,104,114,113,112,111,107,105,113,115,121,123,121,114,109,101,99,99,106,113,119,120,120,115,114,114,116,114,110,112,110,103,102,95,99,101,109,112,116,122,127,126,120,113,101,93,89,95,113,115,121,123,118,119,116,121,118,116,108,107,107,113,114,121,119,118,115,106,102,105,113,117,122,121,123,120,118,114,110,105,98,97,100,110,116,123,124,126,121,122,106,106,94,96,92,103,107,112,112,118,113,120,119,111,110,97,87,85,99,104,108,107,108,104,102,97,99,98,95,94,96,101,105,105,104,103,95,90,97,105,113,117,118,116,111,96,95,92,90,92,100,103,104,100,101,103,113,113,113,110,106,92,89,81,89,98,106,109,114,114,120,121,117,116,106,100,92,91,96,110,111,123,119,123,120,121,119,113,110,114,118,114,122,120,125,121,122,112,109,107,117,122,133,133,136,138,127,127,117,118,118,120,118,122,122,131,132,135,133,133,128,112,111,111,111,107,114,113,115,115,115,118,118,112,113,106,96,87,88,91,97,99,98,95,90,90,86,86,82,86,86,84,85,86,87,86,84,79,77,79,83,92,97,99,101,100,94,91,86,85,85,94,101,101,101,100,110,111,113,116,112,102,95,99,101,105,106,115,115,119,115,123,121,124,121,110,103,94,102,114,117,130,130,126,125,117,118,115,110,112,121,121,124,123,123,122,113,111,103,103,109,117,123,127,127,131,126,123,116,107,96,97,98,109,117,118,125,125,129,128,127,118,111,98,98,98,109,110,115,116,114,112,116,115,122,122,119,112,101,96,98,105,105,106,106,106,104,103,103,106,107,104,102,104,106,106,106,101,94,87,96,105,114,116,121,122,114,112,97,97,86,81,95,103,106,109,108,114,110,117,113,109,98,93,87,90,101,111,116,118,116,114,114,112,113,102,99,96,99,104,115,118,123,119,118,111,100,98,100,111,116,117,116,119,111,116,108,111,102,99,96,105,106,115,119,125,124,117,116,102,98,91,100,107,114,113,117,118,119,118,115,109,109,109,111,112,112,111,107,108,105,107,114,120,125,126,126,125,121,111,101,98,100,108,108,108,109,111,111,108,117,118,120,120,114,113,111,110,105,104,103,107,116,120,130,133,130,132,123,116,107,96,96,101,110,121,120,125,123,128,129,124,118,103,95,87,101,106,117,118,119,115,113,107,109,103,105,104,99,101,100,104,107,109,108,109,109,109,103,105,104,103,105,109,107,105,105,108,108,102,99,88,93,96,106,107,112,108,109,106,93,85,90,99,107,108,106,106,105,107,108,108,106,104,96,93,94,97,97,107,106,105,105,102,102,105,105,107,107,105,105,104,105,103,105,102,102,100,104,109,118,120,123,127,124,124,115,116,101,100,99,110,116,127,127,139,137,144,143,128,128,106,102,101,115,129,131,133,137,132,136,130,132,123,117,103,102,108,114,124,124,123,118,114,111,114,117,118,117,108,105,102,102,104,101,102,102,102,100,95,97,97,102,101,101,94,94,83,84,79,77,77,84,85,90,91,94,96,96,93,85,81,68,70,80,91,92,99,97,98,97,101,102,98,94,92,94,97,106,111,114,110,111,99,96,100,107,116,124,125,121,118,113,117,114,115,109,106,108,113,114,123,126,133,132,131,129,119,115,109,107,100,115,122,126,134,135,137,139,126,127,114,101,93,97,106,117,121,128,124,125,123,123,121,113,106,102,101,101,107,111,115,114,113,108,105,107,115,117,116,114,112,106,103,101,100,106,112,113,112,113,113,116,117,115,111,108,103,102,102,104,105,101,101,97,104,104,111,110,110,106,103,99,87,81,89,88,82,76,60,43]}},{"key":"sample:2","name":"Sample tone 2, G major (recorded quieter)","freqs":[196,246.94,293.66,392],"seconds":80,"scale":0.35,"info":{"kind":"song","title":"Sample tone 2","credit":"Hymn number or performer on this line"},"meta":{"v":2,"duration":80,"peak":0.1074,"lufs":-29.1711,"head":0,"tail":80,"bins":[27,37,43,44,48,51,63,68,72,76,75,77,75,77,76,73,71,65,62,59,58,64,65,70,72,72,71,70,69,67,68,68,68,69,68,67,66,65,64,65,65,65,65,65,65,64,63,69,69,71,71,71,70,62,62,60,61,60,60,60,58,62,62,66,67,69,68,66,66,64,57,54,50,58,63,67,67,67,67,65,66,63,60,58,58,59,59,62,62,62,63,61,64,61,59,57,56,57,60,62,63,63,64,62,65,65,66,65,66,62,59,56,52,57,63,69,72,73,75,75,73,69,64,63,57,57,59,63,66,68,70,71,75,75,75,76,68,64,60,52,50,59,62,67,70,67,70,69,68,68,64,64,62,63,64,62,63,63,61,61,62,61,61,61,63,68,71,72,72,70,67,65,61,60,58,58,65,68,70,70,70,68,70,70,70,72,74,74,67,68,64,63,63,61,63,65,67,69,71,72,77,77,76,77,72,65,62,53,57,62,68,71,73,74,72,71,70,70,67,65,63,59,59,60,63,66,66,69,67,65,64,59,56,60,63,64,66,67,65,66,66,63,63,61,58,62,63,63,64,63,61,64,63,66,67,66,62,60,60,60,59,59,58,58,58,60,59,63,63,65,65,62,61,56,51,48,51,53,60,63,62,63,62,59,60,59,60,60,59,59,57,58,57,59,60,61,62,60,60,57,57,58,63,66,66,71,71,69,71,66,66,62,59,56,58,63,64,71,74,78,79,81,82,78,77,73,67,67,64,67,67,72,77,80,79,82,82,80,84,83,76,73,64,58,60,66,71,77,77,74,75,70,68,67,65,65,63,62,62,60,61,60,62,60,60,58,55,53,51,54,56,57,58,58,58,56,54,51,49,48,47,49,50,52,52,50,54,53,57,58,58,57,53,53,51,53,53,53,55,54,59,58,59,59,63,63,66,67,66,63,60,54,57,61,69,67,70,70,64,66,64,64,63,63,65,65,68,69,71,72,71,72,67,66,64,60,62,69,72,72,79,79,75,78,74,71,68,63,58,58,61,64,72,72,77,77,77,79,77,74,71,66,58,53,54,58,66,69,72,72,70,71,70,73,73,68,65,62,56,55,57,59,66,66,68,69,68,67,66,67,67,64,64,64,63,64,63,65,65,65,64,60,57,53,53,58,62,65,66,69,68,64,62,56,56,51,55,57,61,61,61,63,63,66,66,67,67,63,62,53,56,55,56,61,62,68,68,68,67,68,68,67,68,63,59,57,55,59,64,70,70,72,71,68,65,59,60,59,62,65,67,68,68,68,67,67,66,65,64,61,58,57,58,65,65,72,73,70,71,68,64,61,56,51,60,64,69,72,72,72,72,70,71,69,67,64,65,65,64,65,65,63,63,63,65,63,65,65,69,69,70,70,68,67,64,59,60,63,65,65,69,67,65,64,65,65,66,69,71,70,72,69,70,69,68,68,62,62,60,60,63,70,72,75,78,77,76,76,68,66,59,54,52,58,63,67,69,69,72,71,73,73,68,65,58,54,53,54,59,60,66,66,66,64,63,62,64,66,66,66,65,61,55,54,56,58,62,62,67,68,66,65,63,63,63,62,61,61,61,61,58,60,60,61,60,57,56,52,57,57,62,64,67,68,65,64,56,54,51,48,53,56,61,63,64,67,66,70,70,70,68,65,63,56,56,56,61,63,65,71,70,71,71,71,70,71,70,71,71,71,67,70,69,71,71,72,71,70,69,68,68,69,75,76,78,80,80,77,75,71,72,66,65,63,64,66,72,73,76,80,80,78,79,68,65,61,55,51,58,59,64,67,64,67,65,55,54,43,34,21]}},{"key":"sample:3","name":"Sample tone 3, F major","freqs":[174.61,220,261.63,349.23],"seconds":110,"scale":1,"info":{"kind":"song","title":"Sample tone 3"},"meta":{"v":2,"duration":110,"peak":0.3042,"lufs":-20.3691,"head":0,"tail":110,"bins":[47,62,76,76,80,89,94,107,116,122,127,127,131,130,127,130,125,122,119,109,104,99,99,101,108,111,119,120,121,120,117,118,110,114,114,114,115,115,115,110,110,110,107,106,107,105,109,109,110,110,110,109,111,116,116,117,117,114,113,103,100,99,94,96,95,94,97,97,102,105,112,118,119,119,120,116,109,105,94,86,76,83,94,101,111,113,113,114,112,108,110,105,103,102,92,95,96,94,96,97,106,108,108,116,110,111,109,101,99,97,94,99,107,110,114,114,113,113,112,117,116,115,114,109,103,98,92,106,111,120,125,128,129,127,119,115,111,106,106,98,99,98,96,101,105,110,115,115,122,118,122,122,119,112,107,98,90,87,87,97,99,107,109,110,117,118,116,115,111,112,112,111,110,109,110,113,113,109,108,105,107,108,105,103,111,120,125,128,130,130,123,119,118,106,110,108,108,108,108,103,101,101,102,107,121,127,129,135,131,131,126,117,112,110,101,96,92,95,102,105,113,116,123,127,123,129,129,114,113,109,92,92,84,87,93,99,111,110,113,117,111,113,111,104,104,97,89,89,93,101,104,101,100,102,106,107,101,101,95,94,94,102,108,112,111,107,107,107,100,97,90,90,93,98,101,103,103,101,101,102,102,107,113,113,114,112,108,106,92,92,88,87,88,88,87,96,99,105,110,115,121,121,121,117,114,110,103,91,90,91,94,105,107,117,119,119,125,123,125,126,119,118,115,115,120,119,116,123,118,128,129,124,125,120,123,118,113,109,116,129,137,137,134,138,130,123,122,111,112,107,103,98,98,97,96,99,108,116,121,123,121,119,114,104,98,87,90,89,82,80,83,83,84,87,93,93,98,100,96,97,96,89,83,77,70,68,75,81,82,85,89,89,94,93,86,89,90,90,90,92,91,92,91,90,96,97,101,103,102,104,101,102,90,97,109,117,117,122,125,120,119,120,109,111,105,104,102,107,108,113,117,117,116,128,129,128,135,132,128,119,116,115,101,98,96,93,98,103,109,116,120,128,129,125,126,124,118,113,104,98,96,96,101,102,103,108,106,116,115,113,115,110,106,109,110,110,111,107,107,106,99,104,101,100,101,105,105,100,95,94,92,103,110,115,120,120,113,112,103,92,90,83,84,88,96,98,99,105,107,103,102,108,107,108,101,105,98,99,100,100,97,96,96,95,96,100,104,104,110,107,112,112,107,104,104,96,88,92,98,104,110,110,116,119,121,114,112,112,101,100,100,105,108,109,113,112,113,110,112,113,114,115,110,107,101,95,94,99,108,121,120,124,123,116,112,109,97,89,85,86,92,101,109,112,117,118,118,118,117,113,114,109,109,105,107,108,105,101,99,98,98,100,101,108,107,115,118,119,119,117,110,107,106,100,93,93,95,100,108,113,110,117,117,112,113,112,109,112,114,118,119,114,115,113,110,111,109,115,114,107,103,100,96,103,110,119,123,124,130,126,121,120,106,100,95,87,88,86,94,104,106,113,116,114,118,119,117,116,105,102,95,95,98,100,100,104,104,103,107,105,105,101,106,106,112,117,117,115,112,107,97,89,94,98,100,103,102,99,101,101,96,95,93,98,105,106,104,105,102,95,94,91,96,94,91,92,90,90,90,95,105,107,114,121,117,118,119,107,101,99,88,82,83,90,96,102,118,118,121,124,125,133,133,128,124,118,112,101,95,94,100,106,117,121,129,129,125,131,127,131,133,130,130,129,123,113,113,114,118,119,127,127,122,128,122,123,123,121,121,122,119,123,122,122,124,114,113,109,104,105,99,94,94,88,88,92,95,104,106,109,108,107,103,100,89,83,71,70,70,74,83,85,83,89,90,88,97,95,96,95,91,91,84,83,84,86,89,94,94,99,100,95,96,96,98,98,104,107,111,113,114,112,106,104,103,111,112,115,116,110,109,106,111,114,113,111,118,123,127,131,125,128,126,119,121,110,111,108,97,104,111,120,124,124,135,136,133,141,134,126,125,110,99,96,88,98,103,117,120,121,127,125,127,128,127,126,126,116,111,103,94,93,96,100,108,109,112,114,111,109,106,111,114,120,124,124,121,116,109,98,97,97,100,98,104,109,114,114,113,109,111,113,113,111,111,109,107,101,102,99,99,99,96,94,92,86,95,95,100,107,105,115,117,110,110,109,96,94,84,78,82,90,105,104,115,118,114,117,118,114,119,118,111,104,98,92,92,96,105,112,121,123,122,122,118,110,107,106,106,106,105,110,111,110,113,113,109,113,112,113,113,108,107,105,106,107,110,111,116,115,117,116,113,116,106,111,110,109,110,106,104,103,100,102,107,114,120,124,128,129,124,124,121,112,105,97,89,94,99,106,109,110,115,115,118,118,115,116,111,108,107,103,99,101,102,113,114,113,122,121,116,114,109,107,107,112,116,114,116,121,118,112,116,115,117,116,113,109,101,99,93,100,105,113,120,123,122,122,121,117,114,110,104,101,87,80,70,61,54,38]}},{"key":"sample:4","name":"Sample tone 4, D major","freqs":[146.83,185,220,293.66],"seconds":70,"scale":0.8,"info":{"kind":"song","title":"Sample tone 4"},"meta":{"v":2,"duration":70,"peak":0.243,"lufs":-22.2441,"head":0,"tail":70,"bins":[42,56,69,75,77,78,80,79,93,101,103,109,114,113,115,117,115,114,116,112,111,107,106,95,94,89,88,88,91,94,98,105,106,107,107,106,104,103,96,100,102,104,105,106,106,105,100,97,96,93,92,91,94,94,94,99,101,102,102,101,99,97,97,100,100,99,101,101,100,99,94,93,93,90,88,88,87,82,81,82,81,89,90,89,97,98,98,102,103,101,95,93,89,79,79,70,67,76,77,84,99,99,95,106,106,100,103,105,101,101,101,99,95,92,84,80,86,89,93,99,103,105,111,110,108,105,102,95,92,92,91,91,92,95,97,101,102,99,100,101,96,98,99,94,95,94,95,96,96,95,96,99,100,100,97,99,99,104,103,98,103,103,101,103,103,100,98,96,91,88,89,90,95,98,100,107,111,111,114,116,116,113,111,107,97,89,86,80,81,92,94,100,106,107,108,107,107,105,107,109,109,109,107,103,98,96,92,90,93,95,98,106,105,106,109,108,104,99,95,92,91,88,91,97,98,98,98,104,104,99,102,102,99,97,94,94,93,88,92,94,93,90,90,91,90,100,100,99,100,100,97,97,95,88,88,88,88,89,86,83,82,88,87,85,92,91,98,103,103,102,102,101,94,87,83,76,68,68,70,78,85,86,93,97,95,92,95,94,89,96,96,94,94,92,90,88,88,87,83,89,90,86,94,94,96,99,96,97,97,95,91,96,98,100,103,107,109,108,113,113,110,112,111,106,108,105,102,106,107,108,110,111,109,107,117,118,119,121,123,122,126,121,112,113,109,102,105,104,101,98,100,99,99,105,104,105,104,104,108,108,103,102,103,98,90,86,82,74,68,72,75,82,85,83,83,86,83,80,81,79,77,77,76,73,74,74,72,71,73,73,74,79,78,84,84,83,81,82,78,75,74,77,85,92,95,100,105,107,106,102,101,100,92,96,93,94,91,88,91,97,98,100,102,102,99,110,110,112,118,120,117,117,114,108,105,98,89,91,91,87,91,98,106,107,114,113,114,119,116,114,121,120,109,107,107,99,90,84,84,84,88,93,102,104,105,107,110,106,103,104,99,99,103,103,99,99,98,96,94,95,93,88,93,90,92,93,94,94,94,89,88,91,93,95,101,104,105,104,101,98,93,94,91,84,85,79,82,89,95,98,101,102,100,99,99,97,95,99,98,98,99,97,97,98,91,87,89,88,84,85,86,84,94,98,98,100,103,101,103,106,103,107,106,99,94,94,89,78,80,84,92,102,102,107,112,113,106,105,105,98,97,98,95,95,95,94,94,99,99,98,95,99,95,97,101,97,97,97,86,87,86,84,91,98,100,105,111,112,111,113,114,111,103,101,92,84,85,76,79,82,89,95,101,102,103,104,104,101,105,104,105,109,110,102,100,97,89,91,91,90,88,96,98,101,103,107,108,109,106,109,112,110,109,112,112,102,97,91,89,85,89,93,100,106,107,111,111,107,105,104,96,94,95,91,87,88,93,93,97,99,96,98,100,98,99,100,95,92,91,84,77,78,76,80,90,93,94,101,102,101,97,98,97,90,90,85,81,81,80,88,96,99,100,102,100,89,78,67,53,38]}},{"key":"sample:5","name":"Sample chime, standing in for a talk clip","freqs":[523.25,783.99],"seconds":18,"scale":0.7,"info":{"kind":"talk","speaker":"Speaker’s name","talk":"Title of the talk","source":"General conference, month and year","url":"churchofjesuschrist.org/study/general-conference"},"meta":{"v":2,"duration":18,"peak":0.1781,"lufs":-24.4761,"head":0,"tail":18,"bins":[30,34,46,63,75,81,81,82,91,94,93,89,82,90,101,107,108,104,87,81,96,103,103,98,91,95,96,94,86,78,87,98,105,105,98,79,78,93,98,98,98,92,89,92,92,86,76,80,97,101,100,91,82,68,80,89,92,91,84,85,86,84,78,70,83,92,93,92,90,79,62,73,82,84,84,79,78,76,72,66,65,77,82,87,87,83,71,61,74,81,81,79,76,73,73,71,65,63,69,78,82,82,77,62,62,74,79,80,80,74,73,77,77,74,66,67,82,87,86,80,72,62,76,83,85,83,70,75,82,82,81,74,74,88,91,91,90,77,70,84,89,89,84,73,82,87,87,84,77,77,89,95,96,93,78,75,90,94,94,88,80,85,89,89,85,77,74,88,94,94,89,74,74,88,91,92,91,81,82,87,87,84,75,75,91,95,95,88,78,64,77,87,89,88,78,80,82,81,77,71,80,90,92,92,90,79,63,77,86,87,86,79,79,77,74,67,70,81,85,91,91,87,73,65,79,87,88,87,85,79,78,75,69,64,63,61,61,55,41,25]}}];
 (function () {
@@ -6527,10 +6593,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function lsGet(k) { try { var v = localStorage.getItem(sk(k)); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
   var bootSavedAt = (function () { try { return JSON.parse(localStorage.getItem(sk('hp.savedAt'))) || 0; } catch (e) { return 0; } })();
   var onSaved = null; // set once the music folder is linked, to copy settings into it
+  // Kept in this browser only: never bumps hp.savedAt, never goes into the folder file, never read back from it.
+  var LOCAL_KEYS = [PanelLayout.KEY, LineLabels.KEY];
+  function isLocalKey(k) { return LOCAL_KEYS.indexOf(k) >= 0; }
   function lsSet(k, v) {
     try {
       localStorage.setItem(sk(k), JSON.stringify(v));
-      if (k !== 'hp.savedAt' && k !== PanelLayout.KEY && k.indexOf('hp.') === 0) { localStorage.setItem(sk('hp.savedAt'), JSON.stringify(Date.now())); if (onSaved) onSaved(); }
+      if (k !== 'hp.savedAt' && !isLocalKey(k) && k.indexOf('hp.') === 0) { localStorage.setItem(sk('hp.savedAt'), JSON.stringify(Date.now())); if (onSaved) onSaved(); }
       return true;
     } catch (e) { return false; }
   }
@@ -6578,13 +6647,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var redrawSoon = function () {};                                           // set up with the redraw below
   var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
   var bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));                 // last colors picked for the Color background
+  var lineLabelsOn = LineLabels.cleanOn(lsGet(LineLabels.KEY));            // Show line labels (karaoke page, this browser only)
   var mix = blankMix();
   var plan = E.layout(mix, {});
   var caps = [];
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
     format: 'mp3', cursor: 0, span: 1200, spanHold: false, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
-    pulsePlay: null, pulseLoop: true, pulseSound: true
+    pulsePlay: null, pulseLoop: true, pulseSound: true, lineNow: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -8137,7 +8207,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
       var cls = ((tx.afterPrev || tx.fromStart) && !during && !tx.whole ? ' lp' : '') + ((tx.untilNext || tx.toEnd) && !during && !tx.whole ? ' ln' : '') + (during ? ' ld' : '') + (tx.locked ? ' locked' : '') + (TextPick.has(ui.checked, tx.id) ? ' checked' : '') + (tx.hidden ? ' hid' : '');
       var fixedEnd = tx.whole || during || tx.untilNext || tx.toEnd || tx.locked;
-      return '<div class="clip textc' + cls + (shared[tx.id] ? ' shared' : '') + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '"' + (collapsed ? ' data-collapsed="1"' : '') + ' title="' + esc(plainText(tx) + (shared[tx.id] ? ' · Shown in ' + shared[tx.id] + ' columns' : '')) + '" style="top:' + top + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(first) + '</span>' + (startGripOff(tx) ? '' : '<i class="grip s" data-grip="start" title="Drag to change when it starts"></i>') + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
+      var lineLabel = tx.lyric && labelsOn() ? blockLabelRange(tx, colOf(tx)) : null;
+      return '<div class="clip textc' + cls + (shared[tx.id] ? ' shared' : '') + (sel.lane === 'texts' && sel.id === tx.id ? ' sel' : '') + '" data-lane="texts" data-id="' + tx.id + '"' + (collapsed ? ' data-collapsed="1"' : '') + ' title="' + esc((lineLabel ? lineLabel + ' · ' : '') + plainText(tx) + (shared[tx.id] ? ' · Shown in ' + shared[tx.id] + ' columns' : '')) + '" style="top:' + top + 'px;left:' + pct(sp.start) + ';width:' + pct(sp.dur) + (tx.whole ? ';cursor:pointer' : '') + '"><span class="lbl">' + (tx.locked ? '<svg class="lk" viewBox="0 0 10 10" aria-label="Locked"><rect x="1.5" y="4.5" width="7" height="5" rx="1" fill="currentColor"/><path d="M3 4.5V3a2 2 0 0 1 4 0v1.5" stroke="currentColor" fill="none" stroke-width="1.3"/></svg>' : '') + (tx.hidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + (lineLabel ? '<b class="lnlbl">' + esc(lineLabel) + '</b> ' : '') + esc(first) + '</span>' + (startGripOff(tx) ? '' : '<i class="grip s" data-grip="start" title="Drag to change when it starts"></i>') + (fixedEnd ? '' : '<i class="grip" data-grip="1" title="Drag to change how long it shows"></i>') + '</div>';
     }
     lay.rows.forEach(function (rw) {
       var top = textTop + rw.y;
@@ -8735,7 +8806,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var L = { px: px, numPx: Math.round(px * TextLayout.NUM_SCALE), refPx: 0, lh: lh, lines: [], ref: null, content: content };
     return { L: L, draws: [], content: content, frame: frame, px: px, fits: fit.fits,
       karaoke: { lines: lines, previewFrom: slideLines.length, states: states, previewShown: previewShown, show: show, rel: rel, labels: labels,
-        rowEnds: rowList.map(function (r) { return r.end; }) } };
+        rowEnds: rowList.map(function (r) { return r.end; }), rows: rowList } };
   }
   function layoutText(g, W, H, tx, t) {
     var s = H / 1080, f0 = tx.frame || TextLayout.legacyFrame(tx.x, tx.y, tx.wrap);
@@ -8815,6 +8886,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       drawAll('fill');
       g.restore();
       if (boxes) boxes.push({ kind: 'text', id: tx.id, x: bx, y: by, w: bw, h: bh });
+      if (boxes && lay.karaoke && labelsOn()) slideLineSpots(tx, lay.karaoke, lift, alpha);
     }
     if (boxes && selected && !tx.locked) {
       paintHandles(g, W, frame);
@@ -8836,6 +8908,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (line.preview || pass === 'stroke') return;
       paintLit(g, line.pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song, undefined, scales);
       if (scales) paintPulsed(g, line.pieces, scales, line.x, y, c, { rel: k.rel, show: k.show, rowEnd: k.rowEnds[line.row], lh: lh, songId: song });
+    });
+  }
+  // Where each record line of a timed slide starts, for its preview label. One spot per line, even when its parts sit on separate rows.
+  function slideLineSpots(tx, k, lift, alpha) {
+    var seen = {};
+    k.lines.forEach(function (line) {
+      if (line.preview || !k.rows[line.row]) return;
+      var li = k.rows[line.row].line;
+      if (seen[li]) return;
+      seen[li] = true;
+      lineSpots.push({ text: blockLineLabel(tx, li, colOf(tx)), x: line.x, y: line.y + lift, alpha: alpha });
     });
   }
   function anySolidLabel(labels) {
@@ -9129,6 +9212,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       drawAll('fill');
       g.restore();
       if (boxes && lay.cur) boxes.push({ kind: 'text', id: lay.cur.id, col: col, x: bx, y: by, w: bw, h: bh });
+      if (boxes && labelsOn()) lay.lines.forEach(function (ln) {
+        var a = lay.alpha * ln.alpha;
+        if (ln.rest || !ln.tx || !ln.rows.length || a <= 0) return;
+        lineSpots.push({ text: blockLineLabel(ln.tx, 0, col), x: ln.rows[0].x, y: ln.rows[0].y, alpha: a });
+      });
     }
     if (selected) {
       var frame = lay ? lay.frame : rollFrame(songId, W, H, col);
@@ -9573,14 +9661,38 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var W = 960, H = 540;
     if (cv.width !== W) { cv.width = W; cv.height = H; }
     if (t == null) t = screenTime();
-    ui.screenBoxes = []; ui.screenT = t;
+    ui.screenBoxes = []; ui.screenT = t; lineSpots = [];
     var screenCtx = cv.getContext('2d');
     var cap = paintScreen(screenCtx, W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes, function (l, at) { return previewSource(l, at, !fromBg); });
     paintCropTool(screenCtx, t, ui.screenBoxes, fromBg);
+    paintLineLabels(screenCtx);
     if (!fromBg) requestBg(t * (mix.opts.motionSpeed || 1));
     if (Date.now() - lastIdleCheck > 1000) { lastIdleCheck = Date.now(); closeIdleClipPlayers(t); }
     $('screenAt').textContent = 'At ' + fmt(t);
     $('screenWhat').textContent = cap || ui.screenBoxes.length ? '' : 'Nothing on screen at this point';
+    followPlayhead(t);
+  }
+  // Line labels in the preview only: a dark pill just left of each line's start, drawn after the frame so it never moves the lyrics.
+  var lineSpots = [];
+  function paintLineLabels(g) {
+    if (!lineSpots.length) return;
+    var shown = g.canvas.clientWidth, k = shown > 0 ? Math.max(1, g.canvas.width / shown) : 1;
+    g.save();
+    g.font = '700 ' + Math.round(12 * k) + 'px ' + (css('--ui') || 'sans-serif');
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    lineSpots.forEach(function (spot) {
+      if (!spot.text) return;
+      var w = g.measureText(spot.text).width + 12 * k, h = 18 * k, x = Math.max(2 * k, spot.x - 6 * k - w), y = spot.y - h / 2;
+      g.globalAlpha = Math.max(0.5, Math.min(1, spot.alpha));
+      g.fillStyle = 'rgba(0,0,0,0.72)';
+      g.beginPath();
+      if (g.roundRect) g.roundRect(x, y, w, h, 9 * k); else g.rect(x, y, w, h);
+      g.fill();
+      g.fillStyle = '#FFFFFF';
+      g.fillText(spot.text, x + 6 * k, spot.y);
+    });
+    g.restore();
+    lineSpots = [];
   }
   function renderScreenOpts() {
     var o = mix.opts;
@@ -11054,6 +11166,118 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     return out;
   }
+  /* ---------- line labels: Line 1, Line 2… per column, worked out from the record every time; screen only ---------- */
+  function labelsOn() { return WS === Workspace.KARAOKE && lineLabelsOn; }
+  var labelCache = {};
+  function labelColumnName(songId, c) {
+    var name = isTagged(songId) ? Lyrics.tagDisplay(tagNamesOf(songId)[c - 1]) : colSettings(songId, c).heading;
+    return name || 'Column ' + c;
+  }
+  function recordSignature(verses) {
+    return Lyrics.flatLines(verses).map(function (line) { return (line.cols ? line.cols.join(',') : '*') + ':' + line.words.map(function (w) { return w.id; }).join(','); }).join(';');
+  }
+  function tagPosition(tagNames, name) {
+    var key = String(name).toLowerCase();
+    for (var i = 0; i < tagNames.length; i++) if (String(tagNames[i]).toLowerCase() === key) return i + 1;
+    return 0;
+  }
+  // { entries, byWord, multi, names, fromCol1 }. In one tagged text it numbers the whole record; in separate boxes, the column's own record.
+  // fromCol1 maps a column 1 line to this column's matching = line, for a shared block seen in this column.
+  function lineNumbering(songId, col) {
+    var tagged = isTagged(songId), multi = hasColumns(songId), count = columnCount(songId), c = tagged || !multi ? 1 : Math.max(1, Math.min(count, col || 1));
+    var record = songRecord(songId, c), tagNames = tagged ? tagNamesOf(songId) : [], names = [];
+    for (var k = 1; k <= count; k++) names.push(labelColumnName(songId, k));
+    var shared = !tagged && multi && c >= 2;
+    var key = [tagged ? 'tags' : c, count, names.join('\u0001'), tagNames.join(','), recordSignature(record), shared ? recordSignature(songRecord(songId, 1)) : ''].join('|');
+    var slot = songId + '|' + (tagged ? 'tags' : c), hit = labelCache[slot];
+    if (hit && hit.key === key) return hit.value;
+    var lines = Lyrics.flatLines(record), byWord = {}, fromCol1 = {};
+    var list = lines.map(function (line, i) {
+      line.words.forEach(function (w) { if (!byWord.hasOwnProperty(w.id)) byWord[w.id] = i; });
+      if (!tagged) return { cols: [c] };
+      return { cols: line.cols ? line.cols.map(function (n) { return tagPosition(tagNames, n); }).filter(function (p) { return p > 0; }) : null };
+    });
+    if (shared) sharedLinksOf(songId, c).links.forEach(function (l) { fromCol1[l.col1] = l.col2; });
+    var value = { entries: LineLabels.numbers(list, count), byWord: byWord, multi: multi, names: names, fromCol1: fromCol1 };
+    labelCache[slot] = { key: key, value: value };
+    return value;
+  }
+  function firstKnownLine(line, byWord) {
+    for (var i = 0; line && i < line.words.length; i++) if (byWord.hasOwnProperty(line.words[i].id)) return byWord[line.words[i].id];
+    return null;
+  }
+  // Which record line one line of a block is, as { k, nb } for the record shown in column panelCol, or null.
+  function blockRecordLine(tx, lineIndex, panelCol) {
+    if (!tx || !tx.lyric || !songClip(tx.lyric.song)) return null;
+    var song = tx.lyric.song, tagged = isTagged(song), own = tagged ? 1 : colOf(tx), nb = lineNumbering(song, own);
+    var k = firstKnownLine(tx.lyric.lines[lineIndex], nb.byWord);
+    if (k === null) return null;
+    if (!tagged && nb.multi && panelCol >= 2 && own === 1) {
+      var there = lineNumbering(song, panelCol);
+      return there.fromCol1.hasOwnProperty(k) ? { k: there.fromCol1[k], nb: there } : null;
+    }
+    return { k: k, nb: nb };
+  }
+  function blockLineEntry(tx, lineIndex, panelCol) {
+    var hit = blockRecordLine(tx, lineIndex, panelCol);
+    return hit ? { entry: hit.nb.entries[hit.k] || null, nb: hit.nb } : null;
+  }
+  // The record lines being sung at mix time t, as flat indices in the box's record (every column in one tagged text), or null.
+  function currentBoxLines(songId, col, t) {
+    var tagged = isTagged(songId), multi = hasColumns(songId), found = [];
+    var cols = tagged ? Array.apply(null, Array(columnCount(songId))).map(function (x, i) { return i + 1; }) : [multi ? col : 1];
+    cols.forEach(function (c) {
+      var blocks = multi ? columnLines(songId, c).blocks : slidesForSong(songId), spans = [];
+      blocks.forEach(function (tx) {
+        var sp = txSpan(tx), byLine = {};
+        LyricView.rows(tx.lyric).forEach(function (r) {
+          var cur = byLine[r.line] || (byLine[r.line] = { start: null, end: null });
+          if (r.start !== null && (cur.start === null || r.start < cur.start)) cur.start = r.start;
+          if (r.end !== null && (cur.end === null || r.end > cur.end)) cur.end = r.end;
+        });
+        Object.keys(byLine).forEach(function (li) {
+          var hit = blockRecordLine(tx, parseInt(li, 10), tagged ? c : col);
+          if (!hit) return;
+          var own = byLine[li], timed = own.start !== null && own.end !== null;
+          spans.push({ key: hit.k, start: timed ? sp.start + own.start : sp.start, end: timed ? sp.start + own.end : sp.start + sp.dur });
+        });
+      });
+      var key = LineLabels.lineAt(spans, t);
+      if (key !== null && found.indexOf(key) < 0) found.push(key);
+    });
+    return found.length ? found.sort(function (a, b) { return a - b; }) : null;
+  }
+  function sameLines(a, b) { return (a || []).join(',') === (b || []).join(','); }
+  // Lights the box row being sung and keeps it in view (preview only). Typing not applied yet turns it off.
+  function followPlayhead(t) {
+    var box = $('songLyrics'), hl = $('songLyricsHl');
+    if (!box || !box.offsetParent) return;
+    var id = WS === Workspace.KARAOKE ? $('songSetSong').value : null, has = !!id && !!songClip(id), col = has ? songCol(id) : 1;
+    var next = labelsOn() && has && box.value === lyricsText(id, col) ? currentBoxLines(id, col, t) : null;
+    if (sameLines(next, ui.lineNow)) return;
+    ui.lineNow = next;
+    hl.querySelectorAll('.hlrow[data-line]').forEach(function (el) { el.classList.toggle('now', !!next && next.indexOf(parseInt(el.getAttribute('data-line'), 10)) >= 0); });
+    var first = next ? hl.querySelector('.hlrow.now') : null;
+    if (!first || (document.activeElement === box && !ui.rec)) return;
+    if (first.offsetTop < box.scrollTop || first.offsetTop + first.offsetHeight > box.scrollTop + box.clientHeight) {
+      box.scrollTop = Math.max(0, first.offsetTop - box.clientHeight / 3);
+      hl.scrollTop = box.scrollTop;
+    }
+  }
+  function blockLineLabel(tx, lineIndex, panelCol) {
+    var hit = blockLineEntry(tx, lineIndex, panelCol);
+    return hit ? LineLabels.text(hit.entry, { col: panelCol, multi: hit.nb.multi, names: hit.nb.names }) : null;
+  }
+  function blockLabelRange(tx, panelCol) {
+    if (!tx || !tx.lyric) return null;
+    if (tx.lyric.lines.length < 2) return blockLineLabel(tx, 0, panelCol);
+    var found = [];
+    tx.lyric.lines.forEach(function (line, li) { var hit = blockLineEntry(tx, li, panelCol); if (hit && hit.entry) found.push(hit); });
+    if (!found.length) return null;
+    var a = LineLabels.short(found[0].entry, panelCol), b = LineLabels.short(found[found.length - 1].entry, panelCol);
+    var text = a === b ? 'Line ' + a : 'Lines ' + a + '–' + b;
+    return found[0].nb.multi ? (found[0].nb.names[panelCol - 1] || 'Column ' + panelCol) + ' · ' + text : text;
+  }
   function mixTimes(lyric, start) {
     var out = {};
     WordTiming.list(lyric).forEach(function (e) { if (e.t !== null) out[e.sylId] = start + e.t; });
@@ -11638,9 +11862,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     lyr.parts.forEach(function (p) { known[p.name.toLowerCase()] = true; });
     rows.forEach(function (r) { r.segs.forEach(function (s) { if (s.part && !known[s.part.toLowerCase()] && newParts.indexOf(s.part) < 0) newParts.push(s.part); }); });
     var anyTags = tagged && rows.some(function (r) { return r.segs.some(function (s) { return s.kind === 'tag'; }); });
-    var at = 0, html = '';
-    rows.forEach(function (row) {
-      var cls = 'hlrow k-' + row.kind, style = '', p = at, inner = '';
+    var at = 0, html = '', gutter = has && labelsOn() ? boxGutter(songId, rows, tagged, col) : null;
+    rows.forEach(function (row, ri) {
+      var cls = 'hlrow k-' + row.kind, style = '', p = at, inner = '', num = gutter ? gutter[ri] : null;
       if (tagged && row.kind !== 'blank') {
         if (row.cols && row.cols.length) {
           style = '--c1:' + columnColor(row.cols[0]);
@@ -11658,9 +11882,24 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         else inner += body;
       });
       at = p + 1;
-      html += '<div class="' + cls + '"' + (style ? ' style="' + style + '"' : '') + '>' + (inner || ' ') + '</div>';
+      if (num) cls += num.now ? ' now' : '';
+      html += '<div class="' + cls + '"' + (num ? ' data-line="' + num.line + '"' : '') + (style ? ' style="' + style + '"' : '') + '>' + (num ? num.html : '') + (inner || ' ') + '</div>';
     });
     return html;
+  }
+  // One gutter number per lyric row of the box, counted from what is typed there, or null for rows that aren't lines.
+  function boxGutter(songId, rows, tagged, col) {
+    var lines = LineLabels.rowLines(rows), count = tagged ? columnCount(songId) : Math.max(1, col);
+    if (tagged) lines.forEach(function (l) { if (l && l.cols) l.cols.forEach(function (p) { count = Math.max(count, p); }); });
+    var entries = LineLabels.numbers(lines.filter(Boolean).map(function (l) { return { cols: tagged ? l.cols : [col] }; }), count);
+    var now = ui.lineNow || [];
+    return lines.map(function (l) {
+      if (!l) return null;
+      var entry = entries[l.line], body = tagged
+        ? entry.nums.map(function (x) { return '<b style="color:' + columnColor(x.col) + '">' + x.n + '</b>'; }).join(' ')
+        : esc(LineLabels.short(entry, col));
+      return { line: l.line, now: now.indexOf(l.line) >= 0, html: '<span class="lnum">' + body + '</span>' };
+    });
   }
   /* ---------- song settings (karaoke) ---------- */
   function songSetSay(text, isErr) { var m = $('songSetMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
@@ -11723,6 +11962,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLookHead').textContent = roll ? 'Look for the lines' : 'Look for new lyric slides';
     $('songLookNote').textContent = roll ? 'Every line uses this look, at exactly this size.' : 'New slides for this song start with this look. Slides already made keep theirs.';
     $('songLookAll').closest('.btnrow').hidden = roll;
+    $('lineLabelsOn').checked = lineLabelsOn;
+    $('songLyrics').closest('.lyricrec').classList.toggle('labels', labelsOn());
     renderSongLyrics(id, has);
     set('lyricHighlight', cs.highlight);
     $('lyricKeepLit').checked = cs.keepLit;
@@ -12129,13 +12370,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var wordColors = has ? partColorMap(songId, col) : {};
     if (has) (isTagged(songId) ? songBlocksAll(songId) : songSlides(songId, col)).forEach(function (tx) { shown[tx.lyric.verse] = true; });
     if (has && col >= 2) sharedFor(songId, col).forEach(function (s) { shown[s.verse] = true; });
+    var numbering = has && labelsOn() ? lineNumbering(songId, col) : null, tagged = has && isTagged(songId), flat = 0;
     setHTML($('lyricWords'), verses.map(function (v, vi) {
       var head = roll ? names[v.id] : 'Slide ' + (vi + 1) + (v.label ? ' · ' + v.label : '');
       return '<div class="lyricverse" data-verse="' + esc(v.id) + '"><div class="lyricversehead"><span class="vname">' + esc(head) + '</span>' +
         (shown[v.id] ? '' : '<span class="note">(not on the timeline)</span>') +
         (vi < verses.length - 1 ? '<button type="button" class="btn small quiet" data-act="vjoin" data-vi="' + vi + '" title="Put the next slide’s words into this one">Join with next</button>' : '') + '</div>' +
         v.lines.map(function (line, li) {
-          return '<div class="lyricline"><button type="button" class="btn small quiet lline" data-act="lline" data-line="' + vi + ':' + li + '" title="Pick every word in this line">Line ' + (li + 1) + '</button>' +
+          var label = numbering ? LineLabels.text(numbering.entries[flat], { col: tagged ? null : col, multi: numbering.multi, names: numbering.names }) : null;
+          flat++;
+          return '<div class="lyricline"><button type="button" class="btn small quiet lline' + (label ? ' on' : '') + '" data-act="lline" data-line="' + vi + ':' + li + '" title="Pick every word in this line">' + esc(label || 'Line ' + (li + 1)) + '</button>' +
             line.words.map(function (w) {
               var pc = w.part ? wordColors[w.part] || null : null, color = pc ? pc.base : null;
               return '<button type="button" class="lyricword" data-word="' + esc(w.id) + '" data-wpart="' + esc(w.part || '') + '" aria-pressed="false"' + (color ? ' style="--part:' + esc(color) + '"' : '') + ' title="' + esc(w.part || 'No part') + '">' +
@@ -12699,8 +12943,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var nextEntry = rec.pos < rec.queue.length ? rec.queue[rec.pos] : null;
     var done = {}, nextId = nextEntry && nextEntry.txId === tx.id ? nextEntry.sylId : null, heldId = rec.down ? rec.down.entry.sylId : null;
     rec.done.forEach(function (d) { if (d.txId === tx.id) done[d.sylId] = true; });
-    var line = tx.lyric.lines.map(function (ln) {
-      return ln.words.map(function (w) {
+    var labels = labelsOn() ? tx.lyric.lines.map(function (ln, li) { return blockLineLabel(tx, li, colOf(tx)); }) : null, nowLine = -1;
+    if (labels) tx.lyric.lines.forEach(function (ln, li) { if (ln.words.some(function (w) { return w.syls.some(function (s) { return s.id === current.sylId; }); })) nowLine = li; });
+    var line = tx.lyric.lines.map(function (ln, li) {
+      return (labels && labels[li] ? '<span class="pill lnlbl">' + esc(labels[li]) + '</span> ' : '') + ln.words.map(function (w) {
         return w.syls.map(function (s) {
           var cls = s.id === heldId ? ' held' : s.id === nextId ? ' next' : done[s.id] ? ' done' : typeof s.t === 'number' ? '' : ' todo';
           return '<span class="rsyl' + cls + '">' + esc(s.text) + '</span>';
@@ -12708,7 +12954,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }).join(' ');
     }).join(' <span aria-hidden="true">/</span> ');
     var hint = vocalOffHint(rec.songId);
-    setHTML(bar, '<b>Recording words — slide ' + (rec.slides.indexOf(tx.id) + 1) + ' of ' + rec.slides.length + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') +
+    setHTML(bar, '<b>Recording words — slide ' + (rec.slides.indexOf(tx.id) + 1) + ' of ' + rec.slides.length + (labels && nowLine >= 0 && labels[nowLine] ? ' · ' + esc(labels[nowLine]) : '') + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') +
       '<div class="recline">' + line + '</div>' +
       '<span class="note">Hold Space while each word is sung. Backspace takes back the last word and jumps back a moment. Esc stops and keeps what you’ve recorded.</span>' +
       (hint ? '<span class="note warn">' + esc(hint) + '</span>' : ''));
@@ -14954,6 +15200,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ['select', 'keyup', 'mouseup', 'input', 'focus'].forEach(function (name) { $('songLyrics').addEventListener(name, syncMarkButton); });
     $('songLyrics').addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); if (!$('songLyricsGo').disabled) pressSongLyrics(); } });
     $('songLyrics').addEventListener('scroll', function () { $('songLyricsHl').scrollTop = this.scrollTop; });
+    $('lineLabelsOn').checked = lineLabelsOn;
+    $('lineLabelsOn').addEventListener('change', function () {
+      lineLabelsOn = this.checked;
+      labelCache = {};
+      ui.lineNow = null;
+      if (!lsSet(LineLabels.KEY, lineLabelsOn)) songLyricsSay('Couldn’t remember the line labels setting in this browser.', true);
+      renderSongSettings(); renderTimeline(); renderSel(); renderRec(); drawScreen();
+    });
     $('lyricWords').addEventListener('click', pickLyricWords);
     $('lyricParts').addEventListener('click', onLyricPartsClick);
     $('lyricPartsClean').onclick = removeUnusedParts;
@@ -16036,7 +16290,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var data = {};
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (Workspace.ownsKey(WS, k) && k !== sk('hp.savedAt') && k !== sk('hp.folder') && k !== sk(PanelLayout.KEY)) data[k] = localStorage.getItem(k);
+      if (Workspace.ownsKey(WS, k) && k !== sk('hp.savedAt') && k !== sk('hp.folder') && !LOCAL_KEYS.some(function (lk) { return k === sk(lk); })) data[k] = localStorage.getItem(k);
     }
     return { app: WS.name, version: 1, savedAt: lsGet('hp.savedAt') || Date.now(), data: data };
   }
@@ -16064,7 +16318,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function importData(obj) {
     clearTimeout(saveTimer); saveTimer = null; saveState.pending = false;
     bootSavedAt = obj.savedAt;
-    Object.keys(obj.data).forEach(function (k) { if (k === sk(PanelLayout.KEY) || !Workspace.ownsKey(WS, k)) return; try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
+    Object.keys(obj.data).forEach(function (k) { if (LOCAL_KEYS.some(function (lk) { return k === sk(lk); }) || !Workspace.ownsKey(WS, k)) return; try { localStorage.setItem(k, obj.data[k]); } catch (e) { /* full */ } });
     try { localStorage.setItem(sk('hp.savedAt'), JSON.stringify(obj.savedAt)); } catch (e) { /* fine */ }
     LM = lsGet('hp.libmeta') || {};
     folders = lsGet('hp.folders') || [];
