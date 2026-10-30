@@ -181,3 +181,108 @@ describe('levelHeight setting', () => {
     assert.equal(out.levelHeight, 80);
   });
 });
+
+describe('SylShape.quick', () => {
+  test('rising, falling, arch and dip for counts 1 to 5', () => {
+    const want = {
+      rising: [[0], [0, 1], [0, 1, 2], [0, 1, 2, 3], [0, 1, 2, 3, 4]],
+      falling: [[0], [1, 0], [2, 1, 0], [3, 2, 1, 0], [4, 3, 2, 1, 0]],
+      arch: [[0], [0, 0], [0, 1, 0], [0, 1, 1, 0], [0, 1, 2, 1, 0]],
+      dip: [[0], [0, 0], [0, -1, 0], [0, -1, -1, 0], [0, -1, -2, -1, 0]]
+    };
+    for (const [kind, rows] of Object.entries(want)) {
+      rows.forEach((levels, i) => assert.deepEqual(S.quick(kind, i + 1), levels, kind + ' ' + (i + 1)));
+    }
+  });
+  test('an unknown kind gives null', () => {
+    assert.equal(S.quick('zigzag', 3), null);
+  });
+  test('a long run clamps to the top and bottom level', () => {
+    const rising = S.quick('rising', 2 * S.MAX + 3);
+    assert.equal(rising.length, 2 * S.MAX + 3);
+    assert.equal(Math.max(...rising), S.MAX);
+    assert.deepEqual(rising.slice(-3), [S.MAX, S.MAX, S.MAX]);
+    assert.equal(Math.min(...S.quick('dip', 2 * S.MAX + 3)), -S.MAX);
+  });
+  test('dip never gives -0', () => {
+    S.quick('dip', 5).forEach((lv) => assert.ok(!Object.is(lv, -0)));
+  });
+});
+
+describe('SylShape.fromDrag', () => {
+  test('dragging up 2.4 levels gives 2, dragging down 1.6 levels gives -2', () => {
+    assert.equal(S.fromDrag(0, -2.4 * 10, 10), 2);
+    assert.equal(S.fromDrag(0, 1.6 * 10, 10), -2);
+  });
+  test('starts from the syllable’s own level', () => {
+    assert.equal(S.fromDrag(3, -10, 10), 4);
+    assert.equal(S.fromDrag(undefined, -10, 10), 1);
+  });
+  test('clamps at the top and bottom level', () => {
+    assert.equal(S.fromDrag(0, -1000, 10), 6);
+    assert.equal(S.fromDrag(0, 1000, 10), -6);
+  });
+  test('a level height of 0 keeps the start level', () => {
+    assert.equal(S.fromDrag(2, -50, 0), 2);
+  });
+  test('a tiny drag back to the start gives exactly 0, never -0', () => {
+    assert.ok(Object.is(S.fromDrag(0, 1, 10), 0));
+  });
+});
+
+describe('SylShape.copyTargets', () => {
+  globalThis.WordTiming = loadModule('WordTiming');
+  let n = 0;
+  const word = (marked) => ({ id: 'w' + (++n), syls: marked.split('-').map((text) => ({ id: 's' + (++n), text })) });
+  const line = (key, text) => ({ key, words: text.split(' ').map(word) });
+  const places = (list) => list.map((t) => [t.key, t.from, t.to, t.match]);
+
+  test('a single word finds the same word and a different word with the same syllable count', () => {
+    const lines = [line('a', 'Glo-ri-a in'), line('b', 'Glo-ri-a to'), line('c', 'Al-le-lu')];
+    const out = S.copyTargets(lines, { key: 'a', from: 0, to: 0 });
+    assert.deepEqual(places(out), [['b', 0, 0, 'words'], ['c', 0, 0, 'count']]);
+    assert.ok(out.every((t) => t.sylCount === 3));
+  });
+  test('never offers the source itself or a run that overlaps it', () => {
+    const lines = [line('a', 'ho-ly ho-ly ho-ly')];
+    const out = S.copyTargets(lines, { key: 'a', from: 0, to: 1 });
+    assert.deepEqual(places(out), []);
+    const single = S.copyTargets(lines, { key: 'a', from: 1, to: 1 });
+    assert.deepEqual(places(single), [['a', 0, 0, 'words'], ['a', 2, 2, 'words']]);
+  });
+  test('skips the same word marked with a different number of syllables', () => {
+    const lines = [line('a', 'Glo-ri-a'), line('b', 'Glor-ia')];
+    assert.deepEqual(places(S.copyTargets(lines, { key: 'a', from: 0, to: 0 })), []);
+  });
+  test('a one-word run with a different syllable count is not offered as a count match', () => {
+    const lines = [line('a', 'Glo-ri-a'), line('b', 'Peace')];
+    assert.deepEqual(places(S.copyTargets(lines, { key: 'a', from: 0, to: 0 })), []);
+  });
+  test('a run with the same syllable count but more words is not offered', () => {
+    const lines = [line('a', 'Glo-ri-a'), line('b', 'Peace on earth')];
+    assert.deepEqual(places(S.copyTargets(lines, { key: 'a', from: 0, to: 0 })), []);
+  });
+  test('a two-word phrase only matches two-word runs, same words first', () => {
+    const lines = [line('a', 'Ho-ly Lord'), line('b', 'Peace be-low'), line('c', 'ho-ly Lord God'), line('d', 'Lord ho-ly'), line('e', 'Glo-ri-a')];
+    const out = S.copyTargets(lines, { key: 'a', from: 0, to: 1 });
+    assert.deepEqual(places(out), [['c', 0, 1, 'words'], ['b', 0, 1, 'count'], ['d', 0, 1, 'count']]);
+  });
+  test('two words with a different syllable count are refused by the syllable rule', () => {
+    const lines = [line('a', 'Ho-ly Lord'), line('b', 'Lord God')];
+    assert.deepEqual(places(S.copyTargets(lines, { key: 'a', from: 0, to: 1 })), []);
+  });
+  test('matching ignores case and punctuation', () => {
+    const lines = [line('a', 'Lord,'), line('b', 'lord')];
+    assert.deepEqual(places(S.copyTargets(lines, { key: 'a', from: 0, to: 0 })), [['b', 0, 0, 'words']]);
+  });
+  test('object keys from the app match by value', () => {
+    const lines = [line({ col: 1, lineIndex: 0 }, 'Ho-ly'), line({ col: 2, lineIndex: 0 }, 'Ho-ly')];
+    const out = S.copyTargets(lines, { key: { col: 1, lineIndex: 0 }, from: 0, to: 0 });
+    assert.deepEqual(out.map((t) => t.key), [{ col: 2, lineIndex: 0 }]);
+  });
+  test('a source outside its line gives no places', () => {
+    const lines = [line('a', 'Ho-ly'), line('b', 'Ho-ly')];
+    assert.deepEqual(S.copyTargets(lines, { key: 'a', from: 0, to: 3 }), []);
+    assert.deepEqual(S.copyTargets(lines, { key: 'zz', from: 0, to: 0 }), []);
+  });
+});

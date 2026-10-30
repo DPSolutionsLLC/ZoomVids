@@ -503,7 +503,8 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .movelist td { padding: 2px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
 .movelist input[type="number"] { width: 5em; }
 .movelist tr.sel td { background: var(--accent-soft); }
-#songRecordMoves[aria-pressed="true"], #selbar [data-selact="recmoves"][aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+#shapeCopyBody .shapecopyrow { display: block; margin: 4px 0; }
+#shapeMode[aria-pressed="true"], #songRecordMoves[aria-pressed="true"], #selbar [data-selact="recmoves"][aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
 .wordlist { width: 100%; border-collapse: collapse; font-size: 13px; }
 .wordlist th { position: sticky; top: 0; padding: 4px 8px; text-align: left; font-weight: 600; background: var(--sunk); }
 .wordlist td { padding: 2px 8px; border-top: 1px solid var(--line); }
@@ -872,7 +873,9 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                 <div class="btnrow" id="fitRow" hidden><button class="btn small" id="fitSlide">Fit the slide to its words</button><span class="note" id="fitNote"></span></div>
                 <div class="btnrow" id="copySameRow" hidden><span class="note" id="copySameNote"></span><button class="btn small" id="copyTimingSame">Copy this timing to them</button></div>
                 <div class="btnrow" id="copyToRow" hidden><label>Copy timing to <select id="copyTimingTo"></select></label><button class="btn small" id="copyTimingBtn">Copy</button></div>
-                <div class="btnrow" id="shapeRow"><span class="note">Melody shape</span><button type="button" class="btn small" id="shapeUp" title="Move the selected syllable up one level (↑)">Up</button><button type="button" class="btn small" id="shapeDown" title="Move the selected syllable down one level (↓)">Down</button><button type="button" class="btn small quiet" id="shapeFlat">Flat</button><span class="note" id="shapeNote"></span></div>
+                <div class="btnrow" id="shapeRow"><span class="note">Melody shape</span><button type="button" class="btn small" id="shapeUp" title="Move the selected syllable up one level (↑)">Up</button><button type="button" class="btn small" id="shapeDown" title="Move the selected syllable down one level (↓)">Down</button><button type="button" class="btn small quiet" id="shapeFlat">Flat</button><button type="button" class="btn small" id="shapeMode" aria-pressed="false" title="Drag syllables up and down in the preview. Shift+click another word on the same line to pick a phrase.">Shape in preview</button><span class="note" id="shapeNote"></span></div>
+                <div class="btnrow" id="shapeQuickRow"><span class="note">Quick shape</span><button type="button" class="btn small" data-quickshape="rising">Rising</button><button type="button" class="btn small" data-quickshape="falling">Falling</button><button type="button" class="btn small" data-quickshape="arch">Arch</button><button type="button" class="btn small" data-quickshape="dip">Dip</button><button type="button" class="btn small" id="shapeCopyOpen" aria-expanded="false" aria-controls="shapeCopyPanel">Copy shape to…</button></div>
+                <div class="texted" id="shapeCopyPanel" hidden><div role="group" id="shapeCopyBody" aria-label="Places to copy the shape to"></div><div class="btnrow"><button type="button" class="btn small primary" id="shapeCopyGo">Copy to ticked</button><button type="button" class="btn small quiet" id="shapeCopyCancel">Cancel</button></div></div>
                 <div class="wordlistwrap"><table class="wordlist" id="wordList"><thead><tr><th scope="col">Syllable</th><th scope="col">Starts at</th><th scope="col">Length</th><th scope="col">Shape</th></tr></thead><tbody></tbody></table></div>
               </div>
             </div>
@@ -6640,7 +6643,50 @@ var SylShape = (function () {
     if (!isLevel(lv)) return 0;
     return -lv * px * levelHeight / 100 || 0;
   }
-  return { MAX: MAX, step: step, dy: dy };
+  function clampLevel(v) { return Math.max(-MAX, Math.min(MAX, v)) || 0; }
+  function quick(kind, count) {
+    var n = Math.max(1, Math.round(count) || 1), out = [];
+    for (var i = 0; i < n; i++) {
+      var arch = Math.min(i, n - 1 - i), lv;
+      if (kind === 'rising') lv = i;
+      else if (kind === 'falling') lv = n - 1 - i;
+      else if (kind === 'arch') lv = arch;
+      else if (kind === 'dip') lv = -arch;
+      else return null;
+      out.push(clampLevel(lv));
+    }
+    return out;
+  }
+  function fromDrag(startLv, dyPx, levelPx) {
+    var start = isLevel(startLv) ? startLv : 0;
+    if (!(levelPx > 0)) return start;
+    return clampLevel(start + Math.round(-dyPx / levelPx));
+  }
+  function wordKey(w) { return WordTiming.norm(w.syls.map(function (s) { return s.text; }).join('')); }
+  function sylTotal(words) { return words.reduce(function (n, w) { return n + w.syls.length; }, 0); }
+  function sameKey(a, b) { return a === b || JSON.stringify(a) === JSON.stringify(b); }
+  // Other runs in the song that can take a word or phrase's shape, syllable by syllable: same words first, then same syllable count, each in song order.
+  // lines: [{ key, words }] (record words). source: { key, from, to } (word indexes, inclusive). A run must have as many words and as many syllables as the source.
+  function copyTargets(lines, source) {
+    var home = null;
+    lines.forEach(function (ln) { if (!home && sameKey(ln.key, source.key)) home = ln; });
+    if (!home || source.from < 0 || source.to < source.from || source.to >= home.words.length) return [];
+    var size = source.to - source.from + 1, srcWords = home.words.slice(source.from, source.to + 1), srcKeys = srcWords.map(wordKey), srcCount = sylTotal(srcWords);
+    var same = [], count = [];
+    lines.forEach(function (ln) {
+      var isHome = sameKey(ln.key, source.key);
+      for (var from = 0; from + size <= ln.words.length; from++) {
+        var to = from + size - 1;
+        if (isHome && from <= source.to && to >= source.from) continue;
+        var run = ln.words.slice(from, to + 1);
+        if (sylTotal(run) !== srcCount) continue;
+        var words = run.every(function (w, i) { return wordKey(w) === srcKeys[i]; });
+        (words ? same : count).push({ key: ln.key, from: from, to: to, match: words ? 'words' : 'count', sylCount: srcCount });
+      }
+    });
+    return same.concat(count);
+  }
+  return { MAX: MAX, step: step, dy: dy, quick: quick, fromDrag: fromDrag, copyTargets: copyTargets };
 })();
 
 /* Rolling lines: which line is current, which lines show, where (in rows) and how bright, at any moment. Pure functions; no text measuring. */
@@ -6969,7 +7015,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
     format: 'mp3', cursor: 0, span: 1200, spanHold: false, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
-    pulsePlay: null, pulseLoop: true, pulseSound: true, lineNow: null, recordMoves: false, moveSel: null, moveDrag: null
+    pulsePlay: null, pulseLoop: true, pulseSound: true, lineNow: null, recordMoves: false, moveSel: null, moveDrag: null, shapeMode: false, shapeSel: null, shapeDrag: null, shapeCopy: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -7846,8 +7892,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('undoBtn').disabled = !UndoStack.canUndo(undoStack) && !undoWaiting && !undoPending;
     $('redoBtn').disabled = !UndoStack.canRedo(undoStack);
   }
-  function undo() { if (ui.rec) return; flushHistory(); var r = UndoStack.undo(undoStack); if (r) applyHistory(r, 'Undone'); }
-  function redo() { if (ui.rec) return; flushHistory(); var r = UndoStack.redo(undoStack); if (r) applyHistory(r, 'Redone'); }
+  function undo() { if (ui.rec || ui.shapeDrag) return; flushHistory(); var r = UndoStack.undo(undoStack); if (r) applyHistory(r, 'Undone'); }
+  function redo() { if (ui.rec || ui.shapeDrag) return; flushHistory(); var r = UndoStack.redo(undoStack); if (r) applyHistory(r, 'Redone'); }
   function applyHistory(r, verb) {
     var before = JSON.parse(r.before), after = JSON.parse(r.after);
     var audioChanged = JSON.stringify([before.items, before.spoken, before.opts, before.target]) !== JSON.stringify([after.items, after.spoken, after.opts, after.target]);
@@ -9249,7 +9295,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         g.fillStyle = tx.color || '#FFFFFF';
         g.textBaseline = 'middle';
         g.textAlign = 'left';
-        if (lay.karaoke) paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, which, lk);
+        if (lay.karaoke) paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, which, lk, boxes);
         draws.forEach(function (d) {
           if (d.a <= 0) return;
           g.globalAlpha = alpha * d.a;
@@ -9271,19 +9317,39 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   // Each piece is inked like any text; the sung part is filled again on top in the singing color, with no glow or shadow.
   // In the 'stroke' pass only the outlines are drawn, so there is no highlight.
-  function paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, pass, lk) {
+  function paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, pass, lk, boxes) {
     var k = lay.karaoke, px = lay.px, lh = lay.L.lh, song = tx.lyric.song;
     var c = { W: W, px: px, font: textFont(tx, px), fontAt: function (size) { return textFont(tx, size); }, labels: k.labels, colors: partColorMap(song), plain: tx.color || '#FFFFFF', inkAt: inkAt, lk: lk, pass: pass, inks: {} };
     k.lines.forEach(function (line) {
       var lineAlpha = line.preview ? (k.previewShown ? LyricView.DIM : 0) : k.states[line.row] === 'upcoming' ? LyricView.DIM : 1;
       if (lineAlpha <= 0) return;
-      var y = line.y + lift, scales = line.preview ? null : pulseScales(line.pieces, k.rel);
+      var y = line.y + lift, pieces = line.preview ? line.pieces : livePieces(line.pieces, boxes, song), scales = line.preview ? null : pulseScales(pieces, k.rel);
       g.globalAlpha = alpha * lineAlpha;
       g.font = c.font;
-      line.pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, line.x + p.dx, y + SylShape.dy(p.lv, px, k.show.levelHeight), c); });
+      pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, line.x + p.dx, y + SylShape.dy(p.lv, px, k.show.levelHeight), c); });
       if (line.preview || pass === 'stroke') return;
-      paintLit(g, line.pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song, undefined, scales);
-      if (scales) paintPulsed(g, line.pieces, scales, line.x, y, c, { rel: k.rel, show: k.show, rowEnd: k.rowEnds[line.row], lh: lh, songId: song });
+      if (boxes && shapeModeOn() && k.rows[line.row]) {
+        pushSylBoxes(boxes, pieces, { songId: song, txId: tx.id, col: colOf(tx), lineIndex: k.rows[line.row].line, x: line.x, y: y, px: px, lh: lh, levelHeight: k.show.levelHeight });
+      }
+      paintLit(g, pieces, line.x, y, px, lh, k.rel, k.show, k.rowEnds[line.row], song, undefined, scales);
+      if (scales) paintPulsed(g, pieces, scales, line.x, y, c, { rel: k.rel, show: k.show, rowEnd: k.rowEnds[line.row], lh: lh, songId: song });
+    });
+  }
+  function shapeModeOn() { return !!ui.shapeMode && !ui.rec; }
+  // The pieces with a Shape mode drag's live levels. Only the preview passes boxes, so export never sees a half-finished drag.
+  function livePieces(pieces, boxes, songId) {
+    var live = boxes && ui.shapeDrag && ui.shapeDrag.songId === songId ? ui.shapeDrag.levels : null;
+    if (!live) return pieces;
+    return pieces.map(function (p) { return p.sylId && live.hasOwnProperty(p.sylId) ? Object.assign({}, p, { lv: live[p.sylId] }) : p; });
+  }
+  // One hit box per syllable, the full line height at its shaped spot. at: { songId, txId, col, lineIndex, x, y, px, lh, levelHeight, map }.
+  function pushSylBoxes(boxes, pieces, at) {
+    var m = at.map || { x: function (v) { return v; }, y: function (v) { return v; }, len: function (v) { return v; } };
+    pieces.forEach(function (p) {
+      if (p.kind !== 'syl' || !p.sylId) return;
+      var cy = at.y + SylShape.dy(p.lv, at.px, at.levelHeight);
+      boxes.push({ kind: 'syl', songId: at.songId, txId: at.txId, col: at.col, sylId: p.sylId, wordId: p.wordId, lineIndex: at.lineIndex,
+        x: m.x(at.x + p.dx), y: m.y(cy - at.px * at.lh / 2), w: m.len(p.w), h: m.len(at.px * at.lh), levelPx: m.len(at.px * at.levelHeight / 100) });
     });
   }
   // Where each record line of a timed slide starts, for its preview label. One spot per line, even when its parts sit on separate rows.
@@ -9471,7 +9537,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var key = [songId, px, frame.w, font, cs.showParts, tx.text, JSON.stringify(tx.lyric), labelKey].join('|'), cacheId = c + ':' + tx.id, hit = rollWraps[cacheId];
       if (!hit || hit.key !== key) {
         var rowList = LyricView.rows(tx.lyric);
-        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, cs.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }) };
+        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, cs.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }), rowLines: rowList.map(function (r) { return r.line; }) };
       }
       var sp = txSpan(tx), words = WordTiming.span(tx.lyric);
       return { tx: tx, wrap: hit, start: sp.start, end: sp.start + sp.dur, sung: words ? sp.start + words.last : null, h: Math.max(1, hit.rows.length), verse: verseOf(tx), verseStart: i === 0 || verseOf(blocks[i - 1]) !== verseOf(tx) };
@@ -9495,7 +9561,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var row = {
         tx: ln.tx || null, start: ln.start, alpha: sh.alpha, state: sh.state, label: sh.label, labelText: names[ln.verse] || '', labelY: top - RollView.LABEL_ROWS * rowH / 2,
         top: top, bottom: top + ln.h * rowH, rowEnds: ln.rest ? [] : ln.wrap.rowEnds,
-        rows: ln.rest ? [] : ln.wrap.rows.map(function (r, k) { return { x: startX(r.w), y: top + (k + 0.5) * rowH, w: r.w, row: r.row, pieces: r.pieces }; })
+        rows: ln.rest ? [] : ln.wrap.rows.map(function (r, k) { return { x: startX(r.w), y: top + (k + 0.5) * rowH, w: r.w, row: r.row, line: ln.wrap.rowLines[r.row], pieces: r.pieces }; })
       };
       if (ln.rest) { row.rest = true; row.end = ln.end; row.restY = top + 0.5 * rowH; }
       return row;
@@ -9584,16 +9650,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           }
           g.globalAlpha = a; g.font = c.font; g.textAlign = 'left';
           c.pass = pass;
-          var rowScales = ln.rows.map(function (r) { return ln.state === 'current' ? pulseScales(r.pieces, t - ln.start) : null; });
+          var rowPieces = ln.rows.map(function (r) { return livePieces(r.pieces, boxes, songId); });
+          var rowScales = rowPieces.map(function (pieces) { return ln.state === 'current' ? pulseScales(pieces, t - ln.start) : null; });
           ln.rows.forEach(function (r, ri) {
             var scales = rowScales[ri];
-            r.pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, r.x + p.dx, r.y + SylShape.dy(p.lv, px, show.levelHeight), c); });
+            rowPieces[ri].forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, r.x + p.dx, r.y + SylShape.dy(p.lv, px, show.levelHeight), c); });
           });
           if (pass === 'stroke' || ln.state !== 'current') return;
           ln.rows.forEach(function (r, ri) {
             var scales = rowScales[ri];
-            paintLit(g, r.pieces, r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId, col, scales);
-            if (scales) paintPulsed(g, r.pieces, scales, r.x, r.y, c, { rel: t - ln.start, show: show, rowEnd: ln.rowEnds[r.row], lh: lh, songId: songId, col: col });
+            paintLit(g, rowPieces[ri], r.x, r.y, px, lh, t - ln.start, show, ln.rowEnds[r.row], songId, col, scales);
+            if (scales) paintPulsed(g, rowPieces[ri], scales, r.x, r.y, c, { rel: t - ln.start, show: show, rowEnd: ln.rowEnds[r.row], lh: lh, songId: songId, col: col });
           });
         });
         if (lay.heading) g.restore();
@@ -9603,6 +9670,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       g.restore();
       if (tr) g.restore();
       if (boxes && lay.cur) boxes.push({ kind: 'text', id: lay.cur.id, col: col, x: mapX(bx), y: mapY(by), w: mapLen(bw), h: mapLen(bh) });
+      if (boxes && shapeModeOn()) lay.lines.forEach(function (ln) {
+        if (ln.rest || !ln.tx || lay.alpha * ln.alpha <= 0) return;
+        ln.rows.forEach(function (r) {
+          pushSylBoxes(boxes, livePieces(r.pieces, boxes, songId), { songId: songId, txId: ln.tx.id, col: col, lineIndex: r.line, x: r.x, y: r.y, px: px, lh: lh, levelHeight: show.levelHeight, map: { x: mapX, y: mapY, len: mapLen } });
+        });
+      });
       if (boxes && labelsOn()) lay.lines.forEach(function (ln) {
         var a = lay.alpha * ln.alpha;
         if (ln.rest || !ln.tx || !ln.rows.length || a <= 0) return;
@@ -10162,12 +10235,24 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var screenCtx = cv.getContext('2d');
     var cap = paintScreen(screenCtx, W, H, t, mix.opts, ui.bgPrev ? ui.bgPrev.cur : null, ui.screenBoxes, function (l, at) { return previewSource(l, at, !fromBg); });
     paintCropTool(screenCtx, t, ui.screenBoxes, fromBg);
+    paintShapeSel(screenCtx, ui.screenBoxes);
     paintLineLabels(screenCtx);
     if (!fromBg) requestBg(t * (mix.opts.motionSpeed || 1));
     if (Date.now() - lastIdleCheck > 1000) { lastIdleCheck = Date.now(); closeIdleClipPlayers(t); }
     $('screenAt').textContent = 'At ' + fmt(t);
     $('screenWhat').textContent = cap || ui.screenBoxes.length ? '' : 'Nothing on screen at this point';
     followPlayhead(t);
+  }
+  // A thin outline around the selected word or phrase in Shape mode. Preview only: it reads the preview's own hit boxes.
+  function paintShapeSel(g, boxes) {
+    var sel = shapeModeOn() ? currentShapeSel() : null;
+    if (!sel) return;
+    var on = {};
+    sel.sylIds.forEach(function (id) { on[id] = true; });
+    g.save();
+    g.strokeStyle = css('--accent') || '#4C9AFF'; g.lineWidth = 1.5; g.setLineDash([]);
+    boxes.forEach(function (b) { if (b.kind === 'syl' && b.txId === sel.txId && on[b.sylId]) g.strokeRect(b.x, b.y, b.w, b.h); });
+    g.restore();
   }
   // Line labels in the preview only: a dark pill just left of each line's start, drawn after the frame so it never moves the lyrics.
   var lineSpots = [];
@@ -12613,6 +12698,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function toggleRecordMoves() {
     ui.recordMoves = !ui.recordMoves;
+    if (ui.recordMoves) ui.shapeMode = false;
     renderSel(); renderSongSettings(); drawScreen();
   }
   // Saves a Record moves drag: changes the move the playhead is inside, or adds one. One Undo step. Returns false when nothing was saved.
@@ -13523,7 +13609,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     var picked = ui.wordSel && ui.wordSel.txId === tx.id ? wordEntry(tx, ui.wordSel.sylId) : null;
     $('shapeUp').disabled = $('shapeDown').disabled = $('shapeFlat').disabled = !picked || recOn;
-    $('shapeNote').textContent = picked ? '“' + picked.text + '” is ' + levelWords(sylLevel(tx.lyric, picked.sylId)) + '.' : 'Select a syllable in the list below.';
+    var shapeSel = currentShapeSel(), canShape = !!shapeSel && !recOn;
+    $('shapeNote').textContent = shapeSel && shapeSel.words.length > 1 ? 'Phrase “' + shapeWordsText(shapeSel.words) + '” is picked.'
+      : picked ? '“' + picked.text + '” is ' + levelWords(sylLevel(tx.lyric, picked.sylId)) + '.'
+      : ui.shapeMode ? 'Press a syllable in the preview, or select one in the list below.' : 'Select a syllable in the list below.';
+    $('shapeMode').setAttribute('aria-pressed', ui.shapeMode && !recOn ? 'true' : 'false');
+    $('shapeMode').disabled = recOn;
+    document.querySelectorAll('[data-quickshape]').forEach(function (b) { b.disabled = !canShape; });
+    $('shapeCopyOpen').disabled = !canShape || !shapeSel.sylIds.some(function (id) { return sylLevel(tx.lyric, id) !== 0; });
+    renderShapeCopy(shapeSel);
     renderWordList(tx);
   }
   function renderWordList(tx) {
@@ -13592,6 +13686,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!b || !tx || !tx.lyric || ui.rec) return;
     var e = wordEntry(tx, b.getAttribute('data-wpick')); if (!e) return;
     ui.wordSel = { txId: tx.id, sylId: e.sylId };
+    ui.shapeSel = null;
     if (e.t !== null) {
       var at = txSpan(tx).start + e.t;
       if (Player.tag && isMixTag(Player.tag)) playMix(at);
@@ -13666,6 +13761,147 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     setSylLevel(SylShape.step(sylLevel(tx.lyric, ws.sylId), delta), delta);
   }
   function flatSylLevel() { setSylLevel(0, 0); }
+  /* ---------- Shape in preview, quick shapes and Copy shape to… ---------- */
+  // The words from aId to bId (either order) on one line of a block, as a shape selection, or null when either word is gone.
+  function shapeSelOf(tx, lineIndex, aId, bId) {
+    var line = tx.lyric.lines[lineIndex];
+    if (!line) return null;
+    var ids = line.words.map(function (w) { return w.id; }), a = ids.indexOf(aId), b = ids.indexOf(bId);
+    if (a < 0 || b < 0) return null;
+    var words = line.words.slice(Math.min(a, b), Math.max(a, b) + 1), sylIds = [];
+    words.forEach(function (w) { w.syls.forEach(function (s) { sylIds.push(s.id); }); });
+    return { songId: tx.lyric.song, txId: tx.id, lineIndex: lineIndex, anchorWordId: aId, endWordId: bId, words: words, wordIds: words.map(function (w) { return w.id; }), sylIds: sylIds };
+  }
+  // The selected word or phrase: ui.shapeSel while it still holds the selected syllable, otherwise the word holding ui.wordSel.
+  function currentShapeSel() {
+    var tx = selText(), ws = ui.wordSel;
+    if (!tx || !tx.lyric) return null;
+    var s = ui.shapeSel, hit = s && s.txId === tx.id ? shapeSelOf(tx, s.lineIndex, s.anchorWordId, s.endWordId) : null;
+    if (hit && (!ws || ws.txId !== tx.id || hit.sylIds.indexOf(ws.sylId) >= 0)) return hit;
+    if (!ws || ws.txId !== tx.id) return null;
+    for (var li = 0; li < tx.lyric.lines.length; li++) {
+      var word = tx.lyric.lines[li].words.filter(function (w) { return w.syls.some(function (x) { return x.id === ws.sylId; }); })[0];
+      if (word) return shapeSelOf(tx, li, word.id, word.id);
+    }
+    return null;
+  }
+  function shapeWordsText(words) { return words.map(function (w) { return w.syls.map(function (s) { return s.text; }).join('-'); }).join(' '); }
+  function shapeLocked(tx) {
+    if (!tx.locked) return false;
+    lyricSay('This ' + unitWord(tx.lyric.song) + ' is locked. Unlock it to change its shape.', true);
+    return true;
+  }
+  function toggleShapeMode() {
+    ui.shapeMode = !ui.shapeMode;
+    if (ui.shapeMode) ui.recordMoves = false;
+    renderSel(); renderSongSettings(); drawScreen();
+  }
+  var QUICK_NAMES = { rising: 'Rising', falling: 'Falling', arch: 'Arch', dip: 'Dip' };
+  function applyQuickShape(kind) {
+    var sel = currentShapeSel(), tx = selText();
+    if (!sel || !tx || ui.rec || shapeLocked(tx)) return;
+    var levels = SylShape.quick(kind, sel.sylIds.length);
+    if (!levels) return;
+    var levelById = {};
+    sel.sylIds.forEach(function (id, i) { levelById[id] = levels[i]; });
+    var text = shapeWordsText(sel.words);
+    if (!writeSylLevels(sel.songId, levelById)) { lyricSay('“' + text + '” already has that shape.', false); return; }
+    lyricSay('“' + QUICK_NAMES[kind] + '” shape on “' + text + '”.', false);
+    changed();
+  }
+  // Every record line of the song once, for Copy shape to…: each column's own lines, so a column 2 = line (drawn from Column 1's) is left out.
+  function shapeLines(songId) {
+    var out = [];
+    for (var col = 1; col <= columnCount(songId); col++) {
+      recordLines(songId, col).forEach(function (rl) { out.push({ key: col + ':' + rl.flat, col: col, words: rl.words }); });
+    }
+    return out;
+  }
+  // Where a run of record words shows: its block's line label and the time of its first timed syllable.
+  function runPlace(songId, col, words) {
+    var ids = {}, found = null;
+    words.forEach(function (w) { ids[w.id] = true; });
+    songBlocksAll(songId).forEach(function (tx) {
+      if (found) return;
+      tx.lyric.lines.forEach(function (line, li) { if (!found && line.words.some(function (w) { return ids[w.id]; })) found = { tx: tx, lineIndex: li }; });
+    });
+    if (!found) return { label: null, time: null };
+    var first = null;
+    found.tx.lyric.lines.forEach(function (line) {
+      line.words.forEach(function (w) {
+        if (!ids[w.id]) return;
+        w.syls.forEach(function (s) { if (first === null && typeof s.t === 'number' && isFinite(s.t)) first = s.t; });
+      });
+    });
+    return { label: blockLineLabel(found.tx, found.lineIndex, col), time: first === null ? null : txSpan(found.tx).start + first };
+  }
+  function openShapeCopy() {
+    var sel = currentShapeSel(), tx = selText();
+    if (!sel || !tx || ui.rec) return;
+    if (ui.shapeCopy) { ui.shapeCopy = null; renderWordTiming(tx); return; }
+    var lines = shapeLines(sel.songId), first = sel.wordIds[0], last = sel.wordIds[sel.wordIds.length - 1], home = null;
+    lines.forEach(function (ln) { if (!home && ln.words.some(function (w) { return w.id === first; })) home = ln; });
+    if (!home) { lyricSay('This line isn’t in the song’s lyrics any more. Update the lyrics, then try again.', true); return; }
+    var ids = home.words.map(function (w) { return w.id; }), from = ids.indexOf(first), to = ids.indexOf(last);
+    if (to < from) { lyricSay('This phrase isn’t in the song’s lyrics in the same order. Update the lyrics, then try again.', true); return; }
+    var levels = [];
+    home.words.slice(from, to + 1).forEach(function (w) { w.syls.forEach(function (s) { levels.push(Lyrics.cleanLevel(s.lv) || 0); }); });
+    var byKey = {};
+    lines.forEach(function (ln) { byKey[ln.key] = ln; });
+    var targets = SylShape.copyTargets(lines, { key: home.key, from: from, to: to }).map(function (t) {
+      var ln = byKey[t.key], run = ln.words.slice(t.from, t.to + 1), sylIds = [];
+      run.forEach(function (w) { w.syls.forEach(function (s) { sylIds.push(s.id); }); });
+      var place = runPlace(sel.songId, ln.col, run);
+      return { match: t.match, text: shapeWordsText(run), sylIds: sylIds, label: place.label, time: place.time };
+    });
+    ui.shapeCopy = { txId: tx.id, sig: sel.sylIds.join(','), songId: sel.songId, levels: levels, targets: targets, ticked: {} };
+    renderWordTiming(tx);
+  }
+  function renderShapeCopy(sel) {
+    var st = ui.shapeCopy, panel = $('shapeCopyPanel'), body = $('shapeCopyBody');
+    if (st && (!sel || sel.txId !== st.txId || sel.sylIds.join(',') !== st.sig || ui.rec)) st = ui.shapeCopy = null;
+    $('shapeCopyOpen').setAttribute('aria-expanded', String(!!st));
+    panel.hidden = !st;
+    if (!st) { setHTML(body, ''); return; }
+    if (!st.targets.length) {
+      setHTML(body, '<p class="note">No other place in this song has the same words or the same number of syllables.</p>');
+      $('shapeCopyGo').disabled = true;
+      return;
+    }
+    var anySame = st.targets.some(function (t) { return t.match === 'words'; });
+    var html = '<p><b>' + esc('Copy the shape of “' + shapeWordsText(sel.words) + '” to:') + '</b></p>' +
+      '<div class="btnrow">' + (anySame ? '<button type="button" class="btn small quiet" data-shapetick="same">Tick all same words</button>' : '') + '<button type="button" class="btn small quiet" data-shapetick="none">Untick all</button></div>' +
+      st.targets.map(function (t, i) {
+        var bits = [t.match === 'words' ? 'Same words' : 'Same syllable count'];
+        if (t.label) bits.push(t.label);
+        bits.push(t.time === null ? 'not timed' : fmt2(t.time));
+        return '<label class="shapecopyrow"><input type="checkbox" data-shapecopy="' + i + '"' + (st.ticked[i] ? ' checked' : '') + '> ' + esc(t.text) + ' <span class="note">' + esc(bits.join(' · ')) + '</span></label>';
+      }).join('');
+    setHTML(body, html);
+    $('shapeCopyGo').disabled = !st.targets.some(function (t, i) { return st.ticked[i]; });
+  }
+  function editShapeCopy(target) {
+    var st = ui.shapeCopy;
+    if (!st) return;
+    var how = target.getAttribute('data-shapetick');
+    if (how) st.targets.forEach(function (t, i) { st.ticked[i] = how === 'same' ? t.match === 'words' || !!st.ticked[i] : false; });
+    else if (target.hasAttribute('data-shapecopy')) st.ticked[parseInt(target.getAttribute('data-shapecopy'), 10)] = target.checked;
+    else return;
+    var tx = selText();
+    if (tx) renderWordTiming(tx);
+  }
+  function copyShapeToTicked() {
+    var st = ui.shapeCopy, tx = selText();
+    if (!st || !tx || ui.rec) return;
+    var picked = st.targets.filter(function (t, i) { return st.ticked[i]; });
+    if (!picked.length) { lyricSay('Tick at least one place first.', true); return; }
+    var levelById = {};
+    picked.forEach(function (t) { t.sylIds.forEach(function (id, i) { levelById[id] = st.levels[i] || 0; }); });
+    ui.shapeCopy = null;
+    var n = writeSylLevels(st.songId, levelById);
+    lyricSay('Copied the shape to ' + picked.length + (picked.length === 1 ? ' place.' : ' places.'), false);
+    if (n) changed(); else renderWordTiming(tx);
+  }
   function renderRec() {
     var bar = $('recBar'), rec = ui.rec;
     bar.hidden = !rec;
@@ -16049,6 +16285,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('shapeUp').addEventListener('click', function () { stepSylLevel(1); });
     $('shapeDown').addEventListener('click', function () { stepSylLevel(-1); });
     $('shapeFlat').addEventListener('click', flatSylLevel);
+    $('shapeMode').addEventListener('click', toggleShapeMode);
+    $('shapeQuickRow').addEventListener('click', function (ev) { var b = ev.target.closest('[data-quickshape]'); if (b) applyQuickShape(b.getAttribute('data-quickshape')); });
+    $('shapeCopyOpen').addEventListener('click', openShapeCopy);
+    $('shapeCopyCancel').addEventListener('click', function () { ui.shapeCopy = null; var tx = selText(); if (tx) renderWordTiming(tx); });
+    $('shapeCopyGo').addEventListener('click', copyShapeToTicked);
+    $('shapeCopyBody').addEventListener('click', function (ev) { var b = ev.target.closest('[data-shapetick]'); if (b) editShapeCopy(b); });
+    $('shapeCopyBody').addEventListener('change', function (ev) { if (ev.target.hasAttribute('data-shapecopy')) editShapeCopy(ev.target); });
     $('fontAddGo').onclick = function () { addGoogleFont($('fontAddName').value); };
     $('fontAddName').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addGoogleFont(this.value); } });
     $('fontAddClose').onclick = closeFontAdd;
@@ -16181,8 +16424,60 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var CURSORS = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize', move: 'move' };
     function boxAt(p) {
       var b = ui.screenBoxes || [];
-      for (var i = b.length - 1; i >= 0; i--) if (b[i].kind !== 'frame' && p.x >= b[i].x && p.x <= b[i].x + b[i].w && p.y >= b[i].y && p.y <= b[i].y + b[i].h) return b[i];
+      for (var i = b.length - 1; i >= 0; i--) if (b[i].kind !== 'frame' && b[i].kind !== 'syl' && p.x >= b[i].x && p.x <= b[i].x + b[i].w && p.y >= b[i].y && p.y <= b[i].y + b[i].h) return b[i];
       return null;
+    }
+    function sylAt(p) {
+      var b = ui.screenBoxes || [];
+      for (var i = b.length - 1; i >= 0; i--) if (b[i].kind === 'syl' && p.x >= b[i].x && p.x <= b[i].x + b[i].w && p.y >= b[i].y && p.y <= b[i].y + b[i].h) return b[i];
+      return null;
+    }
+    // Shape mode: a press picks the syllable and starts a drag that snaps to whole levels; Shift+press stretches the pick into a phrase along the same line.
+    function startShapePress(ev, p, b) {
+      var tx = findItem('texts', b.txId);
+      if (!tx || !tx.lyric) return;
+      if (Player.tag) Player.stop();
+      ui.holdT = ui.screenT;
+      if (!ui.sel || ui.sel.id !== tx.id) { ui.sel = { lane: 'texts', id: tx.id }; ui.bulk = false; renderTimeline(); renderTexts(); }
+      var cur = currentShapeSel();
+      if (ev.shiftKey && cur) {
+        if (cur.txId !== tx.id || cur.lineIndex !== b.lineIndex) lyricSay('A shape can only run along one line.', true);
+        else {
+          var grown = shapeSelOf(tx, b.lineIndex, cur.anchorWordId, b.wordId);
+          if (grown) {
+            ui.shapeSel = { txId: tx.id, lineIndex: b.lineIndex, anchorWordId: cur.anchorWordId, endWordId: b.wordId };
+            if (!ui.wordSel || ui.wordSel.txId !== tx.id || grown.sylIds.indexOf(ui.wordSel.sylId) < 0) ui.wordSel = { txId: tx.id, sylId: grown.words[0].syls[0].id };
+          }
+        }
+        renderSel(); drawScreen(ui.holdT); ui.holdT = null;
+        return;
+      }
+      ui.wordSel = { txId: tx.id, sylId: b.sylId };
+      ui.shapeSel = null;
+      renderSel();
+      if (shapeLocked(tx)) { drawScreen(ui.holdT); ui.holdT = null; return; }
+      var startLv = sylLevel(tx.lyric, b.sylId), live = {};
+      live[b.sylId] = startLv;
+      sd = { kind: 'shape', p: p, songId: tx.lyric.song, txId: tx.id, sylId: b.sylId, startLv: startLv, level: startLv, levelPx: b.levelPx };
+      ui.shapeDrag = { songId: tx.lyric.song, sylIds: [b.sylId], levels: live };
+      drawScreen(ui.holdT);
+      try { scr.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+    }
+    function endShapeDrag(ev) {
+      var shape = sd, stx = findItem('texts', shape.txId);
+      sd = null; ui.shapeDrag = null;
+      if (ev.type !== 'pointercancel' && stx && stx.lyric && !ui.rec && shape.level !== shape.startLv) {
+        var levelById = {};
+        levelById[shape.sylId] = shape.level;
+        writeSylLevels(shape.songId, levelById);
+        var e = wordEntry(stx, shape.sylId);
+        if (e) lyricSay('“' + e.text + '” is ' + levelWords(shape.level) + '.', false);
+        changed();
+      } else {
+        if (stx && stx === selText()) renderWordTiming(stx);
+        drawScreen(ui.holdT);
+      }
+      ui.holdT = null;
     }
     function frameAt(p) {
       var b = (ui.screenBoxes || []).filter(function (x) { return x.kind === 'frame'; })[0];
@@ -16239,6 +16534,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (ui.picTool.mode === 'crop') startCropDrag(ev, toolPoint); else pickColorAt(toolPoint);
         return;
       }
+      if (shapeModeOn()) {
+        var shapePoint = scrPoint(ev), sylHit = sylAt(shapePoint);
+        if (sylHit) { ev.preventDefault(); startShapePress(ev, shapePoint, sylHit); return; }
+      }
       var p = scrPoint(ev), fr = frameAt(p), b = fr ? null : boxAt(p);
       if (!fr && !b) return;
       ev.preventDefault();
@@ -16291,6 +16590,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     scr.addEventListener('pointermove', function (ev) {
       var p = scrPoint(ev);
+      if (sd && sd.kind === 'shape') {
+        var lv = SylShape.fromDrag(sd.startLv, p.y - sd.p.y, sd.levelPx);
+        if (lv !== sd.level) { sd.level = lv; ui.shapeDrag.levels[sd.sylId] = lv; drawScreen(ui.holdT); }
+        return;
+      }
+      if (!sd && !ui.picTool && shapeModeOn() && sylAt(p)) { scr.style.cursor = 'ns-resize'; return; }
       if (!sd && ui.picTool) {
         var cropHover = ui.picTool.mode === 'crop' ? (ui.screenBoxes || []).filter(function (x) { return x.kind === 'crop'; })[0] : null;
         var hoverHandle = cropHover ? TextLayout.handleAt(cropHover, p.x, p.y, 8) : null;
@@ -16343,6 +16648,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     function endScr(ev) {
       if (!sd) return;
+      if (sd.kind === 'shape') { endShapeDrag(ev); return; }
       if (sd.record) {
         var rec = sd;
         sd = null; ui.guides = null; ui.outlines = null; ui.moveDrag = null; ui.holdT = null;
