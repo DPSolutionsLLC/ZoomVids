@@ -103,3 +103,44 @@ test('nextName with a base word skips names already taken', () => {
 test('nextName counts each base word on its own', () => {
   assert.equal(TextGroup.nextName([{ id: 'g1', name: 'Scriptures 1' }], 'Text'), 'Text 1');
 });
+
+const lyricText = (id, group) => Object.assign({ id, lyric: { song: 's1', lines: [] } }, group ? { group } : {});
+const plainText = (id, group) => Object.assign({ id, body: 'Hello' }, group ? { group } : {});
+
+test('mixesLyrics is true only when lyric and other texts are both picked', () => {
+  const texts = [lyricText('l1'), lyricText('l2'), plainText('p1'), plainText('p2')];
+  assert.equal(TextGroup.mixesLyrics(texts, ['l1', 'p1']), true);
+  assert.equal(TextGroup.mixesLyrics(texts, ['l1', 'l2']), false);
+  assert.equal(TextGroup.mixesLyrics(texts, ['p1', 'p2']), false);
+});
+
+test('mixesLyrics ignores unknown ids', () => {
+  const texts = [lyricText('l1'), plainText('p1')];
+  assert.equal(TextGroup.mixesLyrics(texts, ['l1', 'gone']), false);
+});
+
+test('plainInLyricGroups finds other texts in a group that holds lyric lines, in texts order', () => {
+  const texts = [plainText('p2', 'gL'), lyricText('l1', 'gL'), plainText('p1', 'gL'), plainText('p3', 'gP'), plainText('p4', 'gP'), lyricText('l2')];
+  assert.deepEqual(TextGroup.plainInLyricGroups(texts), ['p2', 'p1']);
+});
+
+test('plainInLyricGroups leaves all-plain groups and lyric texts alone', () => {
+  const texts = [lyricText('l1', 'gL'), lyricText('l2', 'gL'), plainText('p1', 'gP'), plainText('p2')];
+  assert.deepEqual(TextGroup.plainInLyricGroups(texts), []);
+});
+
+test('plainInLyricGroups only checks the groups asked for', () => {
+  const texts = [lyricText('l1', 'gA'), plainText('p1', 'gA'), lyricText('l2', 'gB'), plainText('p2', 'gB')];
+  assert.deepEqual(TextGroup.plainInLyricGroups(texts, ['gB']), ['p2']);
+  assert.deepEqual(TextGroup.plainInLyricGroups(texts, ['gA', 'gB']), ['p1', 'p2']);
+});
+
+test('mixesLyrics and plainInLyricGroups leave their inputs alone', () => {
+  const texts = [lyricText('l1', 'gA'), plainText('p1', 'gA')], ids = ['l1', 'p1'], groups = ['gA'];
+  const before = structuredClone(texts);
+  TextGroup.mixesLyrics(texts, ids);
+  TextGroup.plainInLyricGroups(texts, groups);
+  assert.deepEqual(texts, before);
+  assert.deepEqual(ids, ['l1', 'p1']);
+  assert.deepEqual(groups, ['gA']);
+});

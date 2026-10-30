@@ -2343,7 +2343,24 @@ var TextGroup = (function () {
     units.sort(byStart).forEach(function (u) { out = out.concat(u.rows); });
     return out;
   }
-  return { find: find, memberIds: memberIds, liveGroups: liveGroups, nextName: nextName, copyName: copyName, cleanName: cleanName, neighbours: neighbours, keepClosed: keepClosed, listRows: listRows };
+  function mixesLyrics(texts, ids) {
+    var want = {}, lyric = false, plain = false;
+    (ids || []).forEach(function (id) { want[id] = true; });
+    texts.forEach(function (tx) {
+      if (!want[tx.id]) return;
+      if (tx.lyric) lyric = true; else plain = true;
+    });
+    return lyric && plain;
+  }
+  function plainInLyricGroups(texts, groupIds) {
+    var allow = null, lyricGroup = {};
+    if (groupIds) { allow = {}; groupIds.forEach(function (g) { allow[g] = true; }); }
+    texts.forEach(function (tx) { if (tx.lyric && tx.group) lyricGroup[tx.group] = true; });
+    return texts.filter(function (tx) {
+      return !tx.lyric && tx.group && lyricGroup[tx.group] && (!allow || allow[tx.group]);
+    }).map(function (tx) { return tx.id; });
+  }
+  return { find: find, memberIds: memberIds, liveGroups: liveGroups, nextName: nextName, copyName: copyName, cleanName: cleanName, neighbours: neighbours, keepClosed: keepClosed, listRows: listRows, mixesLyrics: mixesLyrics, plainInLyricGroups: plainInLyricGroups };
 })();
 
 /* Saved playlists: names, renames and the save note. Pure functions; inputs are never changed. */
@@ -5165,6 +5182,50 @@ var Lyrics = (function () {
     for (var k = 0; k < lineCount; k++) if (!owned[k]) out.push(k);
     return out;
   }
+  // Indices of blocks to remove so each line keeps one: visible, then timed, then earliest start, then earliest index.
+  function extraBlocks(keys, facts) {
+    function hasLine(k) { return typeof k === 'string' || (typeof k === 'number' && k >= 0); }
+    function better(a, b) {
+      var fa = facts[a] || {}, fb = facts[b] || {};
+      if (!fa.hidden !== !fb.hidden) return !fa.hidden;
+      if (!!fa.timed !== !!fb.timed) return !!fa.timed;
+      if ((fa.start || 0) !== (fb.start || 0)) return (fa.start || 0) < (fb.start || 0);
+      return a < b;
+    }
+    var keeper = {}, drop = [];
+    keys.forEach(function (k, i) {
+      if (!hasLine(k)) return;
+      var key = typeof k + ':' + k;
+      if (!keeper.hasOwnProperty(key)) { keeper[key] = i; return; }
+      if (better(i, keeper[key])) { drop.push(keeper[key]); keeper[key] = i; } else drop.push(i);
+    });
+    return drop.sort(function (a, b) { return a - b; });
+  }
+  // Copy the picked flat lines into new verses (fresh word ids) placed right after the verse holding the last pick.
+  function repeatLines(verses, flatIndices, makeId) {
+    var src = copy(verses || []), total = flatLines(src).length, pick = {}, highest = -1;
+    (flatIndices || []).forEach(function (i) {
+      if (typeof i !== 'number' || i < 0 || i >= total || Math.floor(i) !== i) return;
+      pick[i] = true;
+      if (i > highest) highest = i;
+    });
+    if (highest < 0) return { verses: src, added: [], count: 0 };
+    var made = [], after = -1, flat = 0, count = 0;
+    src.forEach(function (v, vi) {
+      var lines = [];
+      v.lines.forEach(function (line) {
+        if (pick[flat]) { lines.push(reId({ lines: [line] }, makeId).lines[0]); count++; }
+        if (flat === highest) after = vi;
+        flat++;
+      });
+      if (!lines.length) return;
+      var verse = { id: makeId(), lines: lines };
+      if (v.label) verse.label = v.label;
+      made.push(verse);
+    });
+    var out = src.slice(0, after + 1).concat(made, src.slice(after + 1));
+    return { verses: out, added: made.map(function (v) { return v.id; }), count: count };
+  }
   function cleanSlideLook(raw) {
     var src = isObject(raw) ? raw : {}, d = KARAOKE_LOOK;
     var font = typeof src.font === 'string' ? src.font.trim() : '';
@@ -5489,7 +5550,7 @@ var Lyrics = (function () {
     cleanSlide: cleanSlide, cleanSong: cleanSong, cleanSlideLook: cleanSlideLook, slideStyle: slideStyle, addParts: addParts, defaultHi: defaultHi,
     cleanRecord: cleanRecord, recordText: recordText, verseRanges: verseRanges, applyText: applyText, fillSlide: fillSlide, buildRecord: buildRecord,
     LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines, linesNeedingBlocks: linesNeedingBlocks,
-    cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE, usedPartNames: usedPartNames, shelveUnusedParts: shelveUnusedParts, SHELF_MAX: SHELF_MAX,
+    extraBlocks: extraBlocks, repeatLines: repeatLines, cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE, usedPartNames: usedPartNames, shelveUnusedParts: shelveUnusedParts, SHELF_MAX: SHELF_MAX,
     columnDefaults: columnDefaults, cleanColumnSet: cleanColumnSet, columnSettings: columnSettings, withColumnSettings: withColumnSettings, copyColumnSettings: copyColumnSettings,
     COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanColumn: cleanColumn, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks,
     TAG_NAME_RE: TAG_NAME_RE, DEFAULT_AREA: DEFAULT_AREA, COLUMN_COLORS: COLUMN_COLORS, tagToken: tagToken, tagDisplay: tagDisplay, ownerCol: ownerCol, lineInCol: lineInCol,
@@ -10872,6 +10933,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function renderLyricRow(tx, fresh) {
     $('lyricRow').hidden = !tx.lyric;
+    $('textDup').hidden = !!tx.lyric;
     if (!tx.lyric) return;
     if (fresh) lyricSay('', false);
     var inOrder = !!songClip(tx.lyric.song), roll = isRollLine(tx);
@@ -11010,20 +11072,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (res.error) return { error: 'The lyrics need at least one word.' };
     var lost, unit;
     if (tagged) {
-      var every = songBlocksAll(songId), hit = Lyrics.matchLines(Lyrics.flatLines(res.verses), every.map(function (tx) { return tx.lyric; })).lineOf;
+      var every = songBlocksAll(songId), hit = oneBlockPerLine(Lyrics.matchLines(Lyrics.flatLines(res.verses), every.map(function (tx) { return tx.lyric; })).lineOf, every);
       lost = every.filter(function (tx, i) { return hit[i] < 0 && WordTiming.anyTimed(tx.lyric); }).length;
       unit = ['line', 'lines'];
     } else if (songLyrics(songId).view === 'roll') {
       var newLines = [], skip = {}, k = 0;
       if (col >= 2) Lyrics.sharedLinks(songRecord(songId, 1), res.verses).links.forEach(function (l) { skip[l.col2] = true; });
       res.verses.forEach(function (v) { v.lines.forEach(function (line) { if (!skip[k]) newLines.push(line); k++; }); });
-      var blocks = songSlides(songId, col), lineOf = Lyrics.matchLines(newLines, blocks.map(function (tx) { return tx.lyric; })).lineOf;
+      var blocks = songSlides(songId, col), lineOf = oneBlockPerLine(Lyrics.matchLines(newLines, blocks.map(function (tx) { return tx.lyric; })).lineOf, blocks);
       lost = blocks.filter(function (tx, i) { return lineOf[i] < 0 && WordTiming.anyTimed(tx.lyric); }).length;
       unit = ['line', 'lines'];
     } else {
-      var dropped = {};
+      var dropped = {}, slides = songSlides(songId), extra = {};
       res.dropped.forEach(function (id) { dropped[id] = true; });
-      lost = songSlides(songId).filter(function (tx) { return dropped[tx.lyric.verse] && WordTiming.anyTimed(tx.lyric); }).length;
+      Lyrics.extraBlocks(slides.map(function (tx) { return tx.lyric.verse; }), blockFacts(slides)).forEach(function (i) { extra[i] = true; });
+      lost = slides.filter(function (tx, i) { return (dropped[tx.lyric.verse] || extra[i]) && WordTiming.anyTimed(tx.lyric); }).length;
       unit = ['slide', 'slides'];
     }
     if (lost && !confirm('This removes ' + lost + ' ' + (lost === 1 ? unit[0] + ' that has' : unit[1] + ' that have') + ' word timing. Remove ' + (lost === 1 ? 'it' : 'them') + '?')) return { cancelled: true };
@@ -11139,6 +11202,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       o.tx.lyric = Object.assign(Lyrics.fillSlide(byId[verseId], start, sources), { song: songId, verse: verseId });
     }
     function remove(o) { gone[o.tx.id] = true; counts.removed++; }
+    var extras = Lyrics.extraBlocks(old.map(function (o) { return o.lyric.verse; }), old.map(function (o) { return { hidden: !!o.tx.hidden, timed: WordTiming.anyTimed(o.lyric), start: o.start }; }));
+    extras.forEach(function (i) { remove(old[i]); });
+    old = old.filter(function (o) { return !gone[o.tx.id]; });
     old.forEach(function (o) {
       var vid = o.lyric.verse;
       if (res.kept[vid] && byId[vid]) { relink(o, vid, o.start, [o]); counts.updated++; }
@@ -11383,11 +11449,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     insertAfter(after, tx);
     return tx;
   }
-  // Points each line block at its record line (many blocks may share one), removes blocks whose words are gone,
-  // and adds a block for each record line that has none (only when the column had blocks). Hidden takes keep their own timing.
+  // What decides which block keeps a line when several share it (Lyrics.extraBlocks).
+  function blockFacts(list) {
+    return list.map(function (tx) { return { hidden: !!tx.hidden, timed: WordTiming.anyTimed(tx.lyric), start: txSpan(tx).start }; });
+  }
+  // The same lineOf with extra blocks on a line set to -1, so only one block keeps each line.
+  function oneBlockPerLine(lineOf, blocks) {
+    var out = lineOf.slice();
+    Lyrics.extraBlocks(lineOf, blockFacts(blocks)).forEach(function (i) { out[i] = -1; });
+    return out;
+  }
+  // Points each line block at its record line, removes blocks whose words are gone, and removes extra blocks on a line,
+  // keeping a visible, timed, earliest one. Adds a block for each record line that has none (only when the column had blocks).
   function relinkLines(songId, blocks, sources, col) {
     var lines = recordLines(songId, col), counts = { updated: 0, added: 0, removed: 0, changed: [] }, gone = {}, owners = {};
-    var lineOf = Lyrics.matchLines(lines, blocks.map(function (tx) { return tx.lyric; })).lineOf;
+    var lineOf = oneBlockPerLine(Lyrics.matchLines(lines, blocks.map(function (tx) { return tx.lyric; })).lineOf, blocks);
     blocks.forEach(function (tx, i) {
       var k = lineOf[i];
       if (k < 0) { gone[tx.id] = true; counts.removed++; return; }
@@ -11778,6 +11854,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
   function songLyricsSay(text, isErr) { var m = $('songLyricsMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
+  // Lyric lines and other texts can't share a group: takes other texts out of the song's lyric groups. Returns how many moved.
+  function moveOutOfLyricGroups(songId) {
+    var groupIds = [];
+    songBlocksAll(songId).forEach(function (tx) { if (tx.group && groupIds.indexOf(tx.group) < 0) groupIds.push(tx.group); });
+    var stray = TextGroup.plainInLyricGroups(mix.texts, groupIds);
+    stray.forEach(function (id) { delete findItem('texts', id).group; });
+    return stray.length;
+  }
   function commitSongLyrics(songId, text) {
     var col = songCol(songId), tagged = isTagged(songId), key = draftKey(songId, col), hadSlides = (tagged ? songBlocksAll(songId) : songSlides(songId, col)).length > 0;
     var res = applyLyricsRecord(songId, text, col);
@@ -11796,6 +11880,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } else {
       var c = res.counts;
       msg = 'Updated ' + plural(c.updated, one, many) + '.' + (c.added ? ' Added ' + c.added + '.' : '') + (c.removed ? ' Removed ' + c.removed + '.' : '');
+      var stray = moveOutOfLyricGroups(songId);
+      if (stray) msg += ' Moved ' + plural(stray, 'other text', 'other texts') + ' out of the lyric group.';
     }
     changed();
     if (!hadSlides) revealSel();
@@ -13062,6 +13148,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function focusGroupName() { var inp = $('groupNameInput'); if (inp) { inp.focus(); inp.select(); } }
   function groupChecked() {
     var ids = checkedIds(); if (!ids.length) return;
+    if (TextGroup.mixesLyrics(mix.texts, ids)) { flashSel('Lyric lines and other texts can’t share a group. Tick only lyric lines, or only other texts.'); return; }
     var g = { id: 'g' + nid(), name: TextGroup.nextName(mix.groups) };
     mix.groups.push(g);
     ids.forEach(function (id) { findItem('texts', id).group = g.id; });
@@ -13092,6 +13179,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function duplicateGroup(gid) {
     var g = TextGroup.find(mix.groups, gid), ids = TextGroup.memberIds(mix.texts, gid); if (!g || !ids.length) return;
+    if (ids.some(function (id) { return findItem('texts', id).lyric; })) { duplicateLyricGroup(g, ids); return; }
     var copy = { id: 'g' + nid(), name: TextGroup.copyName(g.name, mix.groups) };
     if (g.fill) copy.fill = g.fill;
     if (g.win) copy.win = clone(g.win);
@@ -13102,6 +13190,28 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ids.forEach(function (id) { findItem('texts', id).hidden = true; });
     refreshTexts();
     flashSel('Made “' + copy.name + '” and hid “' + g.name + '”. Show it again any time.');
+  }
+  // A lyrics group's Duplicate copies its lines into the lyrics record, right after the originals; Update's relink gives each copy a block.
+  function duplicateLyricGroup(g, ids) {
+    var blocks = ids.map(function (id) { return findItem('texts', id); }).filter(function (tx) { return tx && tx.lyric; });
+    var songId = blocks[0].lyric.song, tagged = isTagged(songId), col = tagged ? 1 : colOf(blocks[0]);
+    if (blocks.some(function (tx) { return tx.lyric.song !== songId || (!tagged && colOf(tx) !== col); })) { flashSel('This group holds lines from more than one column. Duplicate works on one column’s lines.'); return; }
+    if (ui.rec) { flashSel('Stop recording first.'); return; }
+    if (!songClip(songId)) { flashSel('Add the song to Order of music first.'); return; }
+    if (songLyrics(songId).view !== 'roll') { flashSel('In Slides view, type the verse again in the lyrics box and press Update.'); return; }
+    if (ui.lyricDrafts[draftKey(songId, songCol(songId))] != null) { flashSel('Press Update or Reset in the lyrics box first.'); return; }
+    var verses = songRecord(songId, col);
+    var lineOf = Lyrics.matchLines(Lyrics.flatLines(verses), blocks.map(function (tx) { return tx.lyric; })).lineOf;
+    var picked = lineOf.filter(function (k) { return k >= 0; });
+    if (!picked.length) { flashSel('These blocks no longer match any lyric line. Press Update in the lyrics box first.'); return; }
+    var old = tagged ? allSnapshot(songId) : slideSnapshot(songId, col);
+    var rep = Lyrics.repeatLines(verses, picked, nid);
+    if (Player.tag) Player.stop();
+    if (col >= 2 && !tagged) writeColumn(songId, col, { verses: rep.verses });
+    else writeSongLyrics(songId, Object.assign({}, songLyrics(songId), { verses: rep.verses }));
+    rebuildSong(songId, keepAllResult(songId, col), old, col);
+    changed();
+    flashSel('Added ' + plural(rep.count, 'line', 'lines') + ' to the lyrics, right after the originals. The new lines have no word timing yet.');
   }
   function setGroupFill(gid, mode) {
     var g = TextGroup.find(mix.groups, gid); if (!g) return;
@@ -15315,8 +15425,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       changed();
     });
     $('textDup').onclick = function () {
-      var tx = selText(); if (!tx) return;
+      var tx = selText(); if (!tx || tx.lyric) return;
       var sp = txSpan(tx), copy = clone(tx);
+      if (copy.group && TextGroup.memberIds(mix.texts, copy.group).some(function (id) { return findItem('texts', id).lyric; })) delete copy.group;
       copy.id = nid(); copy.whole = false; copy.during = ''; copy.afterPrev = false; copy.untilNext = false; copy.fromStart = false; copy.toEnd = false; copy.locked = false;
       copy.start = Math.round((sp.start + sp.dur) * 10) / 10; copy.dur = Math.round(sp.dur * 10) / 10;
       mix.texts.splice(mix.texts.indexOf(tx) + 1, 0, copy);

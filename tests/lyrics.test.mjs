@@ -1098,3 +1098,102 @@ describe('cleanSong part labels', () => {
     assert.equal('label' in out.parts[1], false);
   });
 });
+
+describe('extraBlocks', () => {
+  const plain = (start) => ({ hidden: false, timed: false, start });
+  test('no shared lines drops nothing', () => {
+    assert.deepEqual(L.extraBlocks([0, 1, 2], [plain(0), plain(5), plain(10)]), []);
+  });
+  test('two plain blocks on one line drop the later one', () => {
+    assert.deepEqual(L.extraBlocks([0, 0], [plain(8), plain(3)]), [0]);
+  });
+  test('a timed block beats an untimed one even when it starts later', () => {
+    assert.deepEqual(L.extraBlocks([4, 4], [plain(1), { hidden: false, timed: true, start: 9 }]), [0]);
+  });
+  test('a shown block beats a hidden one even when the hidden one is timed', () => {
+    assert.deepEqual(L.extraBlocks([2, 2], [{ hidden: true, timed: true, start: 0 }, plain(6)]), [0]);
+  });
+  test('with the same start the lower index is kept', () => {
+    assert.deepEqual(L.extraBlocks([1, 1], [plain(4), plain(4)]), [1]);
+  });
+  test('blocks with no line are never dropped, while a real pair on another line still is', () => {
+    const keys = [-1, null, undefined, 3, 3, -1];
+    const facts = [plain(0), plain(0), plain(0), plain(2), plain(7), plain(0)];
+    assert.deepEqual(L.extraBlocks(keys, facts), [4]);
+  });
+  test('verse ids work as keys', () => {
+    assert.deepEqual(L.extraBlocks(['v1', 'v2', 'v1'], [plain(0), plain(3), plain(9)]), [2]);
+  });
+  test('a number and a string with the same text are different lines', () => {
+    assert.deepEqual(L.extraBlocks([1, '1'], [plain(0), plain(1)]), []);
+  });
+  test('three blocks on one line drop two', () => {
+    assert.deepEqual(L.extraBlocks([0, 0, 0], [plain(5), { hidden: false, timed: true, start: 9 }, plain(1)]), [0, 2]);
+  });
+  test('inputs are left alone', () => {
+    const keys = [0, 0, 1], facts = [plain(3), plain(1), plain(2)];
+    const keysBefore = structuredClone(keys), factsBefore = structuredClone(facts);
+    L.extraBlocks(keys, facts);
+    assert.deepEqual(keys, keysBefore);
+    assert.deepEqual(facts, factsBefore);
+  });
+});
+
+describe('repeatLines', () => {
+  const word = (id, text) => ({ id, syls: [{ id: id + 's', text }] });
+  const line = (id, text, extra = {}) => Object.assign({ words: [word(id, text)] }, extra);
+  const record = () => [
+    { id: 'va', label: 'Verse 1', lines: [line('a1', 'one'), line('a2', 'two')] },
+    { id: 'vb', lines: [line('b1', 'three', { cols: ['Kids'] }), line('b2', 'four')] },
+    { id: 'vc', lines: [line('c1', 'five')] }
+  ];
+  const texts = (verses) => verses.map((v) => v.lines.map((l) => l.words[0].syls[0].text));
+  const allIds = (verses) => verses.flatMap((v) => v.lines.flatMap((l) => l.words.flatMap((w) => [w.id, ...w.syls.map((s) => s.id)])));
+  test('copies picked lines into a new verse right after the verse holding the last pick', () => {
+    const out = L.repeatLines(record(), [0, 1], counter('n'));
+    assert.deepEqual(texts(out.verses), [['one', 'two'], ['one', 'two'], ['three', 'four'], ['five']]);
+    assert.equal(out.count, 2);
+    assert.deepEqual(out.added, [out.verses[1].id]);
+  });
+  test('picks across two verses make two new verses in order, after the last picked verse', () => {
+    const out = L.repeatLines(record(), [3, 1], counter('n'));
+    assert.deepEqual(texts(out.verses), [['one', 'two'], ['three', 'four'], ['two'], ['four'], ['five']]);
+    assert.equal(out.added.length, 2);
+    assert.equal(out.count, 2);
+  });
+  test('copies get fresh word and syllable ids', () => {
+    const src = record(), out = L.repeatLines(src, [0, 2], counter('n'));
+    const oldIds = new Set(allIds(src));
+    const newIds = allIds(out.verses.filter((v) => out.added.includes(v.id)));
+    assert.equal(newIds.length, 4);
+    newIds.forEach((id) => assert.equal(oldIds.has(id), false));
+  });
+  test('original verses keep their ids', () => {
+    const src = record(), out = L.repeatLines(src, [2], counter('n'));
+    assert.deepEqual(out.verses.filter((v) => !out.added.includes(v.id)), src);
+  });
+  test('a verse label and the cols on a line are kept on the copy', () => {
+    const out = L.repeatLines(record(), [0, 2], counter('n'));
+    const added = out.verses.filter((v) => out.added.includes(v.id));
+    assert.equal(added[0].label, 'Verse 1');
+    assert.equal('label' in added[1], false);
+    assert.deepEqual(added[1].lines[0].cols, ['Kids']);
+  });
+  test('repeated and out-of-range picks are ignored, while a valid pick still copies', () => {
+    const out = L.repeatLines(record(), [4, 4, -1, 9, 1.5], counter('n'));
+    assert.deepEqual(texts(out.verses), [['one', 'two'], ['three', 'four'], ['five'], ['five']]);
+    assert.equal(out.count, 1);
+  });
+  test('an empty pick changes nothing', () => {
+    const src = record(), out = L.repeatLines(src, [], counter('n'));
+    assert.equal(out.count, 0);
+    assert.deepEqual(out.added, []);
+    assert.deepEqual(out.verses, src);
+  });
+  test('inputs are left alone', () => {
+    const src = record(), picks = [1, 0], before = structuredClone(src);
+    L.repeatLines(src, picks, counter('n'));
+    assert.deepEqual(src, before);
+    assert.deepEqual(picks, [1, 0]);
+  });
+});
