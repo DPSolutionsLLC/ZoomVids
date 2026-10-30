@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
 globalThis.TextLook = loadModule('TextLook');
+globalThis.ColumnMoves = loadModule('ColumnMoves');
 const L = loadModule('Lyrics');
 
 const word = (id, text, part) => Object.assign({ id, syls: [{ id: id + 's0', text }] }, part ? { part } : {});

@@ -302,6 +302,10 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .wordc .wgrip { position: absolute; top: 0; bottom: 0; width: min(5px, 30%); cursor: ew-resize; }
 .tl .wordc .wgrip.s { left: 0; }
 .tl .wordc .wgrip.e { right: 0; }
+.tl .cmove { position: absolute; z-index: 3; height: 12px; min-width: 2px; box-sizing: border-box; background: color-mix(in srgb, var(--sel) 22%, transparent); border-radius: 2px; cursor: grab; touch-action: none; pointer-events: auto; }
+.tl .cmove b { position: absolute; left: -4.5px; top: 1.5px; width: 9px; height: 9px; box-sizing: border-box; transform: rotate(45deg); background: var(--sel); border: 1px solid color-mix(in srgb, var(--ink) 45%, transparent); }
+.tl .cmove.sel { z-index: 4; outline: 2px solid var(--accent); outline-offset: 0; }
+.tl .cmove.sel b { background: var(--accent); }
 .tl .ghostname { position: absolute; left: 2px; z-index: 2; font-size: 10px; line-height: 16px; opacity: .6; pointer-events: none; white-space: nowrap; }
 .tl .ghostc { position: absolute; z-index: 1; height: 16px; box-sizing: border-box; padding: 0 6px; overflow: hidden; white-space: nowrap; font-size: 11px; font-weight: 600; line-height: 14px; color: var(--bg); background: var(--msg); opacity: .45; border: 1px dashed var(--line, currentColor); border-radius: 3px; pointer-events: none; }
 .tl .clip.textc.shared { box-shadow: inset 0 -3px 0 var(--accent); }
@@ -493,6 +497,13 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .lyricversehead .vname { font-weight: 700; color: var(--muted); }
 .wordtiming { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .wordlistwrap { max-height: 40vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.movelist { overflow-x: auto; }
+.movelist table { border-collapse: collapse; font-size: 13px; }
+.movelist th { padding: 2px 6px; text-align: left; font-weight: 600; white-space: nowrap; }
+.movelist td { padding: 2px 6px; border-top: 1px solid var(--line); white-space: nowrap; }
+.movelist input[type="number"] { width: 5em; }
+.movelist tr.sel td { background: var(--accent-soft); }
+#songRecordMoves[aria-pressed="true"], #selbar [data-selact="recmoves"][aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
 .wordlist { width: 100%; border-collapse: collapse; font-size: 13px; }
 .wordlist th { position: sticky; top: 0; padding: 4px 8px; text-align: left; font-weight: 600; background: var(--sunk); }
 .wordlist td { padding: 2px 8px; border-top: 1px solid var(--line); }
@@ -754,6 +765,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                 <label>Verse starts <select id="songRollVerses"><option value="mark">Show a label</option><option value="screen">Start a fresh screen</option><option value="none">Nothing</option></select></label>
                 <label>Line up <select id="songRollAlign"><option value="center">Centered</option><option value="left">Left</option></select></label>
               </div>
+              <p class="note" id="songNormalBox" hidden>Normal box: where the column sits before its first move.</p>
               <div class="grid">
                 <label>Left <span><input type="number" id="songRollX" min="0" max="100" step="0.5"> %</span></label>
                 <label>Top <span><input type="number" id="songRollY" min="0" max="100" step="0.5"> %</span></label>
@@ -761,6 +773,8 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                 <label>Height <span><input type="number" id="songRollH" min="0" max="100" step="0.5"> %</span></label>
               </div>
               <p class="note">Select a line on the timeline, then drag its box in the preview to move or resize it.</p>
+              <div class="btnrow" id="songMoveRow" hidden><button type="button" class="btn small" id="songRecordMoves" aria-pressed="false">Record moves</button><span class="note" id="songMoveNote"></span></div>
+              <div class="movelist" id="songMoveList" hidden></div>
             </div>
             <h4 class="edhead" id="songLookHead">Look for new lyric slides</h4>
             <div class="grid look">
@@ -4379,6 +4393,98 @@ var Syllables = (function () {
   return { EXCEPTIONS: EXCEPTIONS, splitWord: splitWord, markWord: markWord, markText: markText };
 })();
 
+/* Column moves: a column's box gliding to a new place and size during a song. Pure functions; inputs are never changed. */
+var ColumnMoves = (function () {
+  var DEFAULT_LEN = 1, MIN_LEN = 0.2, MAX_LEN = 10, MAX_MOVES = 50, SAME_AT = 0.05, FIELDS = ['x', 'y', 'w', 'h'];
+  function isObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+  function round2(v) { return Math.round(v * 100) / 100; }
+  function ease(a) { return a * a * (3 - 2 * a); }
+  function isFrame(f) { return isObject(f) && FIELDS.every(function (k) { return isNum(f[k]); }); }
+  function copyFrame(f) { return { x: f.x, y: f.y, w: f.w, h: f.h }; }
+  function sameFrame(a, b) { return FIELDS.every(function (k) { return Math.abs(a[k] - b[k]) <= 1e-6; }); }
+  function lerpFrame(a, b, p) { var out = {}; FIELDS.forEach(function (k) { out[k] = a[k] + (b[k] - a[k]) * p; }); return out; }
+  function cleanAt(v) { return round2(Math.max(0, v)); }
+  function cleanLen(v) { return isNum(v) ? round2(clamp(v, MIN_LEN, MAX_LEN)) : DEFAULT_LEN; }
+  function copyMove(m) { return { id: m.id, at: m.at, len: m.len, frame: copyFrame(m.frame) }; }
+  function sorted(list) {
+    return list.map(function (m, i) { return { m: m, i: i }; })
+      .sort(function (a, b) { return a.m.at - b.m.at || a.i - b.i; })
+      .map(function (e) { return e.m; });
+  }
+  function clean(raw, cleanFrame) {
+    if (!Array.isArray(raw)) return [];
+    var fixFrame = typeof cleanFrame === 'function' ? cleanFrame : copyFrame, seen = {}, out = [];
+    raw.forEach(function (m) {
+      if (!isObject(m) || typeof m.id !== 'string' || !m.id || seen[m.id] || !isNum(m.at) || !isFrame(m.frame)) return;
+      seen[m.id] = true;
+      out.push({ id: m.id, at: cleanAt(m.at), len: cleanLen(m.len), frame: fixFrame(m.frame) });
+    });
+    return sorted(out).slice(0, MAX_MOVES);
+  }
+  function progress(m, t) { return ease(clamp((t - m.at) / m.len, 0, 1)); }
+  function frameAt(base, moves, t) {
+    var from = copyFrame(base), prev = null;
+    sorted(Array.isArray(moves) ? moves : []).forEach(function (m) {
+      if (m.at > t) return;
+      if (prev) from = lerpFrame(from, prev.frame, progress(prev, m.at));
+      prev = m;
+    });
+    return prev ? lerpFrame(from, prev.frame, progress(prev, t)) : from;
+  }
+  function fit(base, cur, align) {
+    if (!(base.w > 0) || !(base.h > 0) || sameFrame(base, cur)) return { s: 1, x: base.x, y: base.y, identity: true };
+    var s = Math.min(cur.w / base.w, cur.h / base.h), drawnW = base.w * s;
+    return { s: s, x: align === 'left' ? cur.x : cur.x + (cur.w - drawnW) / 2, y: cur.y, identity: false };
+  }
+  function lastStarted(moves, t) {
+    var hit = null;
+    sorted(Array.isArray(moves) ? moves : []).forEach(function (m) { if (m.at <= t) hit = m; });
+    return hit;
+  }
+  function windowAt(moves, t) {
+    var hit = null;
+    sorted(Array.isArray(moves) ? moves : []).forEach(function (m) { if (m.at - SAME_AT <= t && t <= m.at + m.len) hit = m; });
+    return hit;
+  }
+  function upsert(moves, t, frame, newId) {
+    var list = (Array.isArray(moves) ? moves : []).map(copyMove), hit = windowAt(list, t);
+    if (hit) {
+      hit.frame = copyFrame(frame);
+      return { moves: sorted(list), move: hit, added: false, full: false };
+    }
+    if (list.length >= MAX_MOVES) return { moves: sorted(list), move: null, added: false, full: true };
+    var move = { id: newId, at: cleanAt(t), len: DEFAULT_LEN, frame: copyFrame(frame) };
+    list.push(move);
+    return { moves: sorted(list), move: move, added: true, full: false };
+  }
+  function change(moves, id, apply) {
+    return sorted((Array.isArray(moves) ? moves : []).map(function (m) {
+      var out = copyMove(m);
+      if (m.id === id) apply(out);
+      return out;
+    }));
+  }
+  function retime(moves, id, at) { return change(moves, id, function (m) { if (isNum(at)) m.at = cleanAt(at); }); }
+  function setLen(moves, id, len) { return change(moves, id, function (m) { if (isNum(len)) m.len = cleanLen(len); }); }
+  function setFrame(moves, id, frame) { return change(moves, id, function (m) { if (isFrame(frame)) m.frame = copyFrame(frame); }); }
+  function remove(moves, id) { return sorted((Array.isArray(moves) ? moves : []).filter(function (m) { return m.id !== id; }).map(copyMove)); }
+  function takenEffect(base, moves, t) { return !sameFrame(frameAt(base, moves, t), base); }
+  function snapTimes(lists, exceptId) {
+    var out = [];
+    (Array.isArray(lists) ? lists : []).forEach(function (list) {
+      (Array.isArray(list) ? list : []).forEach(function (m) { if (m.id !== exceptId) out.push(m.at); });
+    });
+    return out.sort(function (a, b) { return a - b; });
+  }
+  return {
+    DEFAULT_LEN: DEFAULT_LEN, MIN_LEN: MIN_LEN, MAX_LEN: MAX_LEN, MAX_MOVES: MAX_MOVES, SAME_AT: SAME_AT,
+    clean: clean, frameAt: frameAt, fit: fit, lastStarted: lastStarted, windowAt: windowAt, upsert: upsert,
+    retime: retime, setLen: setLen, setFrame: setFrame, remove: remove, takenEffect: takenEffect, snapTimes: snapTimes
+  };
+})();
+
 /* Song lyrics pasted as slides: syllables, parts, and keeping ids stable across edits. Pure functions; inputs are never changed. */
 var Lyrics = (function () {
   var PART_RE = /^[A-Za-z][A-Za-z0-9]{0,14}$/;
@@ -5102,6 +5208,8 @@ var Lyrics = (function () {
     };
     var heading = cleanHeading(src.heading);
     if (heading) out.heading = heading;
+    var moves = ColumnMoves.clean(src.moves, cleanFrame);
+    if (moves.length) out.moves = moves;
     return out;
   }
   function cleanParked(raw, view) {
@@ -5136,6 +5244,8 @@ var Lyrics = (function () {
     if (rec) out.verses = rec.verses;
     out.heading = cleanHeading(raw.heading);
     out.frame = cleanFrame(raw.frame, fallbackFrame || COL2_FRAME);
+    var moves = ColumnMoves.clean(raw.moves, cleanFrame);
+    if (moves.length) out.moves = moves;
     if (isObject(raw.set)) out.set = cleanColumnSet(raw.set, base);
     else {
       var legacySize = typeof raw.size === 'number' && isFinite(raw.size) ? Math.round(Math.min(180, Math.max(24, raw.size))) : ROLL_SIZE;
@@ -5552,7 +5662,7 @@ var Lyrics = (function () {
     LABEL_RE: LABEL_RE, verseMarkup: verseMarkup, ROLL_DEFAULTS: ROLL_DEFAULTS, cleanRoll: cleanRoll, matchLines: matchLines, linesNeedingBlocks: linesNeedingBlocks,
     extraBlocks: extraBlocks, repeatLines: repeatLines, cleanPartLabel: cleanPartLabel, LABEL_SIZE: LABEL_SIZE, usedPartNames: usedPartNames, shelveUnusedParts: shelveUnusedParts, SHELF_MAX: SHELF_MAX,
     columnDefaults: columnDefaults, cleanColumnSet: cleanColumnSet, columnSettings: columnSettings, withColumnSettings: withColumnSettings, copyColumnSettings: copyColumnSettings,
-    COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanColumn: cleanColumn, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks,
+    COL1_FRAME: COL1_FRAME, COL2_FRAME: COL2_FRAME, ROLL_SIZE: ROLL_SIZE, cleanColumn: cleanColumn, cleanFrame: cleanFrame, cleanHeading: cleanHeading, lineKey: lineKey, sharedLinks: sharedLinks,
     TAG_NAME_RE: TAG_NAME_RE, DEFAULT_AREA: DEFAULT_AREA, COLUMN_COLORS: COLUMN_COLORS, tagToken: tagToken, tagDisplay: tagDisplay, ownerCol: ownerCol, lineInCol: lineInCol,
     taggedText: taggedText, taggedRanges: taggedRanges, mergeTagNames: mergeTagNames, spreadFrames: spreadFrames, frameArea: frameArea,
     combineColumns: combineColumns, splitColumns: splitColumns, boxRows: boxRows, partColorFor: partColorFor, flatLines: flatLines
@@ -6745,7 +6855,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var ui = {
     folder: lsGet('hp.folder') || '', filter: '', show: 'all', sort: 'name', open: null, renaming: null, newFolder: false, libMsg: null, missingOpen: false,
     format: 'mp3', cursor: 0, span: 1200, spanHold: false, zoom: 1, sel: null, stored: null, lastExport: null, exporting: false, bgImg: null, libDrag: null, motion: null, motionErr: '', bgPrev: null, vidSize: 720, speed: 1, rec: null, recSpeed: 1, wordSel: null, beatSel: null, lyricDrafts: {}, lyricOriginals: {}, songCol: 1, ghost: false, lyricPick: null, labelOpen: null, colCopy: null, lyricHlFor: null, taps: [], checked: {}, expanded: {}, renamingGroup: null, bulk: false, outlines: null, fillPick: false, fillWin: null, bgTarget: 'top', picTool: null, cropView: null, fileTyped: null, fileKey: null,
-    pulsePlay: null, pulseLoop: true, pulseSound: true, lineNow: null
+    pulsePlay: null, pulseLoop: true, pulseSound: true, lineNow: null, recordMoves: false, moveSel: null, moveDrag: null
   };
   var SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -8341,6 +8451,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     var shared = {};
     mix.items.forEach(function (it) { if (it.lyrics && hasColumns(it.id)) Object.assign(shared, sharedBlockIds(it.id)); });
+    var moveCols = movesByGroup();
+    function moveMarkers(mc, top, barH) {
+      var y = top + (barH - SLIM_H) / 2;
+      return mc.moves.map(function (m) {
+        var on = ui.moveSel && ui.moveSel.songId === mc.songId && ui.moveSel.col === mc.col && ui.moveSel.id === m.id;
+        var tip = 'Move · ' + fmt2(m.at) + ' · ' + m.len.toFixed(1) + ' s glide — drag to change when it starts';
+        return '<i class="cmove' + (on ? ' sel' : '') + '" data-move="' + esc(mc.songId + ':' + mc.col + ':' + m.id) + '" title="' + esc(tip) + '" style="top:' + y + 'px;left:' + pct(m.at) + ';width:' + pct(m.len) + '"><b></b></i>';
+      }).join('');
+    }
     function textClip(tx, top, collapsed) {
       var line = plainText(tx).split('\n')[0], first = (shared[tx.id] ? (shared[tx.id] === 2 ? 'Both · ' : 'Shared · ') : '') + (tx.ref ? tx.ref + ' · ' + line : line || 'Text');
       var sp = txSpan(tx), during = tx.during && elementSpan(tx.during);
@@ -8357,6 +8476,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var toggle = '<i class="gtog" data-gtoggle="1" role="button" aria-label="' + (rw.closed ? 'Expand the group' : 'Collapse the group') + '" title="' + (rw.closed ? 'Open the group onto its own rows' : 'Collapse the group onto one row') + '">' + CHEVRON + '</i>';
         h += '<i class="grpbox" style="top:' + (top - 2) + 'px;height:' + boxH + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '"></i>';
         h += '<div class="grp' + (rw.closed ? ' slim closed' : '') + (allHidden ? ' hid' : '') + '" data-group="' + rw.id + '" title="' + esc(g.name) + ' — drag to move the group, drag an end to stretch or squeeze it, click to select it" style="top:' + top + 'px;left:' + pct(gs.start) + ';width:' + pct(gs.len) + '">' + toggle + '<span class="lbl">' + (allHidden ? ICON.eyeOff.replace('<svg ', '<svg class="hi" ') : '') + esc(g.name) + '</span><i class="ggrip s" data-gedge="start" title="Drag to change when the group starts"></i><i class="ggrip e" data-gedge="end" title="Drag to change when the group ends"></i></div>';
+        if (moveCols[rw.id]) h += moveMarkers(moveCols[rw.id], top, rw.closed ? SLIM_H : 18);
         if (rw.closed) {
           rw.members.map(function (id) { return findItem('texts', id); }).filter(Boolean)
             .sort(function (x, y) { return txSpan(x).start - txSpan(y).start; })
@@ -8457,7 +8577,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function beatWord(n) { return n === 1 ? 'beat' : 'beats'; }
   function ghostToggle(tx) {
     if (!isRollLine(tx) || !hasColumns(tx.lyric.song)) return '';
-    return '<button class="btn small quiet" data-selact="ghost" aria-pressed="' + (ui.ghost ? 'true' : 'false') + '">' + (columnCount(tx.lyric.song) === 2 ? 'Show the other column' : 'Show the other columns') + '</button>';
+    return '<button class="btn small quiet" data-selact="ghost" aria-pressed="' + (ui.ghost ? 'true' : 'false') + '">' + (columnCount(tx.lyric.song) === 2 ? 'Show the other column' : 'Show the other columns') + '</button>' +
+      (ui.rec ? '' : '<button class="btn small quiet" data-selact="recmoves" aria-pressed="' + (ui.recordMoves ? 'true' : 'false') + '" title="On: dragging a column’s box in the preview adds a move at the playhead">Record moves</button>');
   }
   function lineUpControls(tx) {
     var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
@@ -9299,14 +9420,28 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       g.fill();
     });
   }
+  // Where a column is drawn at time t: its normal box in pixels, its current box, and the scale-and-shift between them (null when they match).
+  function columnPlacement(songId, col, W, H, t, boxes, align) {
+    var base = rollFrame(songId, W, H, col);
+    if (!hasColumns(songId)) return { base: base, cur: base, tr: null };
+    var drag = boxes && ui.moveDrag && ui.moveDrag.songId === songId && ui.moveDrag.col === col ? ui.moveDrag.frame : null;
+    var f = drag || columnFrameAt(songId, col, t), cur = { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H };
+    var tr = ColumnMoves.fit(base, cur, align);
+    return { base: base, cur: cur, tr: tr.identity ? null : tr };
+  }
   function paintRollPanel(g, W, H, t, boxes, selTx, songId, col) {
     var lay = layoutRoll(g, W, H, songId, t, col), show = colShow(songId, col), colors = partColorMap(songId, col);
     var selected = !!(boxes && selTx && selTx.lyric && selTx.lyric.song === songId && colOf(selTx) === col);
+    var place = columnPlacement(songId, col, W, H, t, boxes, show.align), tr = place.tr;
+    function mapX(x) { return tr ? tr.x + (x - place.base.x) * tr.s : x; }
+    function mapY(y) { return tr ? tr.y + (y - place.base.y) * tr.s : y; }
+    function mapLen(v) { return tr ? v * tr.s : v; }
     if (lay && lay.alpha > 0 && lay.lines.length) {
       var lk = TextLook.resolve(lay.look), px = lay.px, lh = lay.lh, c = lay.content, labelPx = Math.max(6, Math.round(px * 0.55));
       var pad = lk.look === 'box' ? px * 0.5 : lk.look === 'outline' ? px * (0.15 + lk.glowWidth / 200 + lk.glowSoft / 100)
         : lk.look === 'solid' ? px * (0.15 + lk.solidWidth / 100) : px * 0.15;
       var bx = c.x - pad, by = c.y - pad, bw = c.w + pad * 2, bh = c.h + pad * 2;
+      if (tr) { g.save(); g.translate(tr.x - place.base.x * tr.s, tr.y - place.base.y * tr.s); g.scale(tr.s, tr.s); }
       g.save();
       g.globalAlpha = lay.alpha;
       if (lk.look === 'box') { g.fillStyle = TextLook.rgba(lk.boxColor, lk.boxOpacity); g.fillRect(bx, by, bw, bh); }
@@ -9352,16 +9487,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (lk.look === 'solid' || anySolidLabel(lay.labels)) drawAll('stroke');
       drawAll('fill');
       g.restore();
-      if (boxes && lay.cur) boxes.push({ kind: 'text', id: lay.cur.id, col: col, x: bx, y: by, w: bw, h: bh });
+      if (tr) g.restore();
+      if (boxes && lay.cur) boxes.push({ kind: 'text', id: lay.cur.id, col: col, x: mapX(bx), y: mapY(by), w: mapLen(bw), h: mapLen(bh) });
       if (boxes && labelsOn()) lay.lines.forEach(function (ln) {
         var a = lay.alpha * ln.alpha;
         if (ln.rest || !ln.tx || !ln.rows.length || a <= 0) return;
-        lineSpots.push({ text: blockLineLabel(ln.tx, 0, col), x: ln.rows[0].x, y: ln.rows[0].y, alpha: a });
+        lineSpots.push({ text: blockLineLabel(ln.tx, 0, col), x: mapX(ln.rows[0].x), y: mapY(ln.rows[0].y), alpha: a });
       });
     }
     if (selected) {
-      var frame = lay ? lay.frame : rollFrame(songId, W, H, col);
-      paintHandles(g, W, frame);
+      var frame = tr ? place.cur : lay ? lay.frame : place.base;
+      paintHandles(g, W, frame, recordingMoves(songId) ? css('--warn') || '#f5a524' : null);
       boxes.push({ kind: 'frame', lane: 'roll', id: songId, col: col, x: frame.x, y: frame.y, w: frame.w, h: frame.h });
     }
   }
@@ -9442,12 +9578,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     g.beginPath();
     if (rad > 0 && g.roundRect) g.roundRect(r.x, r.y, r.w, r.h, rad); else g.rect(r.x, r.y, r.w, r.h);
   }
-  function paintHandles(g, W, f) {
-    var hs = 7 * W / 960;
+  function paintHandles(g, W, f, color) {
+    var hs = 7 * W / 960, ink = color || '#F2C14E';
     g.save();
-    g.setLineDash([6, 5]); g.strokeStyle = '#F2C14E'; g.lineWidth = 1;
+    g.setLineDash([6, 5]); g.strokeStyle = ink; g.lineWidth = 1;
     g.strokeRect(f.x, f.y, f.w, f.h);
-    g.setLineDash([]); g.fillStyle = '#F2C14E';
+    g.setLineDash([]); g.fillStyle = ink;
     [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]].forEach(function (k) { g.fillRect(f.x + k[0] * f.w - hs / 2, f.y + k[1] * f.h - hs / 2, hs, hs); });
     g.restore();
   }
@@ -10994,9 +11130,56 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return writeSongLyrics(songId, Lyrics.withColumnSettings(lyr, c, merged));
   }
   function colSettings(songId, col) {
-    if (!(col >= 2)) { var roll = songLyrics(songId).roll; return { frame: roll.frame, size: roll.look.size, heading: roll.heading || null }; }
+    if (!(col >= 2)) { var roll = songLyrics(songId).roll; return { frame: roll.frame, size: roll.look.size, heading: roll.heading || null, moves: roll.moves || [] }; }
     var c = extraOf(songId, col);
-    return { frame: c.frame, size: colShow(songId, col).look.size, heading: c.heading };
+    return { frame: c.frame, size: colShow(songId, col).look.size, heading: c.heading, moves: c.moves || [] };
+  }
+  // The only reader of a column's moves for drawing and dragging: moves only count while the song has columns on.
+  function columnMoves(songId, col) { return hasColumns(songId) ? colSettings(songId, col).moves : []; }
+  // The only writer of a column's moves. Does not call changed().
+  function writeColumnMoves(songId, col, moves) {
+    var kept = moves.length ? moves : undefined;
+    if (col >= 2) return writeColumn(songId, col, { moves: kept });
+    var lyr = songLyrics(songId);
+    return writeSongLyrics(songId, Object.assign({}, lyr, { roll: Object.assign({}, lyr.roll, { moves: kept }) }));
+  }
+  // A column's box at time t, as fractions of the screen.
+  function columnFrameAt(songId, col, t) { return ColumnMoves.frameAt(colSettings(songId, col).frame, columnMoves(songId, col), t); }
+  // Record moves only works in a Columns song and never while recording word timing.
+  function recordingMoves(songId) { return ui.recordMoves && !ui.rec && hasColumns(songId); }
+  function jumpHeadTo(t) {
+    if (Player.tag && isMixTag(Player.tag)) { playMix(t); return; }
+    ui.cursor = t; syncPlay(); placeHead(t, true); drawScreen(t);
+  }
+  // A column's timeline group: the group of its first grouped line, or null.
+  function columnGroupId(songId, col) {
+    var first = slidesForSong(songId, col).filter(function (tx) { return tx.group; })[0];
+    return first ? first.group : null;
+  }
+  // The columns whose moves show on the timeline, by group id: { songId, col, moves }.
+  function movesByGroup() {
+    var out = {};
+    mix.items.forEach(function (it) {
+      if (!it.lyrics || !hasColumns(it.id)) return;
+      for (var k = 1; k <= columnCount(it.id); k++) {
+        var moves = columnMoves(it.id, k), gid = moves.length ? columnGroupId(it.id, k) : null;
+        if (gid && !out[gid]) out[gid] = { songId: it.id, col: k, moves: moves };
+      }
+    });
+    return out;
+  }
+  function findMove(songId, col, id) { return columnMoves(songId, col).filter(function (m) { return m.id === id; })[0] || null; }
+  // Every other move's start time in the song, for snapping a marker drag.
+  function moveSnapTimes(songId, exceptId) {
+    var lists = [];
+    for (var k = 1; k <= columnCount(songId); k++) lists.push(columnMoves(songId, k));
+    return ColumnMoves.snapTimes(lists, exceptId);
+  }
+  // Selects a move and shows its song and column in Song settings.
+  function selectMove(songId, col, id) {
+    ui.moveSel = { songId: songId, col: col, id: id };
+    if (songClip(songId)) { ui.songSet = songId; ui.songCol = col; }
+    renderTimeline(); renderSongSettings();
   }
   function columnFrames(songId) {
     var out = [];
@@ -11115,16 +11298,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var area = Lyrics.frameArea(old.map(function (s) { return s.frame; }));
     var next = names.map(function (name, i) {
       var j = map[i];
-      if (j >= 0 && old[j]) return { frame: old[j].frame, settings: old[j].settings, heading: old[j].heading || (oldNames.length ? null : Lyrics.tagDisplay(name)) };
-      return { frame: null, settings: Lyrics.columnDefaults(), heading: Lyrics.tagDisplay(name) };
+      if (j >= 0 && old[j]) return { frame: old[j].frame, settings: old[j].settings, heading: old[j].heading || (oldNames.length ? null : Lyrics.tagDisplay(name)), moves: old[j].moves };
+      return { frame: null, settings: Lyrics.columnDefaults(), heading: Lyrics.tagDisplay(name), moves: [] };
     });
     var base = lyr;
     if (next.length) {
       base = Lyrics.withColumnSettings(lyr, 1, next[0].settings);
       if (next[0].frame) base.roll.frame = clone(next[0].frame);
       if (next[0].heading) base.roll.heading = next[0].heading; else delete base.roll.heading;
+      if (next[0].moves.length) base.roll.moves = clone(next[0].moves); else delete base.roll.moves;
     }
-    var more = next.slice(1).map(function (s) { return { heading: s.heading, frame: clone(s.frame || Lyrics.COL2_FRAME) }; });
+    var more = next.slice(1).map(function (s) { return { heading: s.heading, frame: clone(s.frame || Lyrics.COL2_FRAME), moves: s.moves.length ? clone(s.moves) : undefined }; });
     var out = Object.assign({}, base, { more: more.length ? more : undefined, tagNames: names.length ? names : undefined });
     next.slice(1).forEach(function (s, i) { out = Lyrics.withColumnSettings(out, i + 2, s.settings); });
     writeSongLyrics(songId, out);
@@ -12125,6 +12309,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     set('songRollAbove', cs.above); set('songRollBelow', cs.below);
     set('songRollMove', cs.move); set('songRollMotion', cs.motion); set('songRollVerses', cs.verses); set('songRollAlign', cs.align);
     set('songRollX', pct(box.x)); set('songRollY', pct(box.y)); set('songRollW', pct(box.w)); set('songRollH', pct(box.h));
+    renderColumnMoves(id, two, col);
     $('songLookHead').textContent = roll ? 'Look for the lines' : 'Look for new lyric slides';
     $('songLookNote').textContent = roll ? 'Every line uses this look, at exactly this size.' : 'New slides for this song start with this look. Slides already made keep theirs.';
     $('songLookAll').closest('.btnrow').hidden = roll;
@@ -12166,6 +12351,86 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLookAll').textContent = 'Use on every slide in this song (' + count + ')';
     $('songLookAll').disabled = !count;
     renderPulse(has, set);
+  }
+  // The Record moves switch and the selected column's list of moves. Shown only in a Columns song, and never while recording.
+  function renderColumnMoves(songId, two, col) {
+    var shown = two && !ui.rec, moves = shown ? columnMoves(songId, col) : [], on = shown && ui.recordMoves, list = $('songMoveList');
+    $('songMoveRow').hidden = list.hidden = !shown;
+    $('songNormalBox').hidden = !moves.length;
+    $('songRecordMoves').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('songMoveNote').textContent = on ? 'Drag a column’s box to add a move at the playhead.' : 'Drag a column’s box to change its normal box.';
+    if (!shown) { setHTML(list, ''); return; }
+    if (!moves.length) { setHTML(list, '<p class="note">No moves. Turn on Record moves, put the playhead where the move should start, and drag the box.</p>'); return; }
+    var names = { at: 'starts', len: 'glide', x: 'left', y: 'top', w: 'width', h: 'height' };
+    var rows = moves.map(function (m) {
+      var on = ui.moveSel && ui.moveSel.songId === songId && ui.moveSel.col === col && ui.moveSel.id === m.id;
+      function num(field, value, attrs, unit) {
+        return '<td><input type="number" data-mvid="' + esc(m.id) + '" data-mvf="' + field + '" value="' + value + '" ' + attrs + ' aria-label="' + esc('Move at ' + fmt2(m.at) + ', ' + names[field]) + '"> ' + unit + '</td>';
+      }
+      return '<tr' + (on ? ' class="sel"' : '') + '>' + num('at', m.at, 'min="0" step="0.1"', 's') + num('len', m.len, 'min="' + ColumnMoves.MIN_LEN + '" max="' + ColumnMoves.MAX_LEN + '" step="0.1"', 's') +
+        ['x', 'y', 'w', 'h'].map(function (k) { return num(k, pct(m.frame[k]), 'min="0" max="100" step="0.5"', '%'); }).join('') +
+        '<td><button type="button" class="btn small quiet" data-mvgo="' + esc(m.id) + '">Go to</button> <button type="button" class="btn small quiet" data-mvrm="' + esc(m.id) + '">Remove</button></td></tr>';
+    }).join('');
+    var noGroup = columnGroupId(songId, col) ? '' : '<p class="note">This column’s lines aren’t in a timeline group, so its moves show only here.</p>';
+    setHTML(list, '<table><thead><tr><th>Starts</th><th>Glide</th><th>Left</th><th>Top</th><th>Width</th><th>Height</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' + noGroup);
+  }
+  // While a Record moves drag edits a listed move, its box fields follow the drag.
+  function syncMoveRowFields(id, frame) {
+    $('songMoveList').querySelectorAll('input[data-mvf]').forEach(function (el) {
+      var field = el.getAttribute('data-mvf');
+      if (el.getAttribute('data-mvid') === id && frame.hasOwnProperty(field)) el.value = pct(frame[field]);
+    });
+  }
+  function toggleRecordMoves() {
+    ui.recordMoves = !ui.recordMoves;
+    renderSel(); renderSongSettings(); drawScreen();
+  }
+  // Saves a Record moves drag: changes the move the playhead is inside, or adds one. One Undo step. Returns false when nothing was saved.
+  function finishMoveDrag(rec) {
+    if (!rec.moved) return false;
+    var res = ColumnMoves.upsert(columnMoves(rec.songId, rec.col), rec.t, Lyrics.cleanFrame(rec.liveFrame), 'm' + nid());
+    if (res.full) { flashSel('A column can have at most ' + ColumnMoves.MAX_MOVES + ' moves. Remove one first.'); return false; }
+    if (!writeColumnMoves(rec.songId, rec.col, res.moves)) { flashSel('Couldn’t save the move: the song is no longer in Order of music.'); return false; }
+    ui.moveSel = { songId: rec.songId, col: rec.col, id: res.move.id };
+    if (songClip(rec.songId)) { ui.songSet = rec.songId; ui.songCol = rec.col; }
+    jumpHeadTo(res.move.at + res.move.len);
+    changed();
+    songSetSay(res.added ? 'Move added at ' + fmt2(res.move.at) + ' (' + res.move.len + ' s glide).' : 'Move at ' + fmt2(res.move.at) + ' changed.', false);
+    return true;
+  }
+  function editMoveField(songId, input) {
+    var col = songCol(songId), id = input.getAttribute('data-mvid'), field = input.getAttribute('data-mvf'), move = findMove(songId, col, id);
+    if (!move) { renderSongSettings(); return; }
+    var timeField = field === 'at' || field === 'len';
+    function shown(m) { return timeField ? m[field] : pct(m.frame[field]); }
+    var v = parseFloat(input.value);
+    if (!isFinite(v)) { input.value = shown(move); songSetSay('Type a number.', true); return; }
+    var moves = columnMoves(songId, col), next;
+    if (field === 'at') next = ColumnMoves.retime(moves, id, v);
+    else if (field === 'len') next = ColumnMoves.setLen(moves, id, v);
+    else next = ColumnMoves.setFrame(moves, id, Lyrics.cleanFrame(TextLayout.setFrameField(move.frame, field, v / 100)));
+    if (!writeColumnMoves(songId, col, next)) { songSetSay('Couldn’t save the move: the song is no longer in Order of music.', true); return; }
+    ui.moveSel = { songId: songId, col: col, id: id };
+    changed();
+    var stored = shown(findMove(songId, col, id));
+    songSetSay(Math.abs(stored - v) > (timeField ? 0.005 : 0.05) ? 'Set to ' + stored + (timeField ? ' s' : '%') + ', the nearest allowed value.' : '', false);
+  }
+  function onMoveListClick(ev) {
+    var go = ev.target.closest('[data-mvgo]'), rm = ev.target.closest('[data-mvrm]'), songId = $('songSetSong').value;
+    if ((!go && !rm) || !songClip(songId)) return;
+    var col = songCol(songId), id = (go || rm).getAttribute(go ? 'data-mvgo' : 'data-mvrm'), move = findMove(songId, col, id);
+    if (!move) { renderSongSettings(); return; }
+    if (go) {
+      ui.moveSel = { songId: songId, col: col, id: id };
+      jumpHeadTo(move.at);
+      renderTimeline(); renderSongSettings();
+      return;
+    }
+    if (ui.rec) { songSetSay('Stop recording first.', true); return; }
+    if (!writeColumnMoves(songId, col, ColumnMoves.remove(columnMoves(songId, col), id))) { songSetSay('Couldn’t remove the move: the song is no longer in Order of music.', true); return; }
+    if (ui.moveSel && ui.moveSel.id === id) ui.moveSel = null;
+    changed();
+    songSetSay('Removed the move at ' + fmt2(move.at) + '.', false);
   }
   function renderPulse(has, set) {
     var p = mix.opts.pulse, hit = shortestSyllable();
@@ -12514,6 +12779,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (target.name === 'songEntry') { if (final && target.checked && !setEntryMethod(songId, target.value)) renderSongSettings(); return; }
     if (target.name === 'songCol') { if (final && target.checked) { ui.songCol = parseInt(target.value, 10) || 1; songLyricsSay('', false); renderSongSettings(); } return; }
     if (target.id === 'songColHead') { setColumnHeading(songId, songCol(songId), target.value, final); return; }
+    if (target.hasAttribute('data-mvf')) { if (final) editMoveField(songId, target); return; }
     if (target.id.indexOf('songRoll') === 0) { if (final) editSongRoll(songId, target); return; }
     if (target.id.indexOf('songLook') !== 0) return;
     if (final) { editSongLook(songId); return; }
@@ -14628,6 +14894,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
         return;
       }
+      var moveEl = ev.target.closest ? ev.target.closest('[data-move]') : null;
+      if (moveEl) {
+        holdPress(ev);
+        drag = null;
+        if (ui.rec) return;
+        var mparts = moveEl.getAttribute('data-move').split(':'), mSong = mparts[0], mCol = parseInt(mparts[1], 10), mId = mparts.slice(2).join(':');
+        var mMove = findMove(mSong, mCol, mId);
+        if (!mMove) return;
+        selectMove(mSong, mCol, mId);
+        drag = { x: ev.clientX, moved: false, cmove: { songId: mSong, col: mCol, id: mId, at0: mMove.at } };
+        try { tl.setPointerCapture(ev.pointerId); } catch (e) { /* fine */ }
+        return;
+      }
       var animEl = ev.target.closest ? ev.target.closest('.grp.anim') : null;
       if (animEl) {
         holdPress(ev);
@@ -14719,6 +14998,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         else wres = WordTiming.move(mtx.lyric, w.sylId, w.t0 + wdt, w.d0);
         mtx.lyric = wres.slide;
         persistMix(); renderTimeline(); renderSel(); renderWordList(mtx);
+        return;
+      }
+      if (drag && drag.cmove) {
+        var cm = drag.cmove, cdx = ev.clientX - drag.x;
+        if (!drag.moved) { if (Math.abs(cdx) <= 3) return; drag.moved = true; if (Player.tag) Player.stop(); }
+        var cat = Math.max(0, cm.at0 + cdx / pxPerSec());
+        ui.snapT = null;
+        if (!ev.shiftKey) {
+          var cEdges = moveSnapTimes(cm.songId, cm.id);
+          if (ui.cursor > 0) cEdges.push(ui.cursor);
+          var csn = snapTo([cat], cEdges, 8 / pxPerSec());
+          if (csn) { cat += csn.d; ui.snapT = csn.at; }
+        }
+        writeColumnMoves(cm.songId, cm.col, ColumnMoves.retime(columnMoves(cm.songId, cm.col), cm.id, cat));
+        renderTimeline(); drawScreen();
         return;
       }
       if (drag && drag.beat) {
@@ -14856,6 +15150,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       ui.spanHold = false;
       if (!drag) return;
       var d = drag; drag = null;
+      if (d.cmove) {
+        ui.snapT = null;
+        if (d.moved) { changed(); return; }
+        if (ev.type === 'pointercancel') return;
+        var picked = findMove(d.cmove.songId, d.cmove.col, d.cmove.id);
+        if (picked) jumpHeadTo(picked.at);
+        renderSel();
+        return;
+      }
       if (d.beat) {
         if (d.moved) { changed(); return; }
         if (ev.type === 'pointercancel') return;
@@ -14963,6 +15266,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'uncheck') { ui.checked = {}; checksChanged(); return; }
       if (act === 'nextline') { nextLine(); return; }
       if (act === 'ghost') { ui.ghost = !ui.ghost; renderTimeline(); renderSel(); return; }
+      if (act === 'recmoves') { toggleRecordMoves(); return; }
       if (act === 'pullrow') { lineUpRows(false); return; }
       if (act === 'lineuprows') { lineUpRows(true); return; }
       if (act === 'sortlines') { sortLinesInGroup(); return; }
@@ -15369,6 +15673,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (Player.tag === 'pulse') { Player.stop(); drawScreen(); return; }
       startPulsePreview();
     };
+    $('songRecordMoves').onclick = toggleRecordMoves;
+    $('songMoveList').addEventListener('click', onMoveListClick);
     $('songColAdd').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) addColumn(id); };
     $('songColRemove').onclick = function () { var id = $('songSetSong').value; if (songClip(id)) removeColumn(id, songCol(id)); };
     $('songColApplyOpen').onclick = function () { openColumnCopy('to'); };
@@ -15600,10 +15906,21 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var rollSong = fr ? fr.id : hitTx.lyric.song, rollItem = findItem('items', rollSong);
         if (!rollItem || !rollItem.lyrics) { ui.holdT = null; return; }
         if (hitTx && (!ui.sel || ui.sel.id !== hitTx.id)) { ui.sel = { lane: 'texts', id: hitTx.id }; ui.bulk = false; renderTimeline(); renderSel(); renderTexts(); }
-        var rollCol = fr ? fr.col || 1 : b.col || colOf(hitTx);
-        sd = { p: p, kind: 'roll', songId: rollSong, col: rollCol, handle: fr ? fr.handle : 'move', f0: clone(colSettings(rollSong, rollCol).frame) };
-        var anyLine = selText();
-        ui.outlines = anyLine ? outlinesForText(anyLine) : null;
+        var rollCol = fr ? fr.col || 1 : b.col || colOf(hitTx), rollHandle = fr ? fr.handle : 'move', rollMoves = columnMoves(rollSong, rollCol);
+        if (recordingMoves(rollSong)) {
+          var startBox = columnFrameAt(rollSong, rollCol, t), editing = ColumnMoves.windowAt(rollMoves, t);
+          sd = { p: p, kind: 'roll', record: true, songId: rollSong, col: rollCol, handle: rollHandle, t: t, f0: clone(startBox), liveFrame: clone(startBox), editId: editing ? editing.id : null };
+          ui.moveDrag = { songId: rollSong, col: rollCol, frame: clone(startBox) };
+        } else if (ColumnMoves.takenEffect(colSettings(rollSong, rollCol).frame, rollMoves, t)) {
+          var shownBy = fmt2(ColumnMoves.lastStarted(rollMoves, t).at);
+          flashSel('Column ' + rollCol + ' is moved here by a move at ' + shownBy + '. Turn on Record moves to change it, or move the playhead before ' + shownBy + ' to change its normal box.');
+          ui.holdT = null;
+          return;
+        } else {
+          sd = { p: p, kind: 'roll', songId: rollSong, col: rollCol, handle: rollHandle, f0: clone(colSettings(rollSong, rollCol).frame) };
+          var anyLine = selText();
+          ui.outlines = anyLine ? outlinesForText(anyLine) : null;
+        }
       } else if ((fr && fr.lane === 'anims') || (!fr && b.kind === 'anim')) {
         var animId = fr ? fr.id : b.id, animItem = findItem('anims', animId);
         if (!animItem || ui.rec) { ui.holdT = null; return; }
@@ -15649,6 +15966,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (sd.kind === 'roll') {
         var rf = TextLayout.resizeFrame(sd.f0, sd.handle, dx, dy), rollSong = findItem('items', sd.songId);
         snapGuides(rf, sd.handle, ev.shiftKey);
+        if (sd.record) {
+          if (Math.abs(p.x - sd.p.x) > 2 || Math.abs(p.y - sd.p.y) > 2) sd.moved = true;
+          sd.liveFrame = rf;
+          ui.moveDrag = { songId: sd.songId, col: sd.col, frame: rf };
+          drawScreen(ui.holdT);
+          if (sd.editId) syncMoveRowFields(sd.editId, rf);
+          return;
+        }
         if (rollSong && rollSong.lyrics) {
           if (sd.col >= 2) {
             var dragMore = (rollSong.lyrics.more || []).slice();
@@ -15672,8 +15997,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (sd.kind === 'frame') { showTextFit(sd.tx.id); syncBoxFields(sd.tx, true); }
       if (sd.kind === 'pic') syncPicBoxFields();
     });
-    function endScr() {
+    function endScr(ev) {
       if (!sd) return;
+      if (sd.record) {
+        var rec = sd;
+        sd = null; ui.guides = null; ui.outlines = null; ui.moveDrag = null; ui.holdT = null;
+        if (ev.type === 'pointercancel' || !finishMoveDrag(rec)) drawScreen();
+        return;
+      }
       var wasRoll = sd.kind === 'roll';
       sd = null; ui.guides = null; ui.outlines = null;
       persistMix(); renderScreenOpts(); renderSel(); renderPictures(); renderAnimEditor(); drawScreen(ui.holdT);

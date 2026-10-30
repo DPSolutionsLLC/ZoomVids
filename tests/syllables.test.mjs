@@ -4,6 +4,7 @@ import { loadModule } from './extract-module.mjs';
 
 globalThis.TextLook = loadModule('TextLook');
 const S = loadModule('Syllables');
+globalThis.ColumnMoves = loadModule('ColumnMoves');
 const L = loadModule('Lyrics');
 
 function counter() {

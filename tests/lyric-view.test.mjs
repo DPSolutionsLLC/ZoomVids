@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
 const V = loadModule('LyricView');
+globalThis.ColumnMoves = loadModule('ColumnMoves');
 const L = loadModule('Lyrics');
 const W = loadModule('WordTiming');
 

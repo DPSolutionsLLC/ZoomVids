@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
 globalThis.TextLook = loadModule('TextLook');
+globalThis.ColumnMoves = loadModule('ColumnMoves');
 const L = loadModule('Lyrics');
 const KARAOKE_FULL = { font: 'montserrat', bold: true, italic: false, size: 72, color: '#FFFFFF', look: 'solid', glowColor: '#000000', glowOpacity: 60, glowWidth: 12, glowSoft: 20, solidColor: '#000000', solidWidth: 6, boxColor: '#0A100D', boxOpacity: 72 };
 const ROLL_FULL = { frame: { x: 0.06, y: 0.52, w: 0.88, h: 0.42 }, align: 'center', above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'mark', look: Object.assign({}, KARAOKE_FULL, { size: 64 }) };

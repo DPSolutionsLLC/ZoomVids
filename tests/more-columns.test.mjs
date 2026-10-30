@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { loadModule } from './extract-module.mjs';
 
 globalThis.TextLook = loadModule('TextLook');
+globalThis.ColumnMoves = loadModule('ColumnMoves');
 const L = loadModule('Lyrics');
 
 function counter(prefix = 'w') {
