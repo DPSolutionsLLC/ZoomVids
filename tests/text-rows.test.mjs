@@ -264,3 +264,80 @@ describe('lanesBelow', () => {
     assert.equal(TextRows.lanesBelow(layout(['a', 'b'], texts, []), 'gone'), null);
   });
 });
+
+describe('Sort lines', () => {
+  const groupsXY = [{ id: 'gX', name: 'X' }, { id: 'gY', name: 'Y' }];
+  const keysFrom = (map) => (id) => (id in map ? map[id] : null);
+
+  test('orderGroup sorts the members by line and leaves other rows alone', () => {
+    const texts = [{ id: 'a' }, { id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'm3', group: 'gX' }, { id: 'b' }];
+    const out = TextRows.orderGroup(['a', 'm3', 'm1', 'm2', 'b'], texts, groupX, 'gX', keysFrom({ m1: 0, m2: 1, m3: 2 }));
+    assert.deepEqual(out, ['a', 'm1', 'm2', 'm3', 'b']);
+  });
+
+  test('orderGroup keeps the current order for members on the same line', () => {
+    const texts = [{ id: 'p', group: 'gX' }, { id: 'q', group: 'gX' }, { id: 'r', group: 'gX' }];
+    const out = TextRows.orderGroup(['r', 'q', 'p'], texts, groupX, 'gX', keysFrom({ r: 1, q: 0, p: 0 }));
+    assert.deepEqual(out, ['q', 'p', 'r']);
+  });
+
+  test('orderGroup puts members with no line at the bottom in their current order', () => {
+    const texts = [{ id: 'x', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'y', group: 'gX' }, { id: 'm1', group: 'gX' }];
+    const out = TextRows.orderGroup(['x', 'm2', 'y', 'm1'], texts, groupX, 'gX', keysFrom({ m1: 0, m2: 1 }));
+    assert.deepEqual(out, ['m1', 'm2', 'x', 'y']);
+  });
+
+  test('orderGroup treats a key that is not a finite number as no line', () => {
+    const texts = [{ id: 'n', group: 'gX' }, { id: 'm', group: 'gX' }];
+    const out = TextRows.orderGroup(['n', 'm'], texts, groupX, 'gX', keysFrom({ n: NaN, m: 4 }));
+    assert.deepEqual(out, ['m', 'n']);
+  });
+
+  test('orderGroup leaves another group’s order alone', () => {
+    const texts = [{ id: 'x1', group: 'gX' }, { id: 'x2', group: 'gX' }, { id: 'y1', group: 'gY' }, { id: 'y2', group: 'gY' }];
+    const keys = keysFrom({ x1: 0, x2: 1, y1: 0, y2: 1 });
+    const out = TextRows.orderGroup(['x2', 'x1', 'y2', 'y1'], texts, groupsXY, 'gX', keys);
+    assert.deepEqual(out, ['x1', 'x2', 'y2', 'y1']);
+  });
+
+  test('orderGroup with an unknown group returns the rows unchanged', () => {
+    const texts = [{ id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }, { id: 'a' }];
+    const out = TextRows.orderGroup(['m2', 'm1', 'a'], texts, groupX, 'gNope', keysFrom({ m1: 0, m2: 1 }));
+    assert.deepEqual(out, ['m2', 'm1', 'a']);
+  });
+
+  test('orderGroup never changes any text’s timing', () => {
+    const texts = [{ id: 'm1', group: 'gX', start: 30, dur: 4 }, { id: 'm2', group: 'gX', start: 10, dur: 2 }];
+    const before = structuredClone(texts);
+    TextRows.orderGroup(['m2', 'm1'], texts, groupX, 'gX', keysFrom({ m1: 0, m2: 1 }));
+    assert.deepEqual(texts, before);
+  });
+
+  test('groupInOrder is true for a sorted group and false for a shuffled one', () => {
+    const texts = [{ id: 'm1', group: 'gX' }, { id: 'm2', group: 'gX' }];
+    const keys = keysFrom({ m1: 0, m2: 1 });
+    assert.equal(TextRows.groupInOrder(['m1', 'm2'], texts, groupX, 'gX', keys), true);
+    assert.equal(TextRows.groupInOrder(['m2', 'm1'], texts, groupX, 'gX', keys), false);
+  });
+
+  test('groupInOrder counts a group with no lines as in order', () => {
+    const texts = [{ id: 'n1', group: 'gX' }, { id: 'n2', group: 'gX' }];
+    assert.equal(TextRows.groupInOrder(['n2', 'n1'], texts, groupX, 'gX', () => null), true);
+  });
+
+  test('sortLinesState is greyed out while recording, even with one member', () => {
+    assert.deepEqual(TextRows.sortLinesState({ recording: true, members: 1, inOrder: true }), { disabled: true, note: 'Stop recording first.' });
+  });
+
+  test('sortLinesState is greyed out for a single member, even when in order', () => {
+    assert.deepEqual(TextRows.sortLinesState({ recording: false, members: 1, inOrder: true }), { disabled: true, note: 'Only one line in this group.' });
+  });
+
+  test('sortLinesState is greyed out when the lines are already in order', () => {
+    assert.deepEqual(TextRows.sortLinesState({ recording: false, members: 3, inOrder: true }), { disabled: true, note: 'These lines are already in order.' });
+  });
+
+  test('sortLinesState is ready with a null note when there is work to do', () => {
+    assert.deepEqual(TextRows.sortLinesState({ recording: false, members: 3, inOrder: false }), { disabled: false, note: null });
+  });
+});

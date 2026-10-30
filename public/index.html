@@ -2541,7 +2541,37 @@ var TextRows = (function () {
     });
     return lanes;
   }
-  return { tidy: tidy, units: units, display: display, move: move, sortByStart: sortByStart, isSorted: isSorted, dropIndex: dropIndex, lanesBelow: lanesBelow };
+  function lineKey(keyOf, id) {
+    var key = keyOf(id);
+    return typeof key === 'number' && isFinite(key) ? key : null;
+  }
+  function sortMembers(members, keyOf) {
+    var keyed = [], unkeyed = [];
+    members.forEach(function (id, at) {
+      var key = lineKey(keyOf, id);
+      if (key === null) unkeyed.push(id); else keyed.push({ id: id, key: key, at: at });
+    });
+    keyed.sort(function (a, b) { return a.key - b.key || a.at - b.at; });
+    return keyed.map(function (k) { return k.id; }).concat(unkeyed);
+  }
+  function orderGroup(rows, texts, groups, groupId, keyOf) {
+    var list = units(rows, texts, groups).map(function (u) {
+      if (u.kind !== 'group' || u.id !== groupId) return u;
+      return { kind: 'group', id: u.id, members: sortMembers(u.members, keyOf) };
+    });
+    return flatten(list);
+  }
+  function groupInOrder(rows, texts, groups, groupId, keyOf) {
+    var now = flatten(units(rows, texts, groups)), sorted = orderGroup(rows, texts, groups, groupId, keyOf);
+    return now.length === sorted.length && now.every(function (id, i) { return sorted[i] === id; });
+  }
+  function sortLinesState(state) {
+    if (state.recording) return { disabled: true, note: 'Stop recording first.' };
+    if (state.members < 2) return { disabled: true, note: 'Only one line in this group.' };
+    if (state.inOrder) return { disabled: true, note: 'These lines are already in order.' };
+    return { disabled: false, note: null };
+  }
+  return { tidy: tidy, units: units, display: display, move: move, sortByStart: sortByStart, isSorted: isSorted, dropIndex: dropIndex, lanesBelow: lanesBelow, orderGroup: orderGroup, groupInOrder: groupInOrder, sortLinesState: sortLinesState };
 })();
 
 /* Where on-screen text goes inside its box. Pure functions; measuring is passed in. */
@@ -8033,6 +8063,54 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     changed();
     flashSel(TextBatch.lineUpNote(all, out.moved, changes));
   }
+  function sortLinesTarget() {
+    if (WS.id !== 'karaoke') return null;
+    var gid = null;
+    if (TextPick.count(ui.checked, mix.texts) > 0) {
+      var groupIds = checkedIds().map(function (id) { var t = findItem('texts', id); return t && t.group ? t.group : null; });
+      if (!groupIds.length || !groupIds[0]) return null;
+      if (!groupIds.every(function (g) { return g === groupIds[0]; })) return null;
+      gid = groupIds[0];
+    } else {
+      var tx = selText();
+      gid = tx && tx.group ? tx.group : null;
+    }
+    if (!gid || !TextGroup.find(mix.groups, gid)) return null;
+    var hasLyric = TextGroup.memberIds(mix.texts, gid).some(function (id) { var t = findItem('texts', id); return t && t.lyric; });
+    return hasLyric ? gid : null;
+  }
+  function blockLineKey(tx) {
+    if (!tx || !tx.lyric || !tx.lyric.lines) return null;
+    var best = null;
+    for (var i = 0; i < tx.lyric.lines.length; i++) {
+      var hit = blockRecordLine(tx, i, colOf(tx));
+      if (hit && (best === null || hit.k < best)) best = hit.k;
+    }
+    return best;
+  }
+  function sortLinesInfo(gid) {
+    var members = TextGroup.memberIds(mix.texts, gid).length;
+    var keyOf = function (id) { return blockLineKey(findItem('texts', id)); };
+    var inOrder = TextRows.groupInOrder(tidyRows(), mix.texts, mix.groups, gid, keyOf);
+    return { members: members, keyOf: keyOf, inOrder: inOrder, state: TextRows.sortLinesState({ members: members, recording: !!ui.rec, inOrder: inOrder }) };
+  }
+  function sortLinesInGroup() {
+    var gid = sortLinesTarget();
+    if (!gid) return;
+    var info = sortLinesInfo(gid);
+    if (info.state.disabled) { flashSel(info.state.note); return; }
+    if (Player.tag) Player.stop();
+    mix.textRows = TextRows.orderGroup(tidyRows(), mix.texts, mix.groups, gid, info.keyOf);
+    changed();
+    flashSel('Lines in ' + TextGroup.find(mix.groups, gid).name + ' sorted in lyric order. Their timing didn’t change.');
+  }
+  function sortLinesButton() {
+    var gid = sortLinesTarget();
+    if (!gid) return '';
+    var s = sortLinesInfo(gid).state;
+    return '<button class="btn small" data-selact="sortlines"' + (s.disabled ? ' disabled' : '') + ' title="Put this group’s rows in lyric order. Timing stays the same.">Sort lines</button>' +
+      (s.disabled && s.note !== null ? '<span class="note">' + esc(s.note) + '</span>' : '');
+  }
   function nextLine() {
     var tx = selText();
     if (!tx || TextPick.count(ui.checked, mix.texts)) return;
@@ -8327,6 +8405,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return '<button class="btn small next" data-selact="nextline"' + off + ' title="Pull the next row up and select it, ready to record">Next line</button>' +
       '<button class="btn small" data-selact="pullrow"' + off + ' title="Move the row below so it starts where this ends">Pull next row up</button>' +
       '<button class="btn small" data-selact="lineuprows"' + off + ' title="Line up every row below, one after another">Line up rows below</button>' +
+      sortLinesButton() +
       (s.note !== null ? '<span class="note">' + esc(s.note) + '</span>' : '');
   }
   function renderSel() {
@@ -8337,6 +8416,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         '<button class="btn small" data-selact="editchecked">Edit ' + picked + '</button>' +
         '<button class="btn small" data-selact="hidechecked">' + hideLabel + picked + '</button>' +
         '<button class="btn small" data-selact="groupchecked">Group ' + picked + '</button>' +
+        sortLinesButton() +
         '<button class="btn small" data-selact="rmchecked">Remove ' + picked + '</button><button class="btn small quiet" data-selact="uncheck">Clear selection</button>' +
         '<span class="note">' + esc(selFlash || 'Drag any of them, or use the arrow keys, to move them together. Ctrl+click text on the timeline to add or take away. Delete removes them. Esc clears the selection.') + '</span>');
       return;
@@ -14775,6 +14855,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'ghost') { ui.ghost = !ui.ghost; renderTimeline(); renderSel(); return; }
       if (act === 'pullrow') { lineUpRows(false); return; }
       if (act === 'lineuprows') { lineUpRows(true); return; }
+      if (act === 'sortlines') { sortLinesInGroup(); return; }
       var hit = clipOf(ui.sel);
       if (!hit) return;
       var barSel = timelineSel(ui.sel);
