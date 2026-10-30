@@ -324,3 +324,58 @@ describe('lineRecord', () => {
     });
   });
 });
+
+describe('recordKey', () => {
+  const base = { karaoke: true, typing: false, dialog: false, modifier: false, repeat: false, recording: false, beats: false, singleLine: false, selected: true };
+  const none = { act: 'none', note: null };
+  const guards = ['typing', 'dialog', 'modifier', 'repeat'];
+
+  test('ignores other keys', () => {
+    assert.deepEqual(W.recordKey('x', base), none);
+  });
+  test('R records and T moves on when a line is selected', () => {
+    assert.deepEqual(W.recordKey('r', base), { act: 'record', note: null });
+    assert.deepEqual(W.recordKey('t', base), { act: 'next', note: null });
+  });
+  for (const key of ['r', 't']) {
+    test(`${key}: does nothing on the hymn page`, () => {
+      assert.deepEqual(W.recordKey(key, { ...base, karaoke: false }), none);
+      assert.deepEqual(W.recordKey(key, { ...base, karaoke: false, recording: true, singleLine: true }), none);
+    });
+    for (const guard of guards) {
+      test(`${key}: does nothing when ${guard}`, () => {
+        assert.deepEqual(W.recordKey(key, { ...base, [guard]: true }), none);
+        assert.deepEqual(W.recordKey(key, { ...base, [guard]: true, recording: true, singleLine: true }), none);
+      });
+    }
+    test(`${key}: asks for a selection when nothing is selected`, () => {
+      assert.deepEqual(W.recordKey(key, { ...base, selected: false }), { act: 'say', note: 'Select a lyric line on the timeline first.' });
+    });
+    test(`${key}: refuses during a beat run`, () => {
+      assert.deepEqual(W.recordKey(key, { ...base, recording: true, beats: true }), { act: 'say', note: 'R and T work while recording lyric lines.' });
+    });
+  }
+  test('R restarts a lyric run', () => {
+    assert.deepEqual(W.recordKey('r', { ...base, recording: true, singleLine: true }), { act: 'restart', note: null });
+    assert.deepEqual(W.recordKey('r', { ...base, recording: true, singleLine: false }), { act: 'restart', note: null });
+  });
+  test('R restarts even when nothing is selected', () => {
+    assert.deepEqual(W.recordKey('r', { ...base, recording: true, singleLine: true, selected: false }), { act: 'restart', note: null });
+  });
+  test('T finishes a single-line run and moves on', () => {
+    assert.deepEqual(W.recordKey('t', { ...base, recording: true, singleLine: true }), { act: 'finishNext', note: null });
+  });
+  test('T refuses during a whole-song run', () => {
+    assert.deepEqual(W.recordKey('t', { ...base, recording: true, singleLine: false }), { act: 'say', note: 'T works while recording one line. Press Esc to stop.' });
+  });
+  test('note is null, never empty, unless there is something to say', () => {
+    const cases = [base, { ...base, recording: true, singleLine: true }, { ...base, recording: true }, { ...base, karaoke: false }];
+    for (const info of cases) {
+      for (const key of ['r', 't', 'x']) {
+        const res = W.recordKey(key, info);
+        if (res.act === 'say') assert.ok(res.note && res.note.length > 0);
+        else assert.equal(res.note, null);
+      }
+    }
+  });
+});

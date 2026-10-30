@@ -174,6 +174,7 @@ The slides land back to back as one group named after the song: starting at the 
 - **Record this slide** plays from a few seconds before the slide. **Record the whole song** plays from the start of the song and moves from slide to slide by itself.
 - Hold **Space** while each syllable is sung, and let go when it ends. A quick tap counts as at least 0.15 s. The bar above the timeline shows the line, with the next syllable in bold.
 - **Backspace** takes back the last syllable and jumps back a moment. **Esc** (or the Stop button) stops and keeps what you've recorded.
+- **R** and **T** (karaoke page): with one lyric line selected, **R** records it, like Record this line. While a line is recording, **R** starts it over and puts back its old timing. **T** pulls the next row up and starts recording it. While a single line is recording, **T** keeps what you've recorded and moves on. Both play from a few seconds before the line. They do nothing while you're typing in a box.
 - Recording over a slide replaces its old timing as soon as you press its first syllable. One Undo puts back the whole recording.
 - **Speed** lets you record at 0.75× or 0.5×. Slower speeds sound lower, but the times still land right at full speed.
 - When one lyric slide is selected on the timeline, the bar under the timeline also has **Speed** and **Record this line** (or **Record this slide**), so you can re-time it without opening its settings. Speed there is the same setting as in the slide's settings.
