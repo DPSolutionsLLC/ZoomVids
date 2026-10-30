@@ -398,3 +398,80 @@ describe('resizeCrop', () => {
     near(c.x, 0.6 - PictureBox.MIN_CROP, 1e-4); near(c.x + c.w, 0.6, 1e-4);
   });
 });
+
+describe('cleanBlur', () => {
+  test('no blur or a non-object gives null', () => {
+    assert.equal(PictureBox.cleanBlur(null), null);
+    assert.equal(PictureBox.cleanBlur(undefined), null);
+    assert.equal(PictureBox.cleanBlur('blur'), null);
+    assert.equal(PictureBox.cleanBlur(50), null);
+  });
+
+  test('a missing amount becomes 50', () => {
+    assert.deepEqual(PictureBox.cleanBlur({}), { amount: 50 });
+  });
+
+  test('the amount is rounded and kept between 0 and 100', () => {
+    assert.equal(PictureBox.cleanBlur({ amount: 150 }).amount, 100);
+    assert.equal(PictureBox.cleanBlur({ amount: -5 }).amount, 0);
+    assert.equal(PictureBox.cleanBlur({ amount: 12.6 }).amount, 13);
+  });
+});
+
+describe('clean and blur', () => {
+  test('a video keeps its blur', () => {
+    assert.deepEqual(PictureBox.clean({ blur: { amount: 70 } }, 'video').blur, { amount: 70 });
+  });
+
+  test('a picture never keeps blur', () => {
+    assert.equal('blur' in PictureBox.clean({ blur: { amount: 70 } }, 'image'), false);
+  });
+
+  test('with both a valid key and a valid blur, the key wins', () => {
+    const out = PictureBox.clean({ key: { color: '#00B140', amount: 55 }, blur: { amount: 70 } }, 'video');
+    assert.deepEqual(out.key, { color: '#00B140', amount: 55 });
+    assert.equal('blur' in out, false);
+  });
+
+  test('defaults have no blur', () => {
+    ['image', 'video'].forEach((kind) => {
+      assert.equal('blur' in PictureBox.clean(PictureBox.defaults(kind), kind), false);
+    });
+  });
+});
+
+describe('setBlur and setKey keep only one of them on', () => {
+  test('setBlur on a keyed pic removes the key', () => {
+    const pic = { key: { color: '#00B140', amount: 55 } };
+    PictureBox.setBlur(pic, 40);
+    assert.deepEqual(pic.blur, { amount: 40 });
+    assert.equal('key' in pic, false);
+  });
+
+  test('setBlur with null removes the blur and leaves a key alone', () => {
+    const pic = { blur: { amount: 40 }, key: { color: '#00B140', amount: 55 } };
+    assert.equal(PictureBox.setBlur(pic, null), pic);
+    assert.equal('blur' in pic, false);
+    assert.deepEqual(pic.key, { color: '#00B140', amount: 55 });
+  });
+
+  test('setKey on a blurred pic removes the blur and upper-cases the color', () => {
+    const pic = { blur: { amount: 40 } };
+    PictureBox.setKey(pic, { color: '#00b140', amount: 55 });
+    assert.deepEqual(pic.key, { color: '#00B140', amount: 55 });
+    assert.equal('blur' in pic, false);
+  });
+
+  test('setKey with null removes the key', () => {
+    const pic = { key: { color: '#00B140', amount: 55 } };
+    assert.equal(PictureBox.setKey(pic, null), pic);
+    assert.equal('key' in pic, false);
+  });
+
+  test('setKey with a bad color leaves the blur on and sets no key', () => {
+    const pic = { blur: { amount: 40 } };
+    PictureBox.setKey(pic, { color: 'green', amount: 55 });
+    assert.equal('key' in pic, false);
+    assert.deepEqual(pic.blur, { amount: 40 });
+  });
+});

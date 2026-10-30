@@ -318,6 +318,7 @@ Press **Choose a stretch** in the Scripture collection, then click a gap between
 - **Fit**: **Fill the box** crops the edges so there are no bars; **Show the whole picture** fits all of it inside the box.
 - **Rounded corners** and **Soft shadow**: on for the window positions, off for **Full screen**. Tick them to change that.
 - **Background color**: press **Pick the background color**, then click the wall or green screen behind the person in the preview. That color becomes see-through, and whatever is underneath shows through. **How much to remove** tunes it: raise it until the background is gone, lower it if parts of the person disappear. **Turn off** brings the original back. It works best on an even, single-color background that is unlike the person's clothes and skin. The soft shadow is off while it's on.
+- **Background blur** (video clips only): press **Turn on** and the person stays sharp while the room behind them is blurred, like Zoom's "blur my background". **How much blur** sets the strength. Everyone in the frame stays sharp; with nobody in the frame, the whole picture is blurred. The first time, it downloads about 14 MB from the internet; after that the browser keeps it. A clip uses either blur or a removed background color, not both: turning one on turns the other off. Crop still applies. Edges around hair, hands and fast movement aren't always perfect. It works on both pages: spoken clips, and song tracks on the karaoke page.
 - **Fade in** and **Fade out**, in seconds.
 - For pictures: **Starts at**, **Shows for**, **Motion** (None, Slow zoom in, Slow zoom out, Drift left, Drift right, Drift up, Zoom and drift, Slight turn) and **Strength** (**Subtle** or **Medium**). The motion runs over the picture's whole time on screen, fades included, and the picture is always made just big enough that its edges never show.
 
@@ -325,7 +326,7 @@ Press **Choose a stretch** in the Scripture collection, then click a gap between
 
 **What's on top.** Titles and your own text are always on top of pictures. Among pictures, the one that starts later is on top. Several pictures can show at once, and their boxes can overlap.
 
-**Exporting.** With video clips or moving pictures, the video is built at 30 frames a second, so it takes longer: 10 minutes or more for a full mix. Videos with a removed background color take a little longer to export.
+**Exporting.** With video clips or moving pictures, the video is built at 30 frames a second, so it takes longer: 10 minutes or more for a full mix. Videos with a removed background color take a little longer to export, and videos with background blur take longer still.
 
 **Large videos.** A clip's sound is read from the whole file the first time you use it, so a smaller download (720p or 360p) is quicker and uses less memory than 1080p. The picture is read a little at a time. Some downloads use a "streaming" MP4 format the app can't read; it says so, and a regular MP4 download works. If a video or picture can't be read, its row says why, and an export stops with the reason instead of leaving it out.
 

@@ -2777,6 +2777,23 @@ var PictureBox = (function () {
     if (!k || typeof k !== 'object' || typeof k.color !== 'string' || !HEX.test(k.color)) return null;
     return { color: k.color.toUpperCase(), amount: num(k.amount) ? clamp(Math.round(k.amount), 0, 100) : 40 };
   }
+  function cleanBlur(b) {
+    if (!b || typeof b !== 'object') return null;
+    return { amount: num(b.amount) ? clamp(Math.round(b.amount), 0, 100) : 50 };
+  }
+  function setBlur(pic, amount) {
+    if (amount == null) { delete pic.blur; return pic; }
+    pic.blur = cleanBlur({ amount: amount });
+    delete pic.key;
+    return pic;
+  }
+  function setKey(pic, key) {
+    if (!key) { delete pic.key; return pic; }
+    pic.key = cleanKey(key);
+    if (!pic.key) { delete pic.key; return pic; }
+    delete pic.blur;
+    return pic;
+  }
   function clean(pic, kind) {
     var d = defaults(kind), p = pic && typeof pic === 'object' ? pic : {};
     var out = {
@@ -2790,6 +2807,7 @@ var PictureBox = (function () {
     if (kind === 'video') out.show = p.show !== false;
     var crop = cleanCrop(p.crop); if (crop) out.crop = crop;
     var key = cleanKey(p.key); if (key) out.key = key;
+    if (kind === 'video' && !out.key) { var blur = cleanBlur(p.blur); if (blur) out.blur = blur; }
     return out;
   }
   function cleanItem(item) {
@@ -2899,7 +2917,7 @@ var PictureBox = (function () {
   }
   return {
     IMAGE_EXT: IMAGE_EXT, VIDEO_EXT: VIDEO_EXT, AUDIO_EXT: AUDIO_EXT, PRESETS: PRESETS, PRESET_LABELS: PRESET_LABELS, MIN_W: MIN_W, MIN_H: MIN_H, MIN_CROP: MIN_CROP,
-    fileKind: fileKind, isMedia: isMedia, isFull: isFull, defaults: defaults, applyPreset: applyPreset, clean: clean, cleanItem: cleanItem, cleanCrop: cleanCrop, cleanKey: cleanKey,
+    fileKind: fileKind, isMedia: isMedia, isFull: isFull, defaults: defaults, applyPreset: applyPreset, clean: clean, cleanItem: cleanItem, cleanCrop: cleanCrop, cleanKey: cleanKey, cleanBlur: cleanBlur, setBlur: setBlur, setKey: setKey,
     shapeFrame: shapeFrame, fitRect: fitRect, cropSource: cropSource, croppedSize: croppedSize, resizeCrop: resizeCrop, alphaRaw: alphaRaw, contains: contains, alphas: alphas, order: order, rows: rows, placeAt: placeAt
   };
 })();
@@ -2989,6 +3007,40 @@ var ChromaKey = (function () {
     return '#' + hex2(r / n) + hex2(g / n) + hex2(b / n);
   }
   return { parseHex: parseHex, chroma: chroma, prepare: prepare, alphaFor: alphaFor, apply: apply, sample: sample };
+})();
+
+/* Background blur: turns the person-finder's confidence into a mask, and sizes the blur. Pure functions. */
+var BlurMask = (function () {
+  var MAX_RADIUS = 30, DEFAULT_AMOUNT = 50, SEG_LONG = 256, SEG_MIN = 16;
+  function radius(amount, screenH) {
+    var r = Math.max(0, amount) / 100 * MAX_RADIUS * screenH / 1080;
+    return Math.round(r * 10) / 10;
+  }
+  function shape(c) {
+    var t = Math.min(1, Math.max(0, (c - 0.35) / 0.3));
+    return t * t * (3 - 2 * t);
+  }
+  function alpha(conf, prev, mix) {
+    var out = new Uint8ClampedArray(conf.length), usePrev = !!prev && prev.length === conf.length;
+    for (var i = 0; i < conf.length; i++) {
+      var a = shape(conf[i]) * 255;
+      if (usePrev) a = a * (1 - mix) + prev[i] * mix;
+      out[i] = Math.round(a);
+    }
+    return out;
+  }
+  function toRgba(alphaArr, out) {
+    for (var i = 0; i < alphaArr.length; i++) {
+      var j = i * 4;
+      out[j] = 255; out[j + 1] = 255; out[j + 2] = 255; out[j + 3] = alphaArr[i];
+    }
+    return out;
+  }
+  function segmentSize(w, h) {
+    var k = Math.min(1, SEG_LONG / Math.max(w, h));
+    return { w: Math.max(SEG_MIN, Math.round(w * k)), h: Math.max(SEG_MIN, Math.round(h * k)) };
+  }
+  return { MAX_RADIUS: MAX_RADIUS, DEFAULT_AMOUNT: DEFAULT_AMOUNT, radius: radius, shape: shape, alpha: alpha, toRgba: toRgba, segmentSize: segmentSize };
 })();
 
 /* What is drawn behind on-screen text: nothing, a soft shadow, a soft outline, a solid outline or a dark box. Pure functions. */
@@ -9596,6 +9648,100 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function makeCanvas(w, h) {
     return typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
   }
+  // The person-finder for background blur, loaded from the internet the first time blur is needed.
+  var SEG_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
+  var SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite';
+  var SegmentLoader = { seg: null, err: null, promise: null };
+  function ensureSegmenter() {
+    if (SegmentLoader.promise) return SegmentLoader.promise;
+    SegmentLoader.err = null;
+    SegmentLoader.promise = import(SEG_BASE + '/vision_bundle.mjs').then(function (mp) {
+      return mp.FilesetResolver.forVisionTasks(SEG_BASE + '/wasm').then(function (files) {
+        return mp.ImageSegmenter.createFromOptions(files, { baseOptions: { modelAssetPath: SEG_MODEL, delegate: 'CPU' }, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false });
+      });
+    }).then(function (seg) { SegmentLoader.seg = seg; renderPicEditor(); drawScreen(); return seg; },
+      function (e) { SegmentLoader.err = e; SegmentLoader.promise = null; renderPicEditor(); throw e; });
+    return SegmentLoader.promise;
+  }
+  // Each blurred clip has its own canvases, because two blurred clips can overlap during a crossfade.
+  var blurBuf = {};
+  function blurCanvas(entry, name, w, h) {
+    var c = entry[name];
+    if (!c) c = entry[name] = makeCanvas(w, h);
+    else if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return c;
+  }
+  // The source drawn at cw × ch with `pad` extra pixels on every side, filled by stretching the edge pixels outward.
+  function paddedSource(entry, src, r, cw, ch, pad) {
+    var pc = blurCanvas(entry, 'pad', cw + 2 * pad, ch + 2 * pad), pg = pc.getContext('2d');
+    var ex = r.sw / cw, ey = r.sh / ch, x1 = r.sx + r.sw - ex, y1 = r.sy + r.sh - ey, img = src.img;
+    pg.clearRect(0, 0, pc.width, pc.height);
+    pg.drawImage(img, r.sx, r.sy, r.sw, r.sh, pad, pad, cw, ch);
+    pg.drawImage(img, r.sx, r.sy, ex, r.sh, 0, pad, pad, ch);
+    pg.drawImage(img, x1, r.sy, ex, r.sh, pad + cw, pad, pad, ch);
+    pg.drawImage(img, r.sx, r.sy, r.sw, ey, pad, 0, cw, pad);
+    pg.drawImage(img, r.sx, y1, r.sw, ey, pad, pad + ch, cw, pad);
+    pg.drawImage(img, r.sx, r.sy, ex, ey, 0, 0, pad, pad);
+    pg.drawImage(img, x1, r.sy, ex, ey, pad + cw, 0, pad, pad);
+    pg.drawImage(img, r.sx, y1, ex, ey, 0, pad + ch, pad, pad);
+    pg.drawImage(img, x1, y1, ex, ey, pad + cw, pad + ch, pad, pad);
+    return pc;
+  }
+  // The layer's video frame with the person sharp and everything behind them blurred, sized cw × ch. Null while the person-finder loads.
+  function blurredSource(l, src, r, cw, ch, H, t) {
+    if (!SegmentLoader.seg) {
+      if (!SegmentLoader.err) ensureSegmenter().catch(function () { /* shown in the editor */ });
+      return null;
+    }
+    var id = layerKey(l), entry = blurBuf[id];
+    if (!entry) {
+      if (Object.keys(blurBuf).length >= 6) blurBuf = {};
+      entry = blurBuf[id] = {};
+    }
+    var frameId = src.img.timestamp != null ? src.img.timestamp : null;
+    var sig = [cw, ch, JSON.stringify(l.pic.crop || null), l.pic.blur.amount, H].join('|');
+    if (frameId != null && entry.out && entry.sig === sig && entry.frameId === frameId) return entry.out;
+    var size = BlurMask.segmentSize(cw, ch), sw = size.w, sh = size.h;
+    var segCv = blurCanvas(entry, 'seg', sw, sh), sg = segCv.getContext('2d', { willReadFrequently: true });
+    sg.clearRect(0, 0, sw, sh);
+    sg.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, 0, 0, sw, sh);
+    var prev = entry.sig === sig && entry.alpha && t - entry.lastT > 0 && t - entry.lastT < 0.25 ? entry.alpha : null;
+    try {
+      var res = SegmentLoader.seg.segment(segCv);
+      try {
+        var masks = res.confidenceMasks;
+        if (!masks || !masks[0]) throw new Error('no mask came back');
+        var conf = masks[0].getAsFloat32Array();
+        if (conf.length !== sw * sh) throw new Error('the mask came back the wrong size');
+        entry.alpha = BlurMask.alpha(conf, prev, 0.4);
+      } finally { res.close(); }
+    } catch (e) { throw new Error('background blur failed: ' + errText(e, 'unknown problem')); }
+    entry.lastT = t;
+    var maskCv = blurCanvas(entry, 'mask', sw, sh);
+    if (!entry.maskData || entry.maskData.width !== sw || entry.maskData.height !== sh) entry.maskData = new ImageData(sw, sh);
+    BlurMask.toRgba(entry.alpha, entry.maskData.data);
+    maskCv.getContext('2d').putImageData(entry.maskData, 0, 0);
+    var sharpCv = blurCanvas(entry, 'sharp', cw, ch), shg = sharpCv.getContext('2d');
+    shg.clearRect(0, 0, cw, ch);
+    shg.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, 0, 0, cw, ch);
+    shg.globalCompositeOperation = 'destination-in';
+    shg.imageSmoothingEnabled = true;
+    shg.filter = 'blur(' + (1.5 * ch / 540).toFixed(1) + 'px)';
+    shg.drawImage(maskCv, 0, 0, sw, sh, 0, 0, cw, ch);
+    shg.filter = 'none';
+    shg.globalCompositeOperation = 'source-over';
+    var rad = BlurMask.radius(l.pic.blur.amount, H), pad = Math.ceil(rad * 2);
+    var outCv = blurCanvas(entry, 'out', cw, ch), og = outCv.getContext('2d');
+    og.clearRect(0, 0, cw, ch);
+    if (pad > 0) {
+      og.filter = 'blur(' + rad + 'px)';
+      og.drawImage(paddedSource(entry, src, r, cw, ch, pad), -pad, -pad);
+      og.filter = 'none';
+    } else og.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, 0, 0, cw, ch);
+    og.drawImage(sharpCv, 0, 0);
+    entry.sig = sig; entry.frameId = frameId;
+    return outCv;
+  }
   var keyScratch = null, keyedStills = {}, keyedStillCount = 0;
   function isPicking(l) { return !!(ui.picTool && ui.picTool.mode === 'pick' && ui.picTool.lane === l.lane && ui.picTool.id === l.id); }
   // The layer's picture with its background color made see-through, sized cw × ch. Stills are kept; video frames are redone each time.
@@ -9638,6 +9784,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (src) {
         var placed = layerDrawRect(l, src, W, H), r = placed.r, rect = placed.rect;
         var useKey = !!l.pic.key && !(boxes && isPicking(l));
+        var useBlur = !useKey && !!l.pic.blur && l.kind === 'video', blurCv = null, blurW = 0, blurH = 0;
+        if (useBlur) {
+          blurW = Math.max(1, Math.round(rect.w)); blurH = Math.max(1, Math.round(rect.h));
+          if (boxes) {
+            try { blurCv = blurredSource(l, src, r, blurW, blurH, H, t); }
+            catch (e) { if (!SegmentLoader.err) { SegmentLoader.err = e; renderPicEditor(); } blurCv = null; }
+          } else {
+            blurCv = blurredSource(l, src, r, blurW, blurH, H, t);
+            if (!blurCv) throw new Error('background blur was not ready');
+          }
+        }
         var rad = l.pic.round ? 0.035 * Math.min(rect.w, rect.h) : 0;
         var m = l.kind === 'image' ? PictureMotion.transform(l.motion, l.strength, (t - l.start) / l.dur, rect.w, rect.h) : { scale: 1, dx: 0, dy: 0, rot: 0 };
         g.save();
@@ -9654,7 +9811,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (useKey) {
           var keyW = Math.max(1, Math.round(rect.w)), keyH = Math.max(1, Math.round(rect.h));
           g.drawImage(keyedSource(l, src, r, keyW, keyH), 0, 0, keyW, keyH, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
-        } else g.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+        } else if (blurCv) g.drawImage(blurCv, 0, 0, blurW, blurH, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+        else g.drawImage(src.img, r.sx, r.sy, r.sw, r.sh, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
         g.restore();
       } else if (boxes && a > 0) {
         g.save(); g.setLineDash([4, 4]); g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -13875,6 +14033,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       '<label><input type="checkbox" data-pf="round"> Rounded corners</label><label><input type="checkbox" data-pf="shadow"> Soft shadow</label></div>' +
       '<h4 class="edhead">Background color</h4><div class="btnrow"><button class="btn small" data-pact="pick">Pick the background color</button><span class="swatch keyswatch" data-pnote="keyColor"></span><button class="btn small quiet" data-pact="keyOff">Turn off</button></div>' +
       '<label class="keyamount">How much to remove <input type="range" data-pf="keyAmount" min="0" max="100" step="1"></label><p class="note" data-pnote="key"></p>' +
+      (image ? '' : '<h4 class="edhead">Background blur</h4><div class="btnrow"><button class="btn small" data-pact="blurOn">Turn on</button><button class="btn small quiet" data-pact="blurOff">Turn off</button></div>' +
+        '<label class="keyamount">How much blur <input type="range" data-pf="blurAmount" min="0" max="100" step="1"></label><p class="note" data-pnote="blur"></p>') +
       '<h4 class="edhead">Timing</h4><div class="grid timing">' +
       (image ? '<label>Starts at <input type="text" data-pf="start" inputmode="decimal"></label><label>Shows for <span><input type="number" data-pf="dur" min="0.5" max="3600" step="0.5"> s</span></label>' : '') +
       '<label>Fade in <span><input type="number" data-pf="fadeIn" min="0" max="10" step="0.5"> s</span></label><label>Fade out <span><input type="number" data-pf="fadeOut" min="0" max="10" step="0.5"> s</span></label></div>';
@@ -13930,6 +14090,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (pic.key) setVal('[data-pf="keyAmount"]', pic.key.amount);
     field('[data-pact="keyOff"]').disabled = !pic.key;
     field('[data-pnote="key"]').textContent = pic.key ? 'Whatever is underneath shows through.' : 'Click the button, then click the wall or green screen behind the person.';
+    var blurOnBtn = field('[data-pact="blurOn"]');
+    if (blurOnBtn) {
+      blurOnBtn.classList.toggle('primary', !!pic.blur);
+      blurOnBtn.disabled = !!pic.blur;
+      field('[data-pact="blurOff"]').disabled = !pic.blur;
+      field('[data-pf="blurAmount"]').disabled = !pic.blur;
+      if (pic.blur) setVal('[data-pf="blurAmount"]', pic.blur.amount);
+      field('[data-pnote="blur"]').textContent =
+        pic.blur && SegmentLoader.err ? 'Background blur couldn’t load. Check the internet connection, then press Turn on again.' :
+        pic.blur && !SegmentLoader.seg ? 'Loading background blur…' :
+        pic.blur ? 'The person stays sharp; everything behind them is blurred. Edges around hair and fast movement may not be perfect.' :
+        pic.key ? 'Turning this on turns off the removed background color.' :
+        'Keeps the person sharp and blurs the room behind them.';
+    }
     setVal('[data-pf="fit"]', pic.fit);
     setTick('[data-pf="round"]', pic.round); setTick('[data-pf="shadow"]', pic.shadow, !!pic.key);
     field('[data-pf="shadow"]').parentNode.title = pic.key ? 'Off while the background color is removed' : '';
@@ -13957,6 +14131,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (f === 'fit') pic.fit = el.value === 'contain' ? 'contain' : 'cover';
     else if (f === 'round' || f === 'shadow') pic[f] = el.checked;
     else if (f === 'keyAmount') { if (pic.key && isFinite(v)) pic.key.amount = clamp(Math.round(v), 0, 100); }
+    else if (f === 'blurAmount') { if (pic.blur && isFinite(v)) pic.blur.amount = clamp(Math.round(v), 0, 100); }
     else if (f === 'fadeIn' || f === 'fadeOut') { if (isFinite(v)) pic[f] = clamp(v, 0, 10); }
     else if (f === 'dur') { if (isFinite(v)) it.dur = clamp(Math.round(v * 10) / 10, 0.5, 3600); }
     else if (f === 'start') { if (final) { var st = parseTime(el.value); if (st != null) it.start = Math.max(0, Math.round(st * 10) / 10); } }
@@ -14261,6 +14436,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (bgp) bgp.close();
       Object.keys(clips).forEach(function (id) { clips[id].player.close(); });
       PicCache.pinned = [];
+      blurBuf = {};
       try { if (ve && ve.state !== 'closed') ve.close(); } catch (e) { /* fine */ }
       aes.forEach(function (ae) { try { if (ae.state !== 'closed') ae.close(); } catch (e) { /* fine */ } });
     }
@@ -14277,6 +14453,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       try { got = await document.fonts.load(list[i]); } catch (e) { got = null; }
       if (!got || !got.length) throw new Error('the font “' + (list[i].match(/"([^"]+)"/) || [0, 'unknown'])[1] + '” could not be loaded (check the internet connection)');
     }
+  }
+  // A video with background blur must not be built until the person-finder is ready, or the clip would come out sharp.
+  async function loadExportBlur() {
+    if (!pictureLayers().some(function (l) { return l.kind === 'video' && l.pic.blur; })) return;
+    say('Loading background blur…');
+    try { await ensureSegmenter(); } catch (e) { throw new Error('background blur could not be loaded (check the internet connection)'); }
   }
   function setVocalExport(next) { mix.vocalExport = next; saveSoon(); }
   function setExportName(n) {
@@ -14306,6 +14488,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         var withVideo = fmtNow === 'video', ways = withVideo ? await videoPlans(videoShape()) : [{ container: 'webm', acodec: 'opus', amux: 'A_OPUS' }];
         if (!ways.length) throw new Error('this browser cannot make video files');
         if (withVideo) await loadExportFonts();
+        if (withVideo) await loadExportBlur();
         for (var i = 0; i < ways.length; i++) {
           try { res = await encodeMedia(outs.map(function (o) { return o.plan; }), withVideo, ways[i], len); break; }
           catch (e) { if (i === ways.length - 1) throw e; say('Trying another way to build the video…'); }
@@ -15820,7 +16003,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         renderPicEditor(); drawScreen();
       }
       else if (act === 'cropReset' && sp.item.pic) { delete sp.item.pic.crop; changed(); }
-      else if (act === 'keyOff' && sp.item.pic) { delete sp.item.pic.key; if (picToolFor(sp, 'pick')) ui.picTool = null; changed(); }
+      else if (act === 'keyOff' && sp.item.pic) { PictureBox.setKey(sp.item.pic, null); if (picToolFor(sp, 'pick')) ui.picTool = null; changed(); }
+      else if (act === 'blurOn' && sp.item.pic) {
+        PictureBox.setBlur(sp.item.pic, sp.item.pic.blur ? sp.item.pic.blur.amount : BlurMask.DEFAULT_AMOUNT);
+        if (picToolFor(sp, 'pick')) ui.picTool = null;
+        SegmentLoader.err = null;
+        ensureSegmenter().catch(function () { /* shown in the editor */ });
+        changed();
+      }
+      else if (act === 'blurOff' && sp.item.pic) { PictureBox.setBlur(sp.item.pic, null); changed(); }
     });
     picEdEl.addEventListener('input', function (ev) {
       var sp = selPicture(); if (!sp || (ev.target.type !== 'number' && ev.target.type !== 'range')) return;
@@ -15884,9 +16075,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var color = ChromaKey.sample(patchCtx.getImageData(0, 0, patchW, patchH).data, patchW, patchH, srcX - patchX, srcY - patchY, 4);
       var pickPic = picOf(tool.lane, tool.id);
       if (!color || !pickPic) { flashSel('That color couldn’t be read. Try clicking again.'); return; }
-      pickPic.key = { color: color, amount: pickPic.key ? pickPic.key.amount : 40 };
+      var hadBlur = !!pickPic.blur;
+      PictureBox.setKey(pickPic, { color: color, amount: pickPic.key ? pickPic.key.amount : 40 });
       ui.picTool = null;
       changed();
+      if (hadBlur) flashSel('Background blur is off while a background color is removed.');
     }
     scr.addEventListener('pointerdown', function (ev) {
       if (ui.picTool) {
