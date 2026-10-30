@@ -286,3 +286,127 @@ describe('SylShape.copyTargets', () => {
     assert.deepEqual(S.copyTargets(lines, { key: 'zz', from: 0, to: 0 }), []);
   });
 });
+
+describe('SylShape.glideFrom', () => {
+  test('starts when the previous line ends', () => {
+    assert.equal(S.glideFrom(10, 9.8, 2), 9.8);
+  });
+  test('a long gap uses the lead-in', () => {
+    assert.equal(S.glideFrom(10, 3, 2), 8);
+  });
+  test('the first line uses the lead-in', () => {
+    assert.equal(S.glideFrom(10, null, 2), 8);
+  });
+  test('never starts after the line starts, even when the previous line overlaps', () => {
+    assert.equal(S.glideFrom(10, 10.5, 2), 10);
+  });
+  test('may start before the block starts', () => {
+    assert.equal(S.glideFrom(1, null, 2), -1);
+  });
+});
+
+describe('SylShape.prevEndOf', () => {
+  test('picks the largest end at or before the row starts', () => {
+    const rows = [{ start: 0, end: 2 }, { start: 3, end: 5 }, { start: 6, end: 8 }];
+    assert.equal(S.prevEndOf(rows, 2, null), 5);
+  });
+  test('ignores a timed row that ends after the row starts', () => {
+    const rows = [{ start: 0, end: 2 }, { start: 4, end: 7 }, { start: 6, end: 8 }];
+    assert.equal(S.prevEndOf(rows, 2, null), 2);
+  });
+  test('falls back to before when nothing ends earlier', () => {
+    const rows = [{ start: 5, end: 7 }, { start: 1, end: 3 }];
+    assert.equal(S.prevEndOf(rows, 1, -0.5), -0.5);
+  });
+  test('a row with no start returns before', () => {
+    const rows = [{ start: 0, end: 2 }, { start: null, end: null }];
+    assert.equal(S.prevEndOf(rows, 1, 1.5), 1.5);
+  });
+});
+
+describe('SylShape.factor', () => {
+  const base = { mode: 'line', glide: 0.4, leadIn: 2, flatten: false, lineStart: 10, lineEnd: 15, prevEnd: 9, sylStart: 12, untimed: false };
+  const at = (rel, more) => S.factor(Object.assign({}, base, { rel }, more));
+  test('Always, or no mode, is fully shaped at any time', () => {
+    assert.equal(at(0, { mode: 'always' }), 1);
+    assert.equal(at(100, { mode: undefined }), 1);
+  });
+  test('When the line comes up glides from the previous line’s end', () => {
+    assert.equal(at(8.99), 0);
+    assert.equal(at(9.2), 0.5);
+    assert.ok(Object.is(at(9.4), 1));
+    assert.ok(Object.is(at(14), 1));
+  });
+  test('As each syllable is sung lands each syllable as it starts', () => {
+    assert.equal(at(11.59, { mode: 'syllable' }), 0);
+    assert.ok(Object.is(at(12, { mode: 'syllable' }), 1));
+    assert.equal(at(12, { mode: 'syllable', sylStart: 13 }), 0);
+  });
+  test('As each syllable is sung on an untimed line glides the whole line from the block’s start', () => {
+    const untimed = { mode: 'syllable', untimed: true, lineStart: 0, lineEnd: 6, prevEnd: null, sylStart: null };
+    assert.equal(at(-0.01, untimed), 0);
+    assert.equal(at(0.2, untimed), 0.5);
+    assert.ok(Object.is(at(0.4, untimed), 1));
+  });
+  test('As each syllable is sung with no syllable start uses the line’s glide', () => {
+    assert.equal(at(9.2, { mode: 'syllable', sylStart: null }), 0.5);
+  });
+  test('Flatten after singing glides back to flat after the line ends', () => {
+    assert.ok(Object.is(at(15, { flatten: true }), 1));
+    assert.equal(at(15.4, { flatten: true }), 0);
+    assert.equal(at(20, { flatten: true }), 0);
+    assert.ok(Object.is(at(20, { flatten: false }), 1));
+  });
+});
+
+describe('SylShape.scaleLevel', () => {
+  test('scales a level, and gives 0 for no level or no glide', () => {
+    assert.equal(S.scaleLevel(2, 1), 2);
+    assert.equal(S.scaleLevel(2, 0.5), 1);
+    assert.equal(S.scaleLevel(-3, 0), 0);
+    assert.equal(S.scaleLevel(0, 1), 0);
+    assert.equal(S.scaleLevel(undefined, 1), 0);
+  });
+});
+
+describe('Shape shows settings', () => {
+  test('defaults', () => {
+    const out = L.cleanSong({});
+    assert.equal(out.shapeShow, 'always');
+    assert.equal(out.shapeGlide, 0.4);
+    assert.equal(out.shapeLeadIn, 2);
+    assert.equal(out.shapeFlatten, false);
+  });
+  test('an unknown Shape shows becomes Always', () => {
+    assert.equal(L.cleanSong({ shapeShow: 'sometimes' }).shapeShow, 'always');
+    assert.equal(L.cleanSong({ shapeShow: 'line' }).shapeShow, 'line');
+    assert.equal(L.cleanSong({ shapeShow: 'syllable' }).shapeShow, 'syllable');
+  });
+  test('glide clamps to 0.25–1 and rounds to 0.05 with no float noise', () => {
+    assert.equal(L.cleanSong({ shapeGlide: 0.1 }).shapeGlide, 0.25);
+    assert.equal(L.cleanSong({ shapeGlide: 3 }).shapeGlide, 1);
+    assert.equal(L.cleanSong({ shapeGlide: 0.33 }).shapeGlide, 0.35);
+    assert.equal(L.cleanSong({ shapeGlide: 0.3 }).shapeGlide, 0.3);
+  });
+  test('lead-in clamps to 0.5–5', () => {
+    assert.equal(L.cleanSong({ shapeLeadIn: 0 }).shapeLeadIn, 0.5);
+    assert.equal(L.cleanSong({ shapeLeadIn: 9 }).shapeLeadIn, 5);
+  });
+  test('a flatten that is not true or false becomes false', () => {
+    assert.equal(L.cleanSong({ shapeFlatten: 'yes' }).shapeFlatten, false);
+    assert.equal(L.cleanSong({ shapeFlatten: true }).shapeFlatten, true);
+  });
+  test('each column keeps its own values', () => {
+    const set = Object.assign(L.columnDefaults(), { shapeShow: 'syllable', shapeGlide: 0.8, shapeLeadIn: 4, shapeFlatten: true });
+    const song = L.cleanSong({ view: 'roll', columns: true, shapeShow: 'line', shapeGlide: 0.5, more: [{ verses: [], set }] });
+    const again = L.cleanSong(JSON.parse(JSON.stringify(song)));
+    const one = L.columnSettings(again, 1), two = L.columnSettings(again, 2);
+    assert.equal(one.shapeShow, 'line');
+    assert.equal(one.shapeGlide, 0.5);
+    assert.equal(one.shapeFlatten, false);
+    assert.equal(two.shapeShow, 'syllable');
+    assert.equal(two.shapeGlide, 0.8);
+    assert.equal(two.shapeLeadIn, 4);
+    assert.equal(two.shapeFlatten, true);
+  });
+});

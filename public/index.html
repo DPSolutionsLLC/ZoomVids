@@ -504,7 +504,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
 .movelist input[type="number"] { width: 5em; }
 .movelist tr.sel td { background: var(--accent-soft); }
 #shapeCopyBody .shapecopyrow { display: block; margin: 4px 0; }
-#shapeMode[aria-pressed="true"], #songRecordMoves[aria-pressed="true"], #selbar [data-selact="recmoves"][aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+#shapeMode[aria-pressed="true"], #shapeModeHead[aria-pressed="true"], #songRecordMoves[aria-pressed="true"], #selbar [data-selact="recmoves"][aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
 .wordlist { width: 100%; border-collapse: collapse; font-size: 13px; }
 .wordlist th { position: sticky; top: 0; padding: 4px 8px; text-align: left; font-weight: 600; background: var(--sunk); }
 .wordlist td { padding: 2px 8px; border-top: 1px solid var(--line); }
@@ -633,6 +633,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <div class="screenbox" id="screenBox">
               <div class="floathead" id="floatHead">
                 <span class="note">Preview</span>
+                <button type="button" class="btn small quiet" id="shapeModeHead" aria-pressed="false" hidden title="Edit syllable shapes in the preview (S). Press a syllable and drag it up or down. Lines show their full shape while this is on.">Shape</button>
                 <button class="btn small quiet" id="floatBtn" aria-pressed="false">Float</button>
               </div>
               <canvas id="screen" width="960" height="540" aria-label="Preview of the screen with the title showing at this point"></canvas>
@@ -742,6 +743,13 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <p class="note">Pulse on the beat is for the whole project: every song and every column. Each syllable grows for as long as it was held when you recorded the timing.</p>
             <div class="btnrow"><label>Shape level height <input type="range" id="lyricLevelHeight" min="10" max="100" step="5"><output id="lyricLevelHeightOut" class="num"></output></label></div>
             <p class="note">How far one shape level lifts or lowers a syllable, as a share of the text size. Lines don't get extra space, so keep it small if shaped words touch the line above.</p>
+            <div class="btnrow">
+              <label>Shape shows <select id="lyricShapeShow"><option value="always">Always</option><option value="line">When the line comes up</option><option value="syllable">As each syllable is sung</option></select></label>
+              <label>Glide <input type="range" id="lyricShapeGlide" min="0.25" max="1" step="0.05"><output id="lyricShapeGlideOut" class="num"></output></label>
+              <label>Lead-in <input type="number" id="lyricShapeLeadIn" min="0.5" max="5" step="0.5" style="width:4.5em"> s</label>
+              <label><input type="checkbox" id="lyricShapeFlatten"> Flatten after singing</label>
+            </div>
+            <p class="note">When the line comes up: the line shows flat, and its syllables glide into their shape as the line before it finishes (or the lead-in before it's sung, after a break). As each syllable is sung: each syllable glides into place as it's reached. Shape editing always shows the full shape.</p>
             <div class="btnrow">
               <label>Highlight for words with no part <input type="color" id="lyricSingColor"></label>
               <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
@@ -873,7 +881,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                 <div class="btnrow" id="fitRow" hidden><button class="btn small" id="fitSlide">Fit the slide to its words</button><span class="note" id="fitNote"></span></div>
                 <div class="btnrow" id="copySameRow" hidden><span class="note" id="copySameNote"></span><button class="btn small" id="copyTimingSame">Copy this timing to them</button></div>
                 <div class="btnrow" id="copyToRow" hidden><label>Copy timing to <select id="copyTimingTo"></select></label><button class="btn small" id="copyTimingBtn">Copy</button></div>
-                <div class="btnrow" id="shapeRow"><span class="note">Melody shape</span><button type="button" class="btn small" id="shapeUp" title="Move the selected syllable up one level (↑)">Up</button><button type="button" class="btn small" id="shapeDown" title="Move the selected syllable down one level (↓)">Down</button><button type="button" class="btn small quiet" id="shapeFlat">Flat</button><button type="button" class="btn small" id="shapeMode" aria-pressed="false" title="Drag syllables up and down in the preview. Shift+click another word on the same line to pick a phrase.">Shape in preview</button><span class="note" id="shapeNote"></span></div>
+                <div class="btnrow" id="shapeRow"><span class="note">Melody shape</span><button type="button" class="btn small" id="shapeUp" title="Move the selected syllable up one level (↑)">Up</button><button type="button" class="btn small" id="shapeDown" title="Move the selected syllable down one level (↓)">Down</button><button type="button" class="btn small quiet" id="shapeFlat">Flat</button><button type="button" class="btn small" id="shapeMode" aria-pressed="false" title="Drag syllables up and down in the preview (S). Shift+click another word on the same line to pick a phrase.">Shape in preview</button><span class="note" id="shapeNote"></span></div>
                 <div class="btnrow" id="shapeQuickRow"><span class="note">Quick shape</span><button type="button" class="btn small" data-quickshape="rising">Rising</button><button type="button" class="btn small" data-quickshape="falling">Falling</button><button type="button" class="btn small" data-quickshape="arch">Arch</button><button type="button" class="btn small" data-quickshape="dip">Dip</button><button type="button" class="btn small" id="shapeCopyOpen" aria-expanded="false" aria-controls="shapeCopyPanel">Copy shape to…</button></div>
                 <div class="texted" id="shapeCopyPanel" hidden><div role="group" id="shapeCopyBody" aria-label="Places to copy the shape to"></div><div class="btnrow"><button type="button" class="btn small primary" id="shapeCopyGo">Copy to ticked</button><button type="button" class="btn small quiet" id="shapeCopyCancel">Cancel</button></div></div>
                 <div class="wordlistwrap"><table class="wordlist" id="wordList"><thead><tr><th scope="col">Syllable</th><th scope="col">Starts at</th><th scope="col">Length</th><th scope="col">Shape</th></tr></thead><tbody></tbody></table></div>
@@ -4550,7 +4558,7 @@ var Lyrics = (function () {
   var COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
   var LABEL_RE = /^\[([^\[\]\n]{1,40})\]$/;
   var PALETTE = ['#FFD54A', '#4FC3F7', '#F48FB1', '#A5D6A7', '#FFAB91', '#CE93D8'];
-  var SHOW_DEFAULTS = { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3, appear: 'start', whenDone: 'stay', gaps: 'dots', hideGap: 8, levelHeight: 30 };
+  var SHOW_DEFAULTS = { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3, appear: 'start', whenDone: 'stay', gaps: 'dots', hideGap: 8, levelHeight: 30, shapeShow: 'always', shapeGlide: 0.4, shapeLeadIn: 2, shapeFlatten: false };
   var LEVEL_MAX = 6;
   var KARAOKE_LOOK = { font: 'montserrat', bold: true, italic: false, size: 72, color: '#FFFFFF', look: 'solid', solidColor: '#000000', solidWidth: 6 };
   var ROLL_DEFAULTS = { frame: { x: 0.06, y: 0.52, w: 0.88, h: 0.42 }, align: 'center', above: 1, below: 2, move: 'stay', motion: 'smooth', verses: 'mark' };
@@ -5036,7 +5044,7 @@ var Lyrics = (function () {
     return String(base).toLowerCase() === String(singColor).toLowerCase() ? '#FFFFFF' : singColor;
   }
   var ROLL_SET_KEYS = ['align', 'above', 'below', 'move', 'motion', 'verses', 'look'];
-  var SHOW_SET_KEYS = ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen', 'appear', 'whenDone', 'gaps', 'hideGap', 'levelHeight'];
+  var SHOW_SET_KEYS = ['showParts', 'highlight', 'keepLit', 'singColor', 'countdown', 'breakGap', 'countLen', 'appear', 'whenDone', 'gaps', 'hideGap', 'levelHeight', 'shapeShow', 'shapeGlide', 'shapeLeadIn', 'shapeFlatten'];
   function cleanShowFields(raw, fallback) {
     var src = isObject(raw) ? raw : {}, d = fallback;
     function num(v, lo, hi, step, fb) {
@@ -5055,7 +5063,11 @@ var Lyrics = (function () {
       whenDone: src.whenDone === 'fade' || src.whenDone === 'stay' ? src.whenDone : d.whenDone,
       gaps: src.gaps === 'hide' || src.gaps === 'dots' ? src.gaps : d.gaps,
       hideGap: num(src.hideGap, 6, 60, 0.5, d.hideGap),
-      levelHeight: num(src.levelHeight, 10, 100, 5, d.levelHeight)
+      levelHeight: num(src.levelHeight, 10, 100, 5, d.levelHeight),
+      shapeShow: src.shapeShow === 'line' || src.shapeShow === 'syllable' || src.shapeShow === 'always' ? src.shapeShow : d.shapeShow,
+      shapeGlide: Math.round(num(src.shapeGlide, 0.25, 1, 0.05, d.shapeGlide) * 100) / 100,
+      shapeLeadIn: num(src.shapeLeadIn, 0.5, 5, 0.5, d.shapeLeadIn),
+      shapeFlatten: typeof src.shapeFlatten === 'boolean' ? src.shapeFlatten : d.shapeFlatten === true
     };
   }
   function cleanPartEntry(raw) {
@@ -5177,6 +5189,10 @@ var Lyrics = (function () {
       gaps: show.gaps,
       hideGap: show.hideGap,
       levelHeight: show.levelHeight,
+      shapeShow: show.shapeShow,
+      shapeGlide: show.shapeGlide,
+      shapeLeadIn: show.shapeLeadIn,
+      shapeFlatten: show.shapeFlatten,
       slideLook: cleanSlideLook(raw.slideLook),
       view: raw.view === 'roll' ? 'roll' : 'slides',
       roll: cleanRoll(raw.roll)
@@ -6698,7 +6714,39 @@ var SylShape = (function () {
     });
     return same.concat(count);
   }
-  return { MAX: MAX, step: step, dy: dy, quick: quick, fromDrag: fromDrag, copyTargets: copyTargets };
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+  function ease(a) { return a * a * (3 - 2 * a); }
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  // When a line's glide starts: as the line before it ends, but never more than the lead-in early and never after the line starts.
+  function glideFrom(lineStart, prevEnd, leadIn) {
+    var lead = lineStart - leadIn;
+    var from = isNum(prevEnd) ? Math.max(prevEnd, lead) : lead;
+    return Math.min(from, lineStart);
+  }
+  // The end of the line sung just before rows[index], or before when there is none. rows: [{ start, end }].
+  function prevEndOf(rows, index, before) {
+    var me = rows[index];
+    if (!me || !isNum(me.start)) return before;
+    var best = null;
+    rows.forEach(function (r, i) {
+      if (i === index || !isNum(r.start) || !isNum(r.end) || r.end > me.start) return;
+      if (best === null || r.end > best) best = r.end;
+    });
+    return best === null ? before : best;
+  }
+  // How much of a syllable's level shows at o.rel, 0 to 1. o: { mode, rel, glide, leadIn, flatten, lineStart, lineEnd, prevEnd, sylStart, untimed }.
+  function factor(o) {
+    if (o.mode !== 'line' && o.mode !== 'syllable') return 1;
+    var g = Math.max(0.01, o.glide);
+    var from = o.untimed ? o.lineStart : glideFrom(o.lineStart, o.prevEnd, o.leadIn);
+    if (o.mode === 'syllable' && !o.untimed && isNum(o.sylStart)) from = o.sylStart - g;
+    var inF = ease(clamp((o.rel - from) / g, 0, 1));
+    var outF = o.flatten && isNum(o.lineEnd) ? 1 - ease(clamp((o.rel - o.lineEnd) / g, 0, 1)) : 1;
+    return Math.round(inF * outF * 1e4) / 1e4;
+  }
+  function scaleLevel(lv, f) { return isLevel(lv) && f > 0 ? (f === 1 ? lv : lv * f) : 0; }
+  return { MAX: MAX, step: step, dy: dy, quick: quick, fromDrag: fromDrag, copyTargets: copyTargets,
+    glideFrom: glideFrom, prevEndOf: prevEndOf, factor: factor, scaleLevel: scaleLevel };
 })();
 
 /* Rolling lines: which line is current, which lines show, where (in rows) and how bright, at any moment. Pure functions; no text measuring. */
@@ -8784,6 +8832,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       (s.note !== null ? '<span class="note">' + esc(s.note) + '</span>' : '');
   }
   function renderSel() {
+    renderShapeToggle();
     var bar = $('selbar'), hit = clipOf(ui.sel), h, picked = TextPick.count(ui.checked, mix.texts);
     if (picked) {
       var hideLabel = TextBatch.hideAction(mix.texts, checkedIds()) === 'hide' ? 'Hide ' : 'Show ';
@@ -9352,11 +9401,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   // In the 'stroke' pass only the outlines are drawn, so there is no highlight.
   function paintLyricLines(g, W, lay, tx, alpha, lift, inkAt, pass, lk, boxes) {
     var k = lay.karaoke, px = lay.px, lh = lay.L.lh, song = tx.lyric.song;
+    var gliding = k.show.shapeShow !== 'always' && !(boxes && shapeModeOn()), before = gliding ? prevSlideEnd(tx) : null;
     var c = { W: W, px: px, font: textFont(tx, px), fontAt: function (size) { return textFont(tx, size); }, labels: k.labels, colors: partColorMap(song), plain: tx.color || '#FFFFFF', inkAt: inkAt, lk: lk, pass: pass, inks: {} };
     k.lines.forEach(function (line) {
       var lineAlpha = line.preview ? (k.previewShown ? LyricView.DIM : 0) : k.states[line.row] === 'upcoming' ? LyricView.DIM : 1;
       if (lineAlpha <= 0) return;
-      var y = line.y + lift, pieces = line.preview ? line.pieces : livePieces(line.pieces, boxes, song), scales = line.preview ? null : pulseScales(pieces, k.rel);
+      var y = line.y + lift, pieces = line.preview ? (gliding ? flatPieces(line.pieces) : line.pieces) : glidePieces(livePieces(line.pieces, boxes, song), boxes, slideGlideAt(k, line.row, tx, before)), scales = line.preview ? null : pulseScales(pieces, k.rel);
       g.globalAlpha = alpha * lineAlpha;
       g.font = c.font;
       pieces.forEach(function (p, i) { if (!(scales && scales[i] > 1)) inkLyricPiece(g, p, line.x + p.dx, y + SylShape.dy(p.lv, px, k.show.levelHeight), c); });
@@ -9369,6 +9419,38 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
   }
   function shapeModeOn() { return !!ui.shapeMode && !ui.rec; }
+  // Where a slide row sits in time, for the glide. before: when the slide before it ended (relative), or null.
+  function slideGlideAt(k, rowIndex, tx, before) {
+    var r = k.rows[rowIndex];
+    if (!r || r.start === null) return { show: k.show, rel: k.rel, untimed: true, lineStart: 0, lineEnd: txSpan(tx).dur, prevEnd: null };
+    return { show: k.show, rel: k.rel, lineStart: r.start, lineEnd: r.end, prevEnd: SylShape.prevEndOf(k.rows, rowIndex, before) };
+  }
+  // When the slide before this one in its column finished singing, relative to this slide's start. null when it is the first.
+  function prevSlideEnd(tx) {
+    var list = slidesForSong(tx.lyric.song, colOf(tx)), at = list.indexOf(tx), prev = at > 0 ? list[at - 1] : null;
+    if (!prev) return null;
+    var sp = txSpan(prev), words = WordTiming.span(prev.lyric);
+    return (words ? sp.start + words.last : sp.start + sp.dur) - txSpan(tx).start;
+  }
+  function flatPieces(pieces) {
+    if (!pieces.some(function (p) { return p.lv; })) return pieces;
+    return pieces.map(function (p) { if (!p.lv) return p; var copy = Object.assign({}, p); delete copy.lv; return copy; });
+  }
+  // Pieces with each syllable's level scaled by the glide at this moment. at: { show, rel, lineStart, lineEnd, prevEnd, untimed }.
+  function glidePieces(pieces, boxes, at) {
+    var mode = at.show.shapeShow;
+    if (mode !== 'line' && mode !== 'syllable') return pieces;
+    if (boxes && shapeModeOn()) return pieces;
+    if (!pieces.some(function (p) { return p.lv; })) return pieces;
+    return pieces.map(function (p) {
+      if (!p.lv) return p;
+      var f = SylShape.factor({ mode: mode, rel: at.rel, glide: at.show.shapeGlide, leadIn: at.show.shapeLeadIn, flatten: at.show.shapeFlatten,
+        lineStart: at.lineStart, lineEnd: at.lineEnd, prevEnd: at.prevEnd, sylStart: p.t, untimed: at.untimed });
+      var lv = SylShape.scaleLevel(p.lv, f), copy = Object.assign({}, p);
+      if (lv) copy.lv = lv; else delete copy.lv;
+      return copy;
+    });
+  }
   // The pieces with a Shape mode drag's live levels. Only the preview passes boxes, so export never sees a half-finished drag.
   function livePieces(pieces, boxes, songId) {
     var live = boxes && ui.shapeDrag && ui.shapeDrag.songId === songId ? ui.shapeDrag.levels : null;
@@ -9570,11 +9652,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var key = [songId, px, frame.w, font, cs.showParts, tx.text, JSON.stringify(tx.lyric), labelKey].join('|'), cacheId = c + ':' + tx.id, hit = rollWraps[cacheId];
       if (!hit || hit.key !== key) {
         var rowList = LyricView.rows(tx.lyric);
-        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, cs.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }), rowLines: rowList.map(function (r) { return r.line; }) };
+        hit = rollWraps[cacheId] = { key: key, rows: LyricView.wrap(rowList, frame.w, px, cs.showParts, measure, labelWidth).lines, rowEnds: rowList.map(function (r) { return r.end; }), rowStarts: rowList.map(function (r) { return r.start; }), rowLines: rowList.map(function (r) { return r.line; }) };
       }
       var sp = txSpan(tx), words = WordTiming.span(tx.lyric);
       return { tx: tx, wrap: hit, start: sp.start, end: sp.start + sp.dur, sung: words ? sp.start + words.last : null, h: Math.max(1, hit.rows.length), verse: verseOf(tx), verseStart: i === 0 || verseOf(blocks[i - 1]) !== verseOf(tx) };
     });
+    lines.forEach(function (ln, i) { var prev = i > 0 ? lines[i - 1] : null; ln.prevEnd = prev ? (prev.sung === null ? prev.end : prev.sung) - ln.start : null; });
     var viewOpts = { above: cs.above, below: cs.below, move: cs.move, motion: cs.motion, verses: cs.verses };
     if (two) {
       lines = RollView.withRests(lines, txSpan(both[0]).start, { gap: cs.breakGap, approach: RollView.APPROACH });
@@ -9593,10 +9676,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var ln = lines[sh.index], top = frame.y + headH + sh.y * rowH;
       var row = {
         tx: ln.tx || null, start: ln.start, alpha: sh.alpha, state: sh.state, label: sh.label, labelText: names[ln.verse] || '', labelY: top - RollView.LABEL_ROWS * rowH / 2,
-        top: top, bottom: top + ln.h * rowH, rowEnds: ln.rest ? [] : ln.wrap.rowEnds,
+        top: top, bottom: top + ln.h * rowH, rowEnds: ln.rest ? [] : ln.wrap.rowEnds, rowStarts: ln.rest ? [] : ln.wrap.rowStarts, prevEnd: ln.rest ? null : ln.prevEnd, end: ln.end,
         rows: ln.rest ? [] : ln.wrap.rows.map(function (r, k) { return { x: startX(r.w), y: top + (k + 0.5) * rowH, w: r.w, row: r.row, line: ln.wrap.rowLines[r.row], pieces: r.pieces }; })
       };
-      if (ln.rest) { row.rest = true; row.end = ln.end; row.restY = top + 0.5 * rowH; }
+      if (ln.rest) { row.rest = true; row.restY = top + 0.5 * rowH; }
       return row;
     });
     var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -9642,6 +9725,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var tr = ColumnMoves.fit(base, cur, align);
     return { base: base, cur: cur, tr: tr.identity ? null : tr };
   }
+  // Where a Rolling lines row sits in time, for the glide.
+  function rollGlideAt(ln, rowIndex, t, show) {
+    var rel = t - ln.start;
+    if (ln.rowStarts[rowIndex] === null) return { show: show, rel: rel, untimed: true, lineStart: 0, lineEnd: ln.end - ln.start, prevEnd: null };
+    var rows = ln.rowStarts.map(function (s, i) { return { start: s, end: ln.rowEnds[i] }; });
+    return { show: show, rel: rel, lineStart: ln.rowStarts[rowIndex], lineEnd: ln.rowEnds[rowIndex], prevEnd: SylShape.prevEndOf(rows, rowIndex, ln.prevEnd) };
+  }
   function paintRollPanel(g, W, H, t, boxes, selTx, songId, col) {
     var lay = layoutRoll(g, W, H, songId, t, col), show = colShow(songId, col), colors = partColorMap(songId, col);
     var selected = !!(boxes && selTx && selTx.lyric && selTx.lyric.song === songId && colOf(selTx) === col);
@@ -9683,7 +9773,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
           }
           g.globalAlpha = a; g.font = c.font; g.textAlign = 'left';
           c.pass = pass;
-          var rowPieces = ln.rows.map(function (r) { return livePieces(r.pieces, boxes, songId); });
+          var rowPieces = ln.rows.map(function (r) { return glidePieces(livePieces(r.pieces, boxes, songId), boxes, rollGlideAt(ln, r.row, t, show)); });
           var rowScales = rowPieces.map(function (pieces) { return ln.state === 'current' ? pulseScales(pieces, t - ln.start) : null; });
           ln.rows.forEach(function (r, ri) {
             var scales = rowScales[ri];
@@ -12682,6 +12772,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     set('lyricLevelHeight', cs.levelHeight);
     $('lyricLevelHeightOut').textContent = cs.levelHeight + '%';
     $('lyricLevelHeight').disabled = !has;
+    set('lyricShapeShow', cs.shapeShow); set('lyricShapeGlide', cs.shapeGlide); set('lyricShapeLeadIn', cs.shapeLeadIn);
+    $('lyricShapeFlatten').checked = cs.shapeFlatten;
+    $('lyricShapeGlideOut').textContent = cs.shapeGlide + ' s';
+    $('lyricShapeShow').disabled = !has;
+    $('lyricShapeGlide').disabled = $('lyricShapeFlatten').disabled = !has || cs.shapeShow === 'always';
+    $('lyricShapeLeadIn').disabled = !has || cs.shapeShow !== 'line';
     $('lyricHideGap').disabled = !has || cs.gaps !== 'hide';
     $('songColShowNote').hidden = !two || cs.gaps !== 'hide';
     $('lyricPartsClean').disabled = !has || !cs.parts.length || !!ui.rec;
@@ -12998,7 +13094,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     if (btn.getAttribute('data-label') === 'reset') setPartLabel(songId, btn.getAttribute('data-part'), null);
   }
-  var SHOW_FIELDS = { lyricHighlight: 'highlight', lyricKeepLit: 'keepLit', lyricSingColor: 'singColor', lyricCountdown: 'countdown', lyricBreakGap: 'breakGap', lyricCountLen: 'countLen', lyricAppear: 'appear', lyricWhenDone: 'whenDone', lyricGaps: 'gaps', lyricHideGap: 'hideGap', lyricLevelHeight: 'levelHeight' };
+  var SHOW_FIELDS = { lyricHighlight: 'highlight', lyricKeepLit: 'keepLit', lyricSingColor: 'singColor', lyricCountdown: 'countdown', lyricBreakGap: 'breakGap', lyricCountLen: 'countLen', lyricAppear: 'appear', lyricWhenDone: 'whenDone', lyricGaps: 'gaps', lyricHideGap: 'hideGap', lyricLevelHeight: 'levelHeight', lyricShapeShow: 'shapeShow', lyricShapeGlide: 'shapeGlide', lyricShapeLeadIn: 'shapeLeadIn', lyricShapeFlatten: 'shapeFlatten' };
   function setSongShow(songId, key, value) {
     var patch = {};
     patch[key] = value;
@@ -13122,6 +13218,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
     if (target.id === 'lyricShowParts') { if (final) setShowParts(songId, target.checked); return; }
     if (target.id === 'lyricLevelHeight' && !final) { $('lyricLevelHeightOut').textContent = target.value + '%'; return; }
+    if (target.id === 'lyricShapeGlide' && !final) { $('lyricShapeGlideOut').textContent = target.value + ' s'; return; }
     if (SHOW_FIELDS.hasOwnProperty(target.id)) { if (final) editSongShow(songId, target); return; }
     if (target.hasAttribute('data-label')) { editPartLabel(songId, target, final); return; }
     if (target.hasAttribute('data-part')) {
@@ -13840,9 +13937,20 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return true;
   }
   function toggleShapeMode() {
+    if (ui.rec) return;
     ui.shapeMode = !ui.shapeMode;
     if (ui.shapeMode) ui.recordMoves = false;
-    renderSel(); renderSongSettings(); drawScreen();
+    var tx = selText();
+    if (!ui.shapeMode) flashSel('Shape editing is off.');
+    else if (!tx || !tx.lyric) flashSel('Shape editing is on. Press a syllable in the preview.');
+    else renderSel();
+    renderSongSettings(); drawScreen();
+  }
+  function renderShapeToggle() {
+    var btn = $('shapeModeHead');
+    btn.hidden = WS.id !== 'karaoke';
+    btn.setAttribute('aria-pressed', ui.shapeMode && !ui.rec ? 'true' : 'false');
+    btn.disabled = !!ui.rec;
   }
   var QUICK_NAMES = { rising: 'Rising', falling: 'Falling', arch: 'Arch', dip: 'Dip' };
   function applyQuickShape(kind) {
@@ -13951,6 +14059,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (n) changed(); else renderWordTiming(tx);
   }
   function renderRec() {
+    renderShapeToggle();
     var bar = $('recBar'), rec = ui.rec;
     bar.hidden = !rec;
     if (!rec) { setHTML(bar, ''); return; }
@@ -15403,6 +15512,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (ev.target.matches && ev.target.matches('[data-act="check"], [data-act="gcheck"], #textAll') && pickKey(ev)) return;
       if (ev.key === 'Escape' && ui.picTool) { endPicTool(); return; }
       if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+      if (k === 's' && !isTyping(ev.target) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat && WS.id === 'karaoke' && !ui.rec && !document.querySelector('dialog[open]')) { ev.preventDefault(); toggleShapeMode(); return; }
       if (ev.code === 'Space' && t !== 'BUTTON') { ev.preventDefault(); $('playBtn').click(); return; }
       if (ev.key === 'Enter' && mix.queue.length && Player.tag && isMixTag(Player.tag)) { ev.preventDefault(); placeNext(); return; }
       if (ev.key === 'Backspace' && ui.taps.length) { ev.preventDefault(); undoTap(); return; }
@@ -16358,6 +16468,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('shapeDown').addEventListener('click', function () { stepSylLevel(-1); });
     $('shapeFlat').addEventListener('click', flatSylLevel);
     $('shapeMode').addEventListener('click', toggleShapeMode);
+    $('shapeModeHead').addEventListener('click', toggleShapeMode);
     $('shapeQuickRow').addEventListener('click', function (ev) { var b = ev.target.closest('[data-quickshape]'); if (b) applyQuickShape(b.getAttribute('data-quickshape')); });
     $('shapeCopyOpen').addEventListener('click', openShapeCopy);
     $('shapeCopyCancel').addEventListener('click', function () { ui.shapeCopy = null; var tx = selText(); if (tx) renderWordTiming(tx); });
