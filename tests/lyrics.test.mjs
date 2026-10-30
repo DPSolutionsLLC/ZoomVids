@@ -367,7 +367,7 @@ describe('cleanSong', () => {
   });
   test('an empty song gets every display default', () => {
     assert.deepEqual(L.cleanSong({}), Object.assign({ showParts: false, parts: [] }, songDefaults()));
-    assert.deepEqual(L.SHOW_DEFAULTS, { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3, appear: 'start', whenDone: 'stay', gaps: 'dots', hideGap: 8 });
+    assert.deepEqual(L.SHOW_DEFAULTS, { highlight: 'syllable', keepLit: false, singColor: '#FFD54A', countdown: 'dots', breakGap: 5, countLen: 3, appear: 'start', whenDone: 'stay', gaps: 'dots', hideGap: 8, levelHeight: 30 });
   });
   test('bad display values fall back to the defaults, one field at a time', () => {
     const good = { showParts: true, parts: [], highlight: 'word', keepLit: true, singColor: '#112233', countdown: 'bar', breakGap: 8, countLen: 4 };
@@ -388,7 +388,7 @@ describe('cleanSong', () => {
     assert.equal(L.cleanSong({ countLen: 50 }).countLen, 10);
   });
   test('valid display values are kept', () => {
-    const raw = { showParts: false, parts: [], highlight: 'word', keepLit: true, singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7, appear: 'first', whenDone: 'fade', gaps: 'hide', hideGap: 12.5, slideLook: KARAOKE_FULL, view: 'slides', roll: ROLL_FULL };
+    const raw = { showParts: false, parts: [], highlight: 'word', keepLit: true, singColor: '#abcdef', countdown: 'off', breakGap: 12.5, countLen: 7, appear: 'first', whenDone: 'fade', gaps: 'hide', hideGap: 12.5, levelHeight: 45, slideLook: KARAOKE_FULL, view: 'slides', roll: ROLL_FULL };
     assert.deepEqual(L.cleanSong(raw), raw);
   });
   test('an old sweep highlight becomes syllable by syllable, and whole word stays', () => {
