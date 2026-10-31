@@ -328,7 +328,7 @@ Press **Choose a stretch** in the Scripture collection, then click a gap between
 
 **What's on top.** Titles and your own text are always on top of pictures. Among pictures, the one that starts later is on top. Several pictures can show at once, and their boxes can overlap.
 
-**Exporting.** With video clips or moving pictures, the video is built at 30 frames a second, so it takes longer: 10 minutes or more for a full mix. Videos with a removed background color take a little longer to export, and videos with background blur take longer still.
+**Exporting.** With video clips or moving pictures, the video is built at 30 frames a second, so it takes longer: 10 minutes or more for a full mix. Videos with a removed background color take a little longer to export, and videos with background blur take longer still. You can switch to another tab or program while an export builds; it keeps going at full speed. The tab title shows the percent done, then "✓ Export done" (or "✕ Export stopped"). If Chrome's Memory Saver is on, add the site under Settings → Performance → "Always keep these sites active" so Chrome never unloads the tab mid-export.
 
 **Large videos.** A clip's sound is read from the whole file the first time you use it, so a smaller download (720p or 360p) is quicker and uses less memory than 1080p. The picture is read a little at a time. Some downloads use a "streaming" MP4 format the app can't read; it says so, and a regular MP4 download works. If a video or picture can't be read, its row says why, and an export stops with the reason instead of leaving it out.
 

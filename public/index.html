@@ -1667,6 +1667,43 @@ var Engine = (function () {
 })();
 
 
+/* Export pacing that keeps full speed in a hidden tab, and the export tab title. */
+var ExportPace = (function () {
+  var channel = null, waiting = [];
+  function yieldNow() {
+    if (typeof MessageChannel === 'undefined') return new Promise(function (resolve) { setTimeout(resolve, 0); });
+    if (!channel) {
+      channel = new MessageChannel();
+      channel.port1.onmessage = function () { var next = waiting.shift(); if (next) next(); };
+    }
+    return new Promise(function (resolve) { waiting.push(resolve); channel.port2.postMessage(0); });
+  }
+  function queueSize(codec) {
+    return typeof codec.encodeQueueSize === 'number' ? codec.encodeQueueSize : codec.decodeQueueSize;
+  }
+  function nextDequeue(codec) {
+    return new Promise(function (resolve) {
+      var timer = setTimeout(done, 250);
+      function done() { clearTimeout(timer); codec.removeEventListener('dequeue', done); resolve(); }
+      codec.addEventListener('dequeue', done, { once: true });
+    });
+  }
+  async function untilRoom(codec, max) {
+    while (queueSize(codec) > max && codec.state !== 'closed') {
+      if ('ondequeue' in codec) await nextDequeue(codec);
+      else await yieldNow();
+    }
+  }
+  function title(state, base, fraction) {
+    if (state === 'progress') return Math.min(99, Math.max(0, Math.floor(fraction * 100))) + '% · Exporting · ' + base;
+    if (state === 'done') return '✓ Export done · ' + base;
+    if (state === 'stopped') return '✕ Export stopped · ' + base;
+    return base;
+  }
+  return { yieldNow: yieldNow, untilRoom: untilRoom, title: title };
+})();
+
+
 /* Motion backgrounds, QR codes and file assembly for the video export. */
 var Media = (function () {
 
@@ -1779,7 +1816,7 @@ var Media = (function () {
         this.ended = true;
         continue;
       } else break;
-      await new Promise(function (r) { self.wake = r; setTimeout(r, 4); });
+      await new Promise(function (r) { self.wake = r; if (self.dec && 'ondequeue' in self.dec) self.dec.addEventListener('dequeue', r, { once: true }); setTimeout(r, 4); });
       this.wake = null;
     }
     return this.cur;
@@ -1920,7 +1957,7 @@ var Media = (function () {
         this.ended = true;
         continue;
       } else break;
-      await new Promise(function (r) { self.wake = r; setTimeout(r, 4); });
+      await new Promise(function (r) { self.wake = r; if (self.dec && 'ondequeue' in self.dec) self.dec.addEventListener('dequeue', r, { once: true }); setTimeout(r, 4); });
       this.wake = null;
     }
     return this.cur;
@@ -7383,7 +7420,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!e) return Promise.reject(new Error('That recording is not in the library.'));
       var job;
       if (e.sample) {
-        job = sleep(0).then(function () {
+        job = ExportPace.yieldNow().then(function () {
           var t = E.sampleTone(e.sample.freqs, e.sample.seconds), sc = e.sample.scale;
           if (sc !== 1) for (var i = 0; i < t.ch0.length; i++) { t.ch0[i] *= sc; t.ch1[i] *= sc; }
           return t;
@@ -14837,7 +14874,25 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return blk;
   }
   function u8(view) { return new Uint8Array(view.buffer, view.byteOffset, view.byteLength); }
-  function progress(done, total, verb) { $('barFill').style.width = (done * 100).toFixed(1) + '%'; say(verb + ' ' + fmt(total * done) + ' of ' + fmt(total) + '…'); }
+  var titleRestore = null, titleWaitVisible = null;
+  function restoreTitleSoon() {
+    function start() { titleRestore = setTimeout(function () { titleRestore = null; document.title = WS.name; }, 5000); }
+    if (!document.hidden) { start(); return; }
+    titleWaitVisible = function () {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', titleWaitVisible);
+      titleWaitVisible = null;
+      start();
+    };
+    document.addEventListener('visibilitychange', titleWaitVisible);
+  }
+  function setExportTitle(state, fraction) {
+    if (titleRestore) { clearTimeout(titleRestore); titleRestore = null; }
+    if (titleWaitVisible) { document.removeEventListener('visibilitychange', titleWaitVisible); titleWaitVisible = null; }
+    document.title = ExportPace.title(state, WS.name, fraction);
+    if (state === 'done' || state === 'stopped') restoreTitleSoon();
+  }
+  function progress(done, total, verb) { $('barFill').style.width = (done * 100).toFixed(1) + '%'; say(verb + ' ' + fmt(total * done) + ' of ' + fmt(total) + '…'); setExportTitle('progress', done); }
   async function encodeAudioFile(pl, fmtNow, len, verb) {
     verb = verb || 'Mixing';
     var N = Math.round(len * SR), block = 10 * SR, parts = [], enc = fmtNow === 'mp3' ? new lamejs.Mp3Encoder(2, SR, 192) : null;
@@ -14849,11 +14904,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         for (var o = 0; o < n; o += 57600) {
           var out = enc.encodeBuffer(l.subarray(o, o + 57600), r.subarray(o, o + 57600));
           if (out.length) parts.push(u8(out));
-          if (o % 115200 === 0) await sleep(0);
+          if (o % 115200 === 0) await ExportPace.yieldNow();
         }
       } else parts.push(u8(E.interleave(l, r)));
       progress((s + n) / N, len, verb);
-      await sleep(0);
+      await ExportPace.yieldNow();
     }
     if (enc) { var tail = enc.flush(); if (tail.length) parts.push(u8(tail)); }
     else parts.unshift(new Uint8Array(E.wavHeader(N)));
@@ -14897,7 +14952,6 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       ae.configure({ codec: how.acodec, sampleRate: SR, numberOfChannels: 2, bitrate: 160000 });
       return ae;
     });
-    function audioBusy() { return aes.some(function (ae) { return ae.encodeQueueSize > 4; }); }
     var ve = null, cv = null, g = null, clips = {}, clipFrames = {};
     function exportSource(layer) {
       if (layer.kind === 'image') {
@@ -14954,15 +15008,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
             var vf = new VideoFrame(cv, { timestamp: Math.round(f * 1e6 / v.fps), duration: Math.round(1e6 / v.fps) });
             ve.encode(vf, { keyFrame: f % key === 0 });
             vf.close();
-            while (ve.encodeQueueSize > 6) await sleep(2);
+            await ExportPace.untilRoom(ve, 6);
             if (err) throw err;
-            if (f % 15 === 0) { progress(f / frames, len, 'Building the video'); await sleep(0); }
+            if (f % 15 === 0) { progress(f / frames, len, 'Building the video'); await ExportPace.yieldNow(); }
           }
         }
-        while (audioBusy()) await sleep(5);
+        for (var ai2 = 0; ai2 < aes.length; ai2++) await ExportPace.untilRoom(aes[ai2], 4);
         if (err) throw err;
         progress((s + n) / N, len, withVideo ? 'Building the video' : 'Mixing');
-        await sleep(0);
+        await ExportPace.yieldNow();
       }
       if (ve) await ve.flush();
       for (var ai = 0; ai < aes.length; ai++) await aes[ai].flush();
@@ -15009,6 +15063,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var base = ExportName.safe($('fileName').value) || defaultFileName();
     ui.exporting = true; ui.lastExport = null;
     $('saveAgain').hidden = true; $('bar').hidden = false; $('barFill').style.width = '0%'; $('exportBtn').disabled = true;
+    setExportTitle('progress', 0);
+    var releaseKeep = null;
+    try {
+      if (navigator.locks) navigator.locks.request('export-' + Date.now() + '-' + Math.random().toString(36).slice(2), function () { return new Promise(function (r) { releaseKeep = r; }); }).catch(function () { releaseKeep = null; });
+    } catch (e) { releaseKeep = null; }
     try { if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch (e) { lock = null; }
     try {
       var vst = VocalExport.clean(mix.vocalExport);
@@ -15048,11 +15107,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         saveUses();
         renderLibrary(); renderCollection();
       }
+      setExportTitle('done');
       await deliver();
     } catch (err) {
+      setExportTitle('stopped');
       say('The export stopped: ' + (err && err.message ? err.message : 'something went wrong') + '. Nothing was saved.', true);
     }
     if (lock) { try { lock.release(); } catch (e) { /* fine */ } }
+    if (releaseKeep) releaseKeep();
     ui.exporting = false; $('bar').hidden = true; $('exportBtn').disabled = !plan.total;
   }
   function downloadNow(blob, name) {
