@@ -793,7 +793,11 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                 <label>Font <select id="songLookFont"></select></label>
                 <span class="btnrow"><label><input type="checkbox" id="songLookBold"> Bold</label> <label><input type="checkbox" id="songLookItalic"> Italic</label></span>
               </div>
-              <label><span id="songLookSizeLabel">Size</span> <span class="btnrow"><input type="range" id="songLookSize" min="24" max="180" step="2"><output id="songLookSizeOut" class="num"></output></span></label>
+              <div class="sizefield">
+                <label><span id="songLookSizeLabel">Size</span> <span class="btnrow"><input type="range" id="songLookSize" min="24" max="180" step="1"><output id="songLookSizeOut" class="num"></output></span></label>
+                <span class="btnrow" id="songLookFitRow"><button type="button" class="btn small" id="songLookFit">Fit lines to the box</button></span>
+                <span class="note" id="songLookFitNote" hidden></span>
+              </div>
               <label>Text color <input type="color" id="songLookColor"></label>
               <label>Behind the text <select id="songLookBehind"><option value="none">Nothing</option><option value="shadow">Soft shadow</option><option value="outline">Soft outline</option><option value="solid">Solid outline</option><option value="box">Dark box</option></select></label>
               <label id="songLookLookColorRow"><span id="songLookLookColorLabel">Outline color</span> <input type="color" id="songLookLookColor"></label>
@@ -6583,6 +6587,31 @@ var LyricView = (function () {
     }
     return { px: px, fits: fitsAt(rowList, spec, px, measure) };
   }
+  function rollPx(size, H) { return Math.max(8, Math.round(size * (H / 1080))); }
+  function oneRowAt(rowList, size, checks, opts, measure) {
+    var wanted = rowList.filter(function (r) { return r.words.length; }).length;
+    return checks.every(function (check) {
+      var m = wrap(rowList, check.w, rollPx(size, check.H), opts.showParts, measure, opts.labelWidth);
+      return m.lines.length === wanted && m.maxW <= check.w;
+    });
+  }
+  function fitOneRow(rowLists, checks, opts, measure) {
+    if (!rowLists.length) return { size: null, fits: null, wrapping: [] };
+    function allFit(size) { return rowLists.every(function (rowList) { return oneRowAt(rowList, size, checks, opts, measure); }); }
+    function wrappingAt(size) {
+      var out = [];
+      rowLists.forEach(function (rowList, i) { if (!oneRowAt(rowList, size, checks, opts, measure)) out.push(i); });
+      return out;
+    }
+    if (!allFit(opts.min)) return { size: opts.min, fits: false, wrapping: wrappingAt(opts.min) };
+    var lo = opts.min, hi = opts.max;
+    while (lo < hi) {
+      var mid = Math.ceil((lo + hi) / 2);
+      if (allFit(mid)) lo = mid; else hi = mid - 1;
+    }
+    while (lo < opts.max && allFit(lo + 1)) lo++;
+    return { size: lo, fits: true, wrapping: [] };
+  }
   function rowStates(rowList, t) {
     var anchor = null, i;
     for (i = 0; i < rowList.length; i++) {
@@ -6643,7 +6672,7 @@ var LyricView = (function () {
     return { x: line.x - 0.4 * px - w, y: line.y, w: w, h: bar ? 0.1 * px : 0.24 * px, side: 'left' };
   }
   return {
-    DIM: DIM, FADE: FADE, wordSpan: wordSpan, rows: rows, pieces: pieces, wrap: wrap, fitPx: fitPx,
+    DIM: DIM, FADE: FADE, wordSpan: wordSpan, rows: rows, pieces: pieces, wrap: wrap, fitPx: fitPx, rollPx: rollPx, fitOneRow: fitOneRow,
     rowStates: rowStates, previewOn: previewOn, lit: lit, countdown: countdown, countdownPlace: countdownPlace
   };
 })();
@@ -9680,7 +9709,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       for (var k = 1; k <= columnCount(songId); k++) both = both.concat(slidesForSong(songId, k));
       both.sort(function (a, b) { return txSpan(a).start - txSpan(b).start || mix.texts.indexOf(a) - mix.texts.indexOf(b); });
     }
-    var cs = colShow(songId, c), look = cs.look, s = H / 1080, px = Math.max(8, Math.round(look.size * s)), lh = 1.25;
+    var cs = colShow(songId, c), look = cs.look, px = LyricView.rollPx(look.size, H), lh = 1.25;
     var frame = rollFrame(songId, W, H, c), font = textFont(look, px);
     function measure(text, size) { g.font = textFont(look, size); return g.measureText(text).width; }
     function verseOf(tx) { return picked.verses[tx.id] || tx.lyric.verse; }
@@ -12831,6 +12860,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var count = has ? songSlides(id).length : 0;
     $('songLookAll').textContent = 'Use on every slide in this song (' + count + ')';
     $('songLookAll').disabled = !count;
+    var fitLines = roll ? columnLines(id, col).blocks.length : 0;
+    $('songLookFitRow').hidden = !roll;
+    $('songLookFit').disabled = !has || !fitLines;
+    $('songLookFitNote').hidden = !roll || !!fitLines;
+    $('songLookFitNote').textContent = 'Make lines first, then fit them to the box.';
     renderPulse(has, set);
   }
   // The Record moves switch and the selected column's list of moves. Shown only in a Columns song, and never while recording.
@@ -13230,6 +13264,41 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!ok) return;
     songSetSay(fit.dropped ? entry.family + ' has no ' + styleName(wantBold, wantItalic) + ', so ' + (fit.dropped === 'both' ? 'Bold and Italic were' : fit.dropped === 'bold' ? 'Bold was' : 'Italic was') + ' turned off.' : '', false);
     changed();
+  }
+  var FIT_MIN = 24, FIT_MAX = 180, FIT_HEIGHTS = [540, 720, 1080];
+  function fitLinePreview(tx) {
+    var text = String(tx.text || '').replace(/\s+/g, ' ').trim();
+    return '“' + (text.length > 40 ? text.slice(0, 40).trim() + '…' : text) + '”';
+  }
+  function fitSongLookToBox() {
+    var songId = $('songSetSong').value;
+    if (!songClip(songId) || songLyrics(songId).view !== 'roll') return;
+    var col = songCol(songId), blocks = columnLines(songId, col).blocks;
+    if (!blocks.length) return;
+    var cs = colShow(songId, col), look = cs.look, labels = labelLookMap(songId, look, col);
+    var waits = document.fonts ? [textFont(look, 40)].concat(Object.keys(labels).map(function (name) { return textFont(labels[name], 40); })).map(function (font) { return document.fonts.load(font); }) : [];
+    Promise.all(waits).then(function () {
+      if ($('songSetSong').value !== songId || songCol(songId) !== col || songLyrics(songId).view !== 'roll') return;
+      blocks = columnLines(songId, col).blocks; cs = colShow(songId, col);
+      if (!blocks.length) return;
+      var now = cs.look, frame = colSettings(songId, col).frame, g = fitContext();
+      function measure(text, size) { g.font = textFont(now, size); return g.measureText(text).width; }
+      var checks = FIT_HEIGHTS.map(function (H) { return { H: H, w: frame.w * H * 16 / 9 }; });
+      var res = LyricView.fitOneRow(blocks.map(function (tx) { return LyricView.rows(tx.lyric); }), checks,
+        { showParts: cs.showParts, labelWidth: labelMeasurer(g, labelLookMap(songId, now, col)), min: FIT_MIN, max: FIT_MAX }, measure);
+      if (res.size !== now.size) {
+        if (!writeColumnSettings(songId, col, { look: Object.assign({}, now, { size: res.size }) })) { songSetSay('Couldn’t change the size. Try again.', true); return; }
+        changed();
+      }
+      if (!res.fits) {
+        var shown = res.wrapping.slice(0, 3).map(function (i) { return fitLinePreview(blocks[i]); }).join(', ');
+        var more = res.wrapping.length > 3 ? ' and ' + (res.wrapping.length - 3) + ' more' : '';
+        songSetSay('Even at ' + FIT_MIN + ' px, the smallest size, these lines still wrap: ' + shown + more + '.', true);
+      } else if (res.size === FIT_MAX) songSetSay('Set to ' + FIT_MAX + ' px, the largest size. Every line fits.', false);
+      else songSetSay('Set to ' + res.size + ' px: every line fits on one row.', false);
+    }, function (err) {
+      songSetSay('Couldn’t load the font to measure the lines: ' + (err && err.message ? err.message : String(err)), true);
+    });
   }
   function useSongLookEverywhere() {
     var songId = $('songSetSong').value; if (!songClip(songId)) return;
@@ -16480,6 +16549,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songSet').addEventListener('input', function (ev) { onSongSetEvent(ev, false); });
     $('songSet').addEventListener('change', function (ev) { onSongSetEvent(ev, true); });
     $('songLookAll').onclick = useSongLookEverywhere;
+    $('songLookFit').onclick = fitSongLookToBox;
     $('lyricPulsePlay').onclick = function () {
       if (Player.tag === 'pulse') { Player.stop(); drawScreen(); return; }
       startPulsePreview();

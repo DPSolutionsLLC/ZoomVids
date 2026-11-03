@@ -360,3 +360,84 @@ describe('wrap with label looks', () => {
     assert.ok(styled > normal, styled + ' should be above ' + normal);
   });
 });
+
+describe('rollPx', () => {
+  test('at 1080 tall the size is unchanged', () => {
+    assert.equal(V.rollPx(100, 1080), 100);
+    assert.equal(V.rollPx(101, 1080), 101);
+  });
+  test('at 720 and 540 tall it rounds', () => {
+    assert.equal(V.rollPx(101, 720), 67);
+    assert.equal(V.rollPx(101, 540), 51);
+    assert.equal(V.rollPx(100, 540), 50);
+  });
+  test('it never goes below 8', () => {
+    assert.equal(V.rollPx(24, 100), 8);
+  });
+});
+
+describe('fitOneRow', () => {
+  const rowsOf = (text) => V.rows(slideOf(text));
+  const opts = (extra) => Object.assign({ showParts: false, labelWidth: undefined, min: 24, max: 180 }, extra);
+  const oneRow = (rowList, size, check, o) => {
+    const m = V.wrap(rowList, check.w, V.rollPx(size, check.H), o.showParts, measure, o.labelWidth);
+    return m.lines.length === rowList.length && m.maxW <= check.w;
+  };
+
+  test('the size is the largest at which the longest line still fits', () => {
+    const lines = [rowsOf('cc'), rowsOf('aaaa bbbb')], check = { H: 1080, w: 450 };
+    const res = V.fitOneRow(lines, [check], opts(), measure);
+    assert.deepEqual(res, { size: 100, fits: true, wrapping: [] });
+    assert.ok(oneRow(lines[1], 100, check, opts()));
+    assert.ok(!oneRow(lines[1], 101, check, opts()));
+  });
+  test('adding a shorter line does not change the size', () => {
+    const check = { H: 1080, w: 450 };
+    const alone = V.fitOneRow([rowsOf('aaaa bbbb')], [check], opts(), measure).size;
+    const withShort = V.fitOneRow([rowsOf('aaaa bbbb'), rowsOf('a b')], [check], opts(), measure).size;
+    assert.equal(alone, 100);
+    assert.equal(withShort, alone);
+  });
+  test('every screen height counts, not only 1080', () => {
+    const lines = [rowsOf('aaaa bbbb')];
+    const checks = [{ H: 540, w: 227.25 }, { H: 720, w: 303 }, { H: 1080, w: 454.5 }];
+    assert.equal(V.fitOneRow(lines, [checks[2]], opts(), measure).size, 101);
+    const res = V.fitOneRow(lines, checks, opts(), measure);
+    assert.equal(res.size, 100);
+    checks.forEach((check) => assert.ok(oneRow(lines[0], res.size, check, opts()), 'wraps at ' + check.H));
+  });
+  test('very short lines stop at the largest size', () => {
+    assert.deepEqual(V.fitOneRow([rowsOf('a')], [{ H: 1080, w: 450 }], opts(), measure), { size: 180, fits: true, wrapping: [] });
+  });
+  test('a line that wraps even at the smallest size is named, and lines that fit are not', () => {
+    const res = V.fitOneRow([rowsOf('cc'), rowsOf('aaaaaaaaaa bbbbbbbbbb')], [{ H: 1080, w: 200 }], opts(), measure);
+    assert.deepEqual(res, { size: 24, fits: false, wrapping: [1] });
+  });
+  test('a one-word line wider than the box does not count as fitting', () => {
+    assert.equal(V.fitOneRow([rowsOf('aaaa')], [{ H: 1080, w: 300 }], opts(), measure).size, 150);
+    assert.deepEqual(V.fitOneRow([rowsOf('aaaaaaaaaaaaaaaaaaaa')], [{ H: 1080, w: 200 }], opts(), measure), { size: 24, fits: false, wrapping: [0] });
+  });
+  test('two parts sung together fit when each of their rows stays one row', () => {
+    const rowList = V.rows(timed('High: a b Low: c d', [[0, 0.5], [0.5, 0.5], [0, 0.5], [0.5, 0.5]]));
+    assert.equal(rowList.length, 2);
+    assert.deepEqual(V.fitOneRow([rowList], [{ H: 1080, w: 150 }], opts(), measure), { size: 100, fits: true, wrapping: [] });
+  });
+  test('a wide label makes the size smaller than an inline label on the same text', () => {
+    const lines = [rowsOf('High: aa bb')], checks = [{ H: 1080, w: 550 }];
+    const inline = V.fitOneRow(lines, checks, opts({ showParts: true }), measure);
+    const wide = V.fitOneRow(lines, checks, opts({ showParts: true, labelWidth: (part, text, px) => px * 10 }), measure);
+    assert.equal(inline.size, 100);
+    assert.equal(wide.size, 44);
+    assert.ok(inline.fits && wide.fits);
+  });
+  test('no lines gives no size, not 0', () => {
+    assert.deepEqual(V.fitOneRow([], [{ H: 1080, w: 450 }], opts(), measure), { size: null, fits: null, wrapping: [] });
+  });
+  test('the inputs are not changed', () => {
+    const lines = [rowsOf('cc'), rowsOf('aaaa bbbb')], checks = [{ H: 540, w: 225 }, { H: 1080, w: 450 }];
+    const linesBefore = JSON.stringify(lines), checksBefore = JSON.stringify(checks);
+    V.fitOneRow(lines, checks, opts(), measure);
+    assert.equal(JSON.stringify(lines), linesBefore);
+    assert.equal(JSON.stringify(checks), checksBefore);
+  });
+});
