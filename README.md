@@ -129,6 +129,8 @@ Added Google Fonts, recent background colors and the floating panel layout are a
 
 Karaoke hides the parts that only make sense for sacrament meeting: the Hymn checklist, Talk references to send, the Scripture collection, Mark as used on export, the library's Show filter and the two "used" sorts. Exports are named after the project and today's date, or `karaoke-` and today's date before the project has a name.
 
+**Project length.** Project length is automatic: it ends when the last song, text, picture or animation ends. Hidden texts don't count. Text set to run to the end follows that end. There is no Length to cover on this page, and export always stops at the end. The pill at the top shows it, for example *Project length 3:20*. Export still needs at least one song or recording.
+
 You can have both open in two tabs at once. Each keeps its own work. Two tabs on the *same* side still share one working copy, as before.
 
 **Song tracks.** In karaoke, each song in **Order of music** can have two tracks that play together, usually the version with vocals and the instrumental. Press **Tracks** on a song to open its Tracks window. **Track 1** is the song you added. For **Track 2**, choose another file from your library under **Add a second track…** and press **Add**.
@@ -299,7 +301,7 @@ Known limits: in separate boxes, `=` only links to Column 1; with many columns e
 - The preview always plays at the project speed. When it isn't 100%, a label such as *Project speed 90% · keep pitch* shows next to the clock and in the floating preview's controls. Click it to jump to the setting. Changing the speed while the song plays carries on from the same spot.
 - The **1.25×**, **1.5×** and **2×** preview buttons still work for checking quickly. They play on top of the project speed (the label then adds *· preview 1.5×*) and never change the export.
 - Every export (MP3, WAV, WebM audio, video, and both versions) comes out at the project speed. At 90%, a 3:00 song makes a 3:20 file. Lyrics, highlights, pulses, shapes, animations, column moves, pictures and video clips all stay in time with the song. Video clips play slower or faster with it; a motion background keeps its own **Motion speed**.
-- **Exactly the length to cover** means the length of the file. At 90% a 20-minute file covers 18 minutes of the mix.
+- The file always runs to the end of the project (see Project length), so at 90% a project that ends at 3:20 makes a 3:42 file. **Exactly the length to cover** is on the hymn page only.
 - The file name gets the speed when it isn't 100%, for example `Song-2026-11-03 (90%)` or `Song-2026-11-03 (90%)-music-only`. The name box and a remembered name stay as they are.
 - Recording lyric timing or beats ignores the project speed: it plays at normal speed (or the recorder's own 0.75× / 0.5×), and the recording bar says so. Timing is always saved at normal speed, so changing the project speed never moves your timing.
 - The hymn side has no project speed.

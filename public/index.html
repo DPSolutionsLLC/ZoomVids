@@ -1000,7 +1000,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <label><input type="checkbox" id="textUntilNext"> Keep showing until the next text starts</label>
               <label class="sub"><input type="checkbox" id="textXfOut"> Crossfade into the next</label>
               <label><input type="checkbox" id="textFromStart"> Start at the very beginning (0:00)</label>
-              <label><input type="checkbox" id="textToEnd"> Keep showing to the end of the length to cover</label>
+              <label><input type="checkbox" id="textToEnd"> <span id="textToEndT">Keep showing to the end of the length to cover</span></label>
               <label class="wide" data-single>Show during <select id="textDuring"></select></label>
               <label class="wide"><input type="checkbox" id="textWhole"> Show for the whole video</label>
               <label class="wide"><input type="checkbox" id="textLock"> Lock it in place, so it can’t be dragged by accident</label>
@@ -1061,7 +1061,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
       <section class="stack sec" id="sec-settings">
         <div class="headrow"><h2><button class="sectoggle" data-sec="settings" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Mix settings</button></h2><button class="btn small quiet" data-float="settings" aria-pressed="false">Float</button></div>
         <div class="settings">
-          <label>Length to cover <span class="ctl"><input type="number" id="target" min="1" max="90" step="1"> min</span></label>
+          <label data-hymn-only>Length to cover <span class="ctl"><input type="number" id="target" min="1" max="90" step="1"> min</span></label>
           <label>Crossfade for new transitions <span class="ctl"><input type="range" id="defaultXf" min="0" max="15" step="0.5"><output id="defaultXfOut"></output></span></label>
           <label>Fade in at the start <span class="ctl"><input type="range" id="fadeIn" min="0" max="10" step="0.5"><output id="fadeInOut"></output></span></label>
           <label>Fade out at the end <span class="ctl"><input type="range" id="fadeOut" min="0" max="20" step="0.5"><output id="fadeOutOut"></output></span></label>
@@ -1083,9 +1083,10 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <label><input type="radio" name="fmt" id="fmtVideo" value="video"><span>Video with on-screen text<small>Your background, titles and text, with the music</small></span></label>
           </div>
           <fieldset class="btnrow" style="border:0;padding:0;margin:0">
-            <legend class="note" style="width:100%;padding:0;margin-bottom:4px">How long the file runs</legend>
-            <label><input type="radio" name="len" id="lenMix" value="mix"> Until everything in the mix has finished <span class="note num" id="lenMixT"></span></label>
-            <label><input type="radio" name="len" id="lenFull" value="full"> Exactly the length to cover <span class="note num" id="lenFullT"></span></label>
+            <legend class="note" data-hymn-only style="width:100%;padding:0;margin-bottom:4px">How long the file runs</legend>
+            <label data-hymn-only><input type="radio" name="len" id="lenMix" value="mix"> Until everything in the mix has finished <span class="note num" id="lenMixT"></span></label>
+            <label data-hymn-only><input type="radio" name="len" id="lenFull" value="full"> Exactly the length to cover <span class="note num" id="lenFullT"></span></label>
+            <p class="note" id="lenAuto" data-karaoke-only style="width:100%;margin:0"></p>
             <p class="note" id="lenNote" style="width:100%"></p>
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
@@ -3713,6 +3714,27 @@ var TimelineSpan = (function () {
     return dragging && typeof current === 'number' && isFinite(current) && current > 0 ? current : next;
   }
   return { span: span, hold: hold };
+})();
+var ProjectLength = (function () {
+  function isAuto(workspaceId) { return workspaceId === 'karaoke'; }
+  function finiteEnd(start, dur) { var e = start + dur; return typeof e === 'number' && isFinite(e) ? e : 0; }
+  function contentEnd(parts, auto) {
+    var end = typeof parts.total === 'number' && isFinite(parts.total) ? parts.total : 0;
+    (parts.texts || []).forEach(function (t) {
+      if (t.whole) return;
+      if (auto && (t.hidden || (t.toEnd && !t.tied))) return;
+      end = Math.max(end, finiteEnd(t.start, t.dur));
+    });
+    (parts.pictures || []).concat(parts.anims || []).forEach(function (it) { end = Math.max(end, finiteEnd(it.start, it.dur)); });
+    return Math.max(0, end);
+  }
+  function exportChoice(remembered, workspaceId) { return !isAuto(workspaceId) && remembered === 'full' ? 'full' : 'mix'; }
+  function toEndStop(start, end) { return Math.max(start + 0.5, end); }
+  function startsAfterEnd(start, end) { return start >= end - 0.05; }
+  function statusText(length, fmt) {
+    return length > 0 ? { text: 'Project length ' + fmt(length), short: false } : { text: 'Nothing on the timeline yet', short: true };
+  }
+  return { isAuto: isAuto, contentEnd: contentEnd, exportChoice: exportChoice, toEndStop: toEndStop, startsAfterEnd: startsAfterEnd, statusText: statusText };
 })();
 
 /* Floating preview preset and saved widths. Pure functions. */
@@ -8348,10 +8370,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var r = res[tx.id], ne = res[nx.id].start + (tx.xfOut ? tx.fadeOut : 0);
       if (ne > r.start + 0.5) r.end = ne;
     });
+    var auto = ProjectLength.isAuto(WS.id), autoEnd = 0;
+    if (auto) {
+      autoEnd = ProjectLength.contentEnd({
+        total: plan.total,
+        texts: list.map(function (tx) { var r = res[tx.id]; return { start: r.start, dur: r.end - r.start, hidden: !!tx.hidden, whole: false, toEnd: !!tx.toEnd, tied: base[tx.id].fixed }; }),
+        pictures: mix.pictures, anims: mix.anims
+      }, true);
+    }
     list.forEach(function (tx) {
       if (base[tx.id].fixed || !tx.toEnd) return;
       var r = res[tx.id];
-      r.end = Math.max(r.start + 0.5, mix.target);
+      r.end = auto ? ProjectLength.toEndStop(r.start, autoEnd) : Math.max(r.start + 0.5, mix.target);
     });
     list.forEach(function (tx) { var r = res[tx.id]; tspan[tx.id] = { start: r.start, dur: Math.max(0.5, r.end - r.start) }; });
     var whole = Math.max(1, exportLen());
@@ -8718,7 +8748,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   // Pull a dragged edge onto nearby edges of other things on the timeline.
   function snapEdges(except) {
-    var e = [0, mix.target];
+    var e = ProjectLength.isAuto(WS.id) ? [0] : [0, mix.target];
     if (ui.cursor > 0) e.push(ui.cursor);
     plan.music.forEach(function (c) { e.push(c.start, c.start + c.len); });
     plan.spoken.forEach(function (c) { if (!TextPick.has(except, c.id)) e.push(c.start, c.start + c.len); });
@@ -8897,7 +8927,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function renderHead() {
     $('total').textContent = fmt(plan.total);
     var st = $('status'), gap = mix.target - plan.total;
-    if (!plan.total) { st.textContent = 'Nothing in the mix yet'; st.className = 'pill short'; }
+    if (ProjectLength.isAuto(WS.id)) renderAutoLength();
+    else if (!plan.total) { st.textContent = 'Nothing in the mix yet'; st.className = 'pill short'; }
     else if (gap > 0.5) { st.textContent = fmt(gap) + ' short of ' + fmt(mix.target); st.className = 'pill short'; }
     else { st.textContent = 'Covers ' + fmt(mix.target) + ' with ' + fmt(-gap) + ' to spare'; st.className = 'pill'; }
     if (document.activeElement !== $('plName')) $('plName').value = mix.name || '';
@@ -8921,6 +8952,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!saveNoteTimer) renderSaveNote();
   }
 
+  function renderAutoLength() {
+    if (!ProjectLength.isAuto(WS.id)) return;
+    var len = contentEnd(), ps = ProjectLength.statusText(len, fmt), st = $('status');
+    st.textContent = ps.text; st.className = 'pill' + (ps.short ? ' short' : '');
+    $('lenAuto').textContent = len > 0 ? 'The file runs until the last thing on the timeline ends (' + fmt(len) + ').' : '';
+  }
+
   var TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
   function renderTimeline() {
     pruneWordSel();
@@ -8929,7 +8967,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     mix.pictures.forEach(function (it) { ends.push(it.start + it.dur); });
     mix.anims.forEach(function (it) { ends.push(it.start + it.dur); });
     mix.texts.forEach(function (tx) { if (tx.whole) return; var sp = tspan[tx.id] || tx; ends.push(sp.start + sp.dur); });
-    var span = TimelineSpan.hold(ui.span, TimelineSpan.span({ target: mix.target, total: plan.total, ends: ends }), !!ui.spanHold);
+    var auto = ProjectLength.isAuto(WS.id);
+    var span = TimelineSpan.hold(ui.span, TimelineSpan.span({ target: auto ? 0 : mix.target, total: plan.total, ends: ends }), !!ui.spanHold);
     ui.span = span;
     var tl = $('tl');
     tl.style.width = (ui.zoom * 100) + '%';
@@ -8942,7 +8981,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     for (var m = 0; m <= count; m++) {
       var t = m * minor, major = Math.abs(t / label - Math.round(t / label)) < 1e-6;
       h += '<i class="tick' + (major ? ' major' : '') + '" style="left:' + pct(t) + '"></i>';
-      if (major && t > 0 && t < span * 0.985 && Math.abs(t - mix.target) * pps > 40) axis += '<span class="ticklabel" style="left:' + pct(t) + '">' + (label < 1 ? fmt1(t) : fmt(t)) + '</span>';
+      if (major && t > 0 && t < span * 0.985 && (auto || Math.abs(t - mix.target) * pps > 40)) axis += '<span class="ticklabel" style="left:' + pct(t) + '">' + (label < 1 ? fmt1(t) : fmt(t)) + '</span>';
     }
     h = '<div class="axis">' + axis + '</div>' + h;
     // rows: two for music, one for spoken clips, then rows of pictures, then one per piece of text
@@ -9056,12 +9095,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (ui.rowDrop != null) h += '<i class="rowdrop" style="top:' + ui.rowDrop + 'px"></i>';
     if (ui.snapT != null) h += '<i class="snapline" style="left:' + pct(ui.snapT) + '"></i>';
     if (ui.fillWin) h += '<i class="fillwin" style="left:' + pct(ui.fillWin.start) + ';width:' + pct(ui.fillWin.end - ui.fillWin.start) + '"><span>Scriptures go here</span></i>';
-    h += '<div class="mark" style="left:' + pct(mix.target) + '"><b>' + fmt(mix.target) + '</b></div>';
+    if (!auto) h += '<div class="mark" style="left:' + pct(mix.target) + '"><b>' + fmt(mix.target) + '</b></div>';
     h += '<i class="head" hidden></i>';
     if (!plan.music.length && !plan.spoken.length && !mix.texts.length && !mix.pictures.length && !mix.anims.length) h += '<div class="empty">Add recordings from the library and the mix is drawn here to scale.</div>';
     setHTML(tl, h);
     if (Player.tag && isMixTag(Player.tag)) placeHead(Player.now()); else syncHead();
     var visible = $('tlwrap').clientWidth / pps;
+    if (auto) renderAutoLength();
     $('zoomNote').textContent = ui.zoom > 1 ? 'Showing ' + fmt(visible) + ' at a time' : 'Showing the whole mix';
     $('zoomOut').disabled = ui.zoom <= 1; $('zoomFit').disabled = ui.zoom <= 1; $('zoomIn').disabled = ui.zoom >= 64;
     $('sortRows').hidden = mix.texts.length < 2;
@@ -9098,7 +9138,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (tx.afterPrev) parts.push(tx.xfIn ? 'crossfades in after the previous text' : 'starts after the previous text');
       if (tx.untilNext) parts.push(tx.xfOut ? 'crossfades into the next text' : 'runs until the next text');
       if (tx.fromStart) parts.push('starts at 0:00');
-      if (tx.toEnd) parts.push('runs to ' + fmt(mix.target));
+      if (tx.toEnd) parts.push(ProjectLength.isAuto(WS.id) ? 'runs to the end (' + fmt(contentEnd()) + ')' : 'runs to ' + fmt(mix.target));
     }
     if (tx.locked) parts.push('locked');
     return parts.join(', ');
@@ -11805,12 +11845,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('textUntilNext').disabled = tx.whole || tied || tx.toEnd || tx.readTime;
     $('textFromStart').disabled = tx.whole || tied || tx.afterPrev;
     $('textToEnd').disabled = tx.whole || tied || tx.untilNext || tx.readTime;
+    var autoLen = ProjectLength.isAuto(WS.id);
+    $('textToEndT').textContent = autoLen ? 'Keep showing to the end of the project' : 'Keep showing to the end of the length to cover';
     $('textXfIn').disabled = !tx.afterPrev || tx.whole || tied;
     $('textXfOut').disabled = !tx.untilNext || tx.whole || tied;
     $('textDuring').disabled = !!tx.whole;
     var note = '';
     if (tx.whole) note = 'Shows from the first frame to the last.';
     else if (tied) note = 'Starts and ends with ' + elementName(tx.during) + ', and moves with it.';
+    else if (tx.toEnd && !tx.afterPrev && !tx.untilNext && autoLen) {
+      var projEnd = contentEnd();
+      note = ProjectLength.startsAfterEnd(txSpan(tx).start, projEnd) ? 'Starts after the project ends, so it won’t show.' : 'Runs to ' + fmt(projEnd) + ', the end of the project. It follows the last thing on the timeline.';
+    }
     else if (tx.toEnd && !tx.afterPrev && !tx.untilNext) note = 'Runs to ' + fmt(mix.target) + ', the length to cover. Change that in Mix settings and this follows.';
     else if (tx.fromStart && !tx.afterPrev && !tx.untilNext) note = 'Starts at 0:00 and shows for the length you set.';
     else if (tx.afterPrev || tx.untilNext) note = 'These links stay live: when the text before or after moves, this one follows.' + ((tx.xfIn || tx.xfOut) ? ' Crossfades overlap by this text’s fade time, so matching fades on both texts look smoothest.' : '') + (tx.group ? ' Links look at texts in the same group.' : '');
@@ -15135,16 +15181,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function say(text, isErr) { var m = $('exportMsg'); m.textContent = text; m.className = 'msg' + (isErr ? ' err' : ''); }
   // Where everything ends, not counting text set to show the whole video.
   function contentEnd() {
-    var end = plan.total;
-    mix.texts.forEach(function (tx) { if (!tx.whole) { var sp = tspan[tx.id] || tx; end = Math.max(end, sp.start + sp.dur); } });
-    mix.pictures.forEach(function (it) { end = Math.max(end, it.start + it.dur); });
-    mix.anims.forEach(function (it) { end = Math.max(end, it.start + it.dur); });
-    return end;
+    var texts = mix.texts.map(function (tx) {
+      var sp = tspan[tx.id] || tx;
+      return { start: sp.start, dur: sp.dur, hidden: !!tx.hidden, whole: !!tx.whole, toEnd: !!tx.toEnd, tied: !!(tx.during && elementSpan(tx.during)) };
+    });
+    return ProjectLength.contentEnd({ total: plan.total, texts: texts, pictures: mix.pictures, anims: mix.anims }, ProjectLength.isAuto(WS.id));
   }
   // "Exactly the length to cover" cuts a longer mix there (with a fade) and
   // fills a shorter one with the background.
   // In song time. The length to cover is the file's own length, so at 90% it covers 0.9 × that much of the song.
-  function exportLen() { return ui.expLen === 'full' ? mix.target * outFactor() : contentEnd(); }
+  // The karaoke page has no length to cover, so it always runs to the content end.
+  function exportLen() { return ui.expLen === 'full' && !ProjectLength.isAuto(WS.id) ? mix.target * outFactor() : contentEnd(); }
   function videoShape() {
     var motion = mix.opts.bg === 'motion' && ui.motion;
     var smooth = !!motion || mix.anims.length > 0 || pictureLayers().some(function (l) { return l.kind === 'video' || (l.motion && l.motion !== 'none'); });
@@ -15190,11 +15237,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('vidSizeRow').hidden = ui.format !== 'video';
     $('vidSize').value = String(ui.vidSize);
     $('exportBtn').disabled = ui.exporting || !plan.total;
-    $('lenMix').checked = ui.expLen !== 'full'; $('lenFull').checked = ui.expLen === 'full';
+    var full = ui.expLen === 'full' && !ProjectLength.isAuto(WS.id);
+    $('lenMix').checked = !full; $('lenFull').checked = full;
     var ce = contentEnd(), k = outFactor(), pct = ProjectSpeed.clean(mix.opts.speed).pct, ceOut = ProjectSpeed.outputLength(ce, k);
     $('lenMixT').textContent = '(' + fmt(ce) + ')'; $('lenFullT').textContent = '(' + fmt(mix.target) + ')';
     var atSpeed = k === 1 ? '' : ' at ' + pct + '%';
-    $('lenNote').textContent = ui.expLen !== 'full'
+    renderAutoLength();
+    $('lenNote').textContent = !full
       ? (k === 1 ? '' : 'At ' + pct + '% the file runs ' + fmt(ceOut) + ' (' + fmt(ce) + ' at normal speed).')
       : ceOut > mix.target + 0.5 ? 'The mix runs ' + fmt(ceOut - mix.target) + ' past ' + fmt(mix.target) + atSpeed + ', so it fades out over the last 3 seconds and stops at ' + fmt(mix.target) + '.' : ceOut < mix.target - 0.5 ? 'The mix ends at ' + fmt(ceOut) + atSpeed + '; the background keeps playing to ' + fmt(mix.target) + '.' : '';
     if (ui.exporting || ui.lastExport) return;
@@ -18334,7 +18383,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     loadUserFontsQuietly();
     var f = lsGet('hp.format'); ui.format = ['mp3', 'wav', 'webm', 'video'].indexOf(f) >= 0 ? f : 'mp3';
     ui.vidSize = lsGet('hp.vidSize') === 1080 ? 1080 : 720;
-    ui.expLen = lsGet('hp.expLen') === 'full' ? 'full' : 'mix';
+    ui.expLen = ProjectLength.exportChoice(lsGet('hp.expLen'), WS.id);
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
     $('usedDate').value = nextSunday();
     $('markUsed').checked = WS.id !== 'karaoke';
