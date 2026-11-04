@@ -101,6 +101,9 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .tl .clip.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.pair { box-shadow: inset 0 -3px 0 var(--brass); }
 .tl .clip.muted canvas { opacity: 0.12; }
+.tl .clip .mutemark { position: relative; display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; font-style: normal; font-size: 10px; vertical-align: middle; }
+.tl .clip .mutemark svg { width: 11px; height: 11px; fill: currentColor; }
+.tl .clip.voice.muted { opacity: 0.6; }
 .tl .clip.textc { background: var(--msg); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 10px; font-weight: 600; }
 .tl .clip.textc.sel { background: var(--sel); color: #1A1406; }
 .tl .clip.picc { background: var(--accent); color: var(--bg); height: 18px; line-height: 18px; border-radius: 3px; padding: 0 10px 0 6px; font-weight: 600; }
@@ -4195,6 +4198,44 @@ var TrackPair = (function () {
   };
 })();
 
+/* Mute and unmute from the timeline: track names, labels and the M rule. Pure functions. */
+var ClipMute = (function () {
+  function state(track, which, n, silent) {
+    return { which: which, n: n, role: track.role === 'vocal' || track.role === 'instrumental' ? track.role : null, muted: track.mute === true || !!silent, silent: !!silent };
+  }
+  function states(item, silentMain, silentPair) {
+    var list = [state(item, 'main', 1, silentMain)];
+    if (item.pair) list.push(state(item.pair, 'pair', 2, silentPair));
+    return list;
+  }
+  function names(list) {
+    if (list.length < 2) return list.map(function () { return null; });
+    var rolesDiffer = list.every(function (s) { return s.role; }) && list[0].role !== list[1].role;
+    return list.map(function (s) { return rolesDiffer ? s.role : 'track ' + s.n; });
+  }
+  function set(track, muted, silent) {
+    if (silent && !muted) return false;
+    if (muted) track.mute = true; else delete track.mute;
+    return true;
+  }
+  function toggleTarget(list) {
+    var live = list.filter(function (s) { return !s.silent; });
+    if (!live.length) return null;
+    return live.every(function (s) { return !s.muted; });
+  }
+  function capital(text) { return text.charAt(0).toUpperCase() + text.slice(1); }
+  function buttonLabel(state, name) { return (state.muted ? 'Unmute' : 'Mute') + (name ? ' ' + name : ''); }
+  function mark(list) {
+    var muted = list.filter(function (s) { return s.muted; });
+    if (!muted.length) return null;
+    if (muted.length === list.length) return { text: '', title: list.length === 1 && list[0].silent ? 'This video has no sound' : 'Sound off' };
+    var name = capital(names(list)[list.indexOf(muted[0])]);
+    return { text: name, title: name + ' sound off' };
+  }
+  function silentNote(state, name) { return name ? capital(name) + ' has no sound' : 'This video has no sound'; }
+  return { states: states, names: names, set: set, toggleTarget: toggleTarget, buttonLabel: buttonLabel, mark: mark, silentNote: silentNote };
+})();
+
 /* Karaoke export versions: with vocals, music only, and the project's last-export note. Pure functions. */
 var VocalExport = (function () {
   var PICKS = ['both', 'vocals', 'music'];
@@ -7306,6 +7347,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     down: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10L1 3h10z"/></svg>',
     eye: '<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 6s1.8-3.5 5-3.5S11 6 11 6 9.2 9.5 6 9.5 1 6 1 6z"/><circle cx="6" cy="6" r="1.6"/></svg>',
     eyeOff: '<svg viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 6s1.8-3.5 5-3.5S11 6 11 6 9.2 9.5 6 9.5 1 6 1 6z"/><path d="M1.5 1.5l9 9"/></svg>',
+    soundOff: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 4h2l3-2.5v9L3 8H1z"/><path d="M8 4l3 4M11 4l-3 4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
     folder: '<svg viewBox="0 0 22 18" aria-hidden="true"><path d="M1 3a2 2 0 0 1 2-2h5l2 2.5h9a2 2 0 0 1 2 2V15a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2z"/></svg>'
   };
 
@@ -7403,7 +7445,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     m.anims = (m.anims || []).map(Anim.cleanItem).filter(Boolean);
-    (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); });
+    (m.spoken || []).forEach(function (it) { if (it.pic) it.pic = PictureBox.clean(it.pic, 'video'); if (it.mute !== true) delete it.mute; });
     (m.items || []).forEach(function (it) {
       TrackPair.cleanTrack(it);
       if (it.pic) it.pic = PictureBox.clean(it.pic, 'video');
@@ -8502,8 +8544,42 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function setTrackMute(itemId, which, muted) {
     var it = findItem('items', itemId), t = it && trackOf(it, which);
     if (!t) return;
-    if (muted) t.mute = true; else delete t.mute;
+    if (!ClipMute.set(t, muted, isSilentKey(t.key))) return;
     tracksChanged();
+  }
+  function isSilentKey(key) { return !!(lib[key] && lib[key].meta && lib[key].meta.silent); }
+  function muteStates(lane, id) {
+    var sel = timelineSel({ lane: lane, id: id }), it = sel && findItem(sel.lane, sel.id);
+    if (!it) return null;
+    if (sel.lane === 'items') return ClipMute.states(it, isSilentKey(it.key), it.pair ? isSilentKey(it.pair.key) : false);
+    if (sel.lane === 'spoken') return ClipMute.states(it, isSilentKey(it.key), false);
+    return null;
+  }
+  function replayMixAfterMute() {
+    if (Player.tag && isMixTag(Player.tag) && Player.tag !== 'rec' && Player.tag !== 'pulse') playMix(Player.now());
+  }
+  function setClipMute(lane, id, which, muted) {
+    var sel = timelineSel({ lane: lane, id: id });
+    if (sel.lane === 'items') setTrackMute(sel.id, which, muted);
+    else if (sel.lane === 'spoken') {
+      var it = findItem('spoken', sel.id);
+      if (!it || !ClipMute.set(it, muted, isSilentKey(it.key))) return false;
+      changed();
+    } else return false;
+    replayMixAfterMute();
+    return true;
+  }
+  function toggleClipMute() {
+    var list = ui.sel && muteStates(ui.sel.lane, ui.sel.id);
+    if (!list) return;
+    var target = ClipMute.toggleTarget(list);
+    if (target === null) { flashSel('This video has no sound.'); return; }
+    var sel = timelineSel(ui.sel), it = findItem(sel.lane, sel.id);
+    list.forEach(function (s) { if (!s.silent) ClipMute.set(trackOf(it, s.which), target, s.silent); });
+    changed();
+    replayMixAfterMute();
+    tracksReplay();
+    flashSel(target ? 'Muted' : 'Unmuted');
   }
   function setTrackGain(itemId, which, db) {
     var it = findItem('items', itemId), t = it && trackOf(it, which);
@@ -8997,11 +9073,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var fi = (c.fi / c.len * 100).toFixed(2), fo = (100 - c.fo / c.len * 100).toFixed(2);
       var paired = !!(c.pair || c.pairMissing);
       h += '<div class="clip' + (i % 2 ? ' b' : '') + (paired ? ' pair' : '') + (c.mute ? ' muted' : '') + (isSongLane(sel.lane) && sel.id === c.id ? ' sel' : '') + '" data-lane="items" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:' + (22 + (i % 2) * 24) + 'px;left:' + pct(c.start) + ';width:' + pct(c.len) +
-        ';clip-path:polygon(' + fi + '% 0,' + fo + '% 0,100% 100%,0 100%)"><canvas data-k="' + esc(c.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas><span class="lbl">' + (i + 1) + ' · ' + esc(nameOf(c)) + (paired ? ' + 2' : '') + '</span></div>';
+        ';clip-path:polygon(' + fi + '% 0,' + fo + '% 0,100% 100%,0 100%)"><canvas data-k="' + esc(c.key) + '" data-in="' + c.in + '" data-len="' + c.len + '"></canvas>' + clipMark('items', c.id) + '<span class="lbl">' + (i + 1) + ' · ' + esc(nameOf(c)) + (paired ? ' + 2' : '') + '</span></div>';
     });
     plan.spoken.forEach(function (c) {
       var prefix = showsPicture(findItem('spoken', c.id)) ? 'Video · ' : '';
-      h += '<div class="clip voice' + (sel.lane === 'spoken' && sel.id === c.id ? ' sel' : '') + '" data-lane="spoken" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:74px;left:' + pct(c.start) + ';width:' + pct(c.len) + '"><span class="lbl">' + esc(prefix + nameOf(c)) + '</span></div>';
+      h += '<div class="clip voice' + (c.mute ? ' muted' : '') + (sel.lane === 'spoken' && sel.id === c.id ? ' sel' : '') + '" data-lane="spoken" data-id="' + c.id + '" title="' + esc(nameOf(c)) + '" style="top:74px;left:' + pct(c.start) + ';width:' + pct(c.len) + '">' + clipMark('spoken', c.id) + '<span class="lbl">' + esc(prefix + nameOf(c)) + '</span></div>';
     });
     mix.pictures.forEach(function (it) {
       var pname = lib[it.key] ? lib[it.key].name : it.name;
@@ -9108,6 +9184,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('sortRows').disabled = TextRows.isSorted(tidyRows(), mix.texts, mix.groups, shownStart);
     drawClipWaves();
   }
+  function clipMark(lane, id) {
+    var list = muteStates(lane, id), mark = list && ClipMute.mark(list);
+    if (!mark) return '';
+    return '<i class="mutemark" title="' + esc(mark.title) + '">' + ICON.soundOff + esc(mark.text) + '</i>';
+  }
   function syncHead() { var h = $('tl').querySelector('.head'); if (h) { h.hidden = ui.cursor <= 0; h.style.left = (ui.cursor / ui.span * 100) + '%'; } }
   function drawClipWaves() {
     var list = $('tl').querySelectorAll('canvas[data-k]'), ink = css('--accent-ink');
@@ -9196,6 +9277,15 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     return '<button class="btn small quiet" data-selact="ghost" aria-pressed="' + (ui.ghost ? 'true' : 'false') + '">' + (columnCount(tx.lyric.song) === 2 ? 'Show the other column' : 'Show the other columns') + '</button>' +
       (ui.rec ? '' : '<button class="btn small quiet" data-selact="recmoves" aria-pressed="' + (ui.recordMoves ? 'true' : 'false') + '" title="On: dragging a column’s box in the preview adds a move at the playhead">Record moves</button>');
   }
+  function muteControls(sel) {
+    var list = muteStates(sel.lane, sel.id);
+    if (!list) return '';
+    var names = ClipMute.names(list);
+    return list.map(function (s, i) {
+      if (s.silent) return '<span class="note">' + esc(ClipMute.silentNote(s, names[i])) + '</span>';
+      return '<button class="btn small" data-selact="mute" data-which="' + s.which + '" aria-pressed="' + (s.muted ? 'true' : 'false') + '">' + esc(ClipMute.buttonLabel(s, names[i])) + '</button>';
+    }).join('');
+  }
   function lineUpControls(tx) {
     var lanes = TextRows.lanesBelow(rowLayout().rows, tx.id) || [];
     var s = TextBatch.lineUpState({ below: lanes.length, whole: !!tx.whole, recording: !!ui.rec });
@@ -9251,10 +9341,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       selLane === 'anims' ? '<button class="btn small" data-selact="editanim">Edit</button>' + animRecordControls(hit.a) + '<button class="btn small quiet" data-selact="rmanim">Remove</button>' :
       '<button class="btn small" data-selact="info">On-screen details</button>' +
       '<button class="btn small" data-selact="trim">Trim</button>' +
+      muteControls(ui.sel) +
       (selLane === 'spoken' && isVideoKey(c.key) ? '<button class="btn small" data-selact="editpic">Picture</button>' : '') +
       (selLane === 'items' && WS.id === 'karaoke' ? '<button class="btn small" data-selact="tracks">Tracks</button>' : '')) +
       '<button class="btn small quiet" data-selact="clear">Done</button>' +
-      '<span class="note">' + esc(selFlash || (fixed ? 'The first recording always starts at 0:00.' : selectedWord() ? 'Arrow keys move the word by 0.05 s. Hold Alt for 0.01 s, Shift for 0.25 s. Esc lets go of the word.' : selectedBeat() ? 'Arrow keys move the beat by 0.05 s. Hold Alt for 0.01 s, Shift for 0.25 s. Delete removes it. Esc lets go of the beat.' : 'Arrow keys move it by 0.5 s. Hold Shift for 5 s, or Alt for 0.1 s.')) + '</span>';
+      '<span class="note">' + esc(selFlash || (fixed ? 'The first recording always starts at 0:00.' : selectedWord() ? 'Arrow keys move the word by 0.05 s. Hold Alt for 0.01 s, Shift for 0.25 s. Esc lets go of the word.' : selectedBeat() ? 'Arrow keys move the beat by 0.05 s. Hold Alt for 0.01 s, Shift for 0.25 s. Delete removes it. Esc lets go of the beat.' : 'Arrow keys move it by 0.5 s. Hold Shift for 5 s, or Alt for 0.1 s.' + (selLane === 'items' || selLane === 'spoken' ? ' M mutes or unmutes it.' : ''))) + '</span>';
     setHTML(bar, h);
   }
 
@@ -15091,7 +15182,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function applyPicField(sp, el, final) {
     var it = sp.item, pic = it.pic, box = el.getAttribute('data-box'), f = el.getAttribute('data-pf'), v = parseFloat(el.value);
     if (f === 'show') { setShowPicture(it, el.checked); return; }
-    if (f === 'sound') { if (el.checked) delete it.mute; else it.mute = true; if (Player.tag) Player.stop(); return; }
+    if (f === 'sound') { ClipMute.set(it, el.checked === false, isSilentKey(it.key)); if (Player.tag) Player.stop(); return; }
     if (!pic) return;
     if (box) { if (isFinite(v)) pic.frame = TextLayout.setFrameField(pic.frame, box, v / 100); }
     else if (f === 'fit') pic.fit = el.value === 'contain' ? 'contain' : 'cover';
@@ -16029,9 +16120,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (ui.beatSel && (ev.key === 'Delete' || ev.key === 'Backspace')) { ev.preventDefault(); removeBeat(); return; }
       if (ui.beatSel && ev.key === 'Escape') { ui.beatSel = null; renderTimeline(); renderSel(); return; }
       if (!ui.sel) return;
+      if (k === 'm' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat && !ui.rec && !document.querySelector('dialog[open]') && !TextPick.count(ui.checked, mix.texts) && (isSongLane(ui.sel.lane) || ui.sel.lane === 'spoken')) { ev.preventDefault(); toggleClipMute(); return; }
       if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         ev.preventDefault();
-        var step = ev.shiftKey ? 5 : ev.altKey ? 0.1 : 0.5;
+        var step =ev.shiftKey ? 5 : ev.altKey ? 0.1 : 0.5;
         nudge(ev.key === 'ArrowLeft' ? -step : step);
       } else if (ev.key === 'Escape') { ui.sel = null; render(); }
     });
@@ -16503,6 +16595,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (act === 'pullrow') { lineUpRows(false); return; }
       if (act === 'lineuprows') { lineUpRows(true); return; }
       if (act === 'sortlines') { sortLinesInGroup(); return; }
+      if (act === 'mute') {
+        if (!ui.sel) return;
+        var ms = muteStates(ui.sel.lane, ui.sel.id), w = b.getAttribute('data-which'), st = ms && ms.filter(function (s) { return s.which === w; })[0];
+        if (st) setClipMute(ui.sel.lane, ui.sel.id, w, !st.muted);
+        return;
+      }
       var hit = clipOf(ui.sel);
       if (!hit) return;
       var barSel = timelineSel(ui.sel);
