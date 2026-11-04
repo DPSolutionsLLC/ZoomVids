@@ -133,7 +133,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .sectoggle svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform 0.15s; }
 .sec.collapsed .sectoggle svg { transform: rotate(-90deg); }
 .sec.collapsed > :not(.headrow) { display: none !important; }
-.sec.collapsed > .headrow > :not(h2):not(h3) { display: none; }
+.sec.collapsed > .headrow > :not(h2):not(h3):not(h4) { display: none; }
 .sec.collapsed > .headrow::after { content: attr(data-summary); color: var(--muted); font-size: 13px; margin-right: auto; }
 .cols.lib-collapsed { grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .cols.lib-collapsed #sec-library { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
@@ -284,6 +284,9 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .textrow.ingroup.picked { box-shadow: inset 3px 0 0 var(--sel); }
 .texted { background: var(--sunk); border-radius: var(--r); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .edhead { font: 700 11px/1.2 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 4px 0 -4px; }
+.subsec { display: flex; flex-direction: column; gap: 12px; }
+.subsec.collapsed { gap: 0; }
+.subsec > .headrow .edhead { margin: 0; }
 .links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px 20px; }
 .links .wide { grid-column: 1 / -1; }
 .links label:has(input:disabled) { color: var(--muted); }
@@ -635,6 +638,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
               <div class="floathead" id="floatHead">
                 <span class="note">Preview</span>
                 <button type="button" class="btn small quiet" id="shapeModeHead" aria-pressed="false" hidden title="Edit syllable shapes in the preview (S). Press a syllable and drag it up or down. Lines show their full shape while this is on.">Shape</button>
+                <button type="button" class="btn small quiet" id="floatTimelineHead" hidden>Float timeline</button>
                 <button class="btn small quiet" id="floatBtn" aria-pressed="false">Float</button>
               </div>
               <canvas id="screen" width="960" height="540" aria-label="Preview of the screen with the title showing at this point"></canvas>
@@ -697,119 +701,142 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
           <div class="headrow"><h3 class="minor"><button class="sectoggle" data-sec="song" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Song settings</button></h3><button class="btn small quiet" data-float="song" aria-pressed="false">Float</button></div>
           <div class="texted" id="songSet">
             <label>Song <select id="songSetSong"></select></label>
-            <div class="btnrow" role="radiogroup" aria-label="Show the lyrics as">
-              <span>Show the lyrics as</span>
-              <label><input type="radio" name="songView" id="songViewSlides" value="slides"> Slides</label>
-              <label><input type="radio" name="songView" id="songViewRoll" value="roll"> Rolling lines</label>
-              <label><input type="radio" name="songView" id="songViewCols" value="cols"> Columns</label>
-            </div>
-            <div class="btnrow" role="radiogroup" aria-label="How the lyrics are entered" id="songEntryRow" hidden><span>Lyrics</span><label><input type="radio" name="songEntry" id="songEntryBoxes" value="boxes"> One box per column</label><label><input type="radio" name="songEntry" id="songEntryTags" value="tags"> One text with @ names</label></div>
             <p class="note" id="songSetEmpty" hidden>Add a song to Order of music first.</p>
-            <h4 class="edhead">Lyrics</h4>
-            <div class="btnrow" role="radiogroup" aria-label="Which column" id="songColTabs" hidden></div>
-            <div class="btnrow" id="songColActs" hidden><button type="button" class="btn small" id="songColAdd">Add column</button><button type="button" class="btn small quiet" id="songColRemove">Remove this column</button><button type="button" class="btn small quiet" id="songColSpread">Spread evenly</button><button type="button" class="btn small" id="songColApplyOpen">Apply settings to other columns…</button><button type="button" class="btn small" id="songColCopyOpen">Copy settings from…</button></div>
-            <div class="texted" id="songColCopy" hidden><div role="group" id="songColCopyBody"></div><p class="note">The box and heading aren’t copied.</p><div class="btnrow"><button type="button" class="btn small primary" id="songColCopyGo">Apply</button><button type="button" class="btn small quiet" id="songColCopyCancel">Cancel</button></div></div>
-            <p class="note" id="songColScope" hidden></p>
-            <label id="songColHeadRow" hidden>Heading <input type="text" id="songColHead" maxlength="40" placeholder="Optional, e.g. Men"></label>
-            <div class="btnrow" id="songColShowRow" hidden>
-              <label>Shows up <select id="lyricAppear"><option value="start">From the start of the song</option><option value="first">When its first line comes in</option></select></label>
-              <label>After its last line <select id="lyricWhenDone"><option value="stay">Stays on screen</option><option value="fade">Fades out</option></select></label>
-              <label>During long breaks <select id="lyricGaps"><option value="dots">Shows the rest dots</option><option value="hide">Fades out and back in</option></select></label>
-              <label>Hide after a break of at least <input type="number" id="lyricHideGap" min="6" max="60" step="0.5" style="width:5em"> s</label>
+            <div class="sec subsec" id="sec-songLyrics">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songLyrics" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Lyrics</button></h4></div>
+              <div class="btnrow" role="radiogroup" aria-label="Show the lyrics as">
+                <span>Show the lyrics as</span>
+                <label><input type="radio" name="songView" id="songViewSlides" value="slides"> Slides</label>
+                <label><input type="radio" name="songView" id="songViewRoll" value="roll"> Rolling lines</label>
+                <label><input type="radio" name="songView" id="songViewCols" value="cols"> Columns</label>
+              </div>
+              <div class="btnrow" role="radiogroup" aria-label="How the lyrics are entered" id="songEntryRow" hidden><span>Lyrics</span><label><input type="radio" name="songEntry" id="songEntryBoxes" value="boxes"> One box per column</label><label><input type="radio" name="songEntry" id="songEntryTags" value="tags"> One text with @ names</label></div>
+              <div class="btnrow" role="radiogroup" aria-label="Which column" id="songColTabs" hidden></div>
+              <div class="btnrow" id="songColActs" hidden><button type="button" class="btn small" id="songColAdd">Add column</button><button type="button" class="btn small quiet" id="songColRemove">Remove this column</button><button type="button" class="btn small quiet" id="songColSpread">Spread evenly</button><button type="button" class="btn small" id="songColApplyOpen">Apply settings to other columns…</button><button type="button" class="btn small" id="songColCopyOpen">Copy settings from…</button></div>
+              <div class="texted" id="songColCopy" hidden><div role="group" id="songColCopyBody"></div><p class="note">The box and heading aren’t copied.</p><div class="btnrow"><button type="button" class="btn small primary" id="songColCopyGo">Apply</button><button type="button" class="btn small quiet" id="songColCopyCancel">Cancel</button></div></div>
+              <p class="note" id="songColScope" hidden></p>
+              <label id="songColHeadRow" hidden>Heading <input type="text" id="songColHead" maxlength="40" placeholder="Optional, e.g. Men"></label>
+              <div class="btnrow" id="songColShowRow" hidden>
+                <label>Shows up <select id="lyricAppear"><option value="start">From the start of the song</option><option value="first">When its first line comes in</option></select></label>
+                <label>After its last line <select id="lyricWhenDone"><option value="stay">Stays on screen</option><option value="fade">Fades out</option></select></label>
+                <label>During long breaks <select id="lyricGaps"><option value="dots">Shows the rest dots</option><option value="hide">Fades out and back in</option></select></label>
+                <label>Hide after a break of at least <input type="number" id="lyricHideGap" min="6" max="60" step="0.5" style="width:5em"> s</label>
+              </div>
+              <p class="note" id="songColShowNote" hidden>Shorter breaks still show the rest dots (Break of at least, under Countdown after a break).</p>
+              <p class="note" id="songColNote" hidden></p>
+              <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
+              <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
+              <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><button class="btn small" id="songLyricsMark">Mark all</button><button class="btn small quiet" id="songLyricsOriginal" hidden>Back to my original</button><span class="note" id="songLyricsState"></span><label><input type="checkbox" id="lineLabelsOn"> Show line labels</label><span class="note">Only while you work. Never in the video.</span></div>
+              <p class="msg" id="songLyricsMsg" role="status"></p>
             </div>
-            <p class="note" id="songColShowNote" hidden>Shorter breaks still show the rest dots (Break of at least, under While it's sung).</p>
-            <p class="note" id="songColNote" hidden></p>
-            <p class="note">Leave a blank line between slides. Glo-ri-a splits a word into syllables; well--known keeps a hyphen; start a line with High: to give it a part. A line like [Chorus] names the verse under it. Mark all adds the dashes for you; check them before you press Make lines.</p>
-            <div class="lyricrec"><div class="lyrichl" id="songLyricsHl" aria-hidden="true"></div><textarea id="songLyrics" rows="10" spellcheck="false" aria-label="Lyrics for this song"></textarea></div>
-            <div class="btnrow"><button class="btn small primary" id="songLyricsGo">Update</button><button class="btn small quiet" id="songLyricsReset" hidden>Undo my typing</button><button class="btn small" id="songLyricsMark">Mark all</button><button class="btn small quiet" id="songLyricsOriginal" hidden>Back to my original</button><span class="note" id="songLyricsState"></span><label><input type="checkbox" id="lineLabelsOn"> Show line labels</label><span class="note">Only while you work. Never in the video.</span></div>
-            <p class="msg" id="songLyricsMsg" role="status"></p>
-            <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this song"></div>
-            <div class="btnrow"><label>Part <select id="lyricPart"></select></label><button class="btn small" id="lyricApply" disabled>Set part</button><span class="note" id="lyricPickNote"></span></div>
-            <h4 class="edhead">While it's sung</h4>
-            <div class="btnrow">
-              <label>Highlight <select id="lyricHighlight"><option value="syllable">Syllable by syllable</option><option value="word">Whole word</option></select></label>
-              <label><input type="checkbox" id="lyricKeepLit"> Keep sung words lit until the line ends</label>
+            <div class="sec subsec" id="sec-songParts">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songParts" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Parts for words</button></h4></div>
+              <div class="lyricwords" id="lyricWords" role="group" aria-label="Words in this song"></div>
+              <div class="btnrow"><label>Part <select id="lyricPart"></select></label><button class="btn small" id="lyricApply" disabled>Set part</button><span class="note" id="lyricPickNote"></span></div>
             </div>
-            <div class="btnrow">
-              <label><input type="checkbox" id="lyricPulseOn"> Pulse on the beat</label>
-              <label>Pulse size <input type="range" id="lyricPulseSize" min="105" max="150" step="1"><output id="lyricPulseSizeOut" class="num"></output></label>
-              <label>Smoothness <input type="range" id="lyricPulseEase" min="0.02" max="0.3" step="0.01"><output id="lyricPulseEaseOut" class="num"></output></label>
-              <label>Grow from <select id="lyricPulseFrom"><option value="base">The line (baseline)</option><option value="center">The middle</option></select></label>
+            <div class="sec subsec" id="sec-songHighlight">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songHighlight" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Highlight</button></h4></div>
+              <div class="btnrow">
+                <label>Highlight <select id="lyricHighlight"><option value="syllable">Syllable by syllable</option><option value="word">Whole word</option></select></label>
+                <label><input type="checkbox" id="lyricKeepLit"> Keep sung words lit until the line ends</label>
+              </div>
+              <p class="note">The highlight shows on slides that have word timing.</p>
             </div>
-            <div class="btnrow">
-              <span class="note" id="lyricPulseShortest"></span>
-              <button type="button" class="btn small" id="lyricPulsePlay" data-play="pulse" data-label="Preview the shortest"></button>
-              <label><input type="checkbox" id="lyricPulseLoop"> Loop</label>
-              <label><input type="checkbox" id="lyricPulseSound"> Sound</label>
+            <div class="sec subsec" id="sec-songPulse">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songPulse" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Pulse on the beat</button></h4></div>
+              <div class="btnrow">
+                <label><input type="checkbox" id="lyricPulseOn"> Pulse on the beat</label>
+                <label>Pulse size <input type="range" id="lyricPulseSize" min="105" max="150" step="1"><output id="lyricPulseSizeOut" class="num"></output></label>
+                <label>Smoothness <input type="range" id="lyricPulseEase" min="0.02" max="0.3" step="0.01"><output id="lyricPulseEaseOut" class="num"></output></label>
+                <label>Grow from <select id="lyricPulseFrom"><option value="base">The line (baseline)</option><option value="center">The middle</option></select></label>
+              </div>
+              <div class="btnrow">
+                <span class="note" id="lyricPulseShortest"></span>
+                <button type="button" class="btn small" id="lyricPulsePlay" data-play="pulse" data-label="Preview the shortest"></button>
+                <label><input type="checkbox" id="lyricPulseLoop"> Loop</label>
+                <label><input type="checkbox" id="lyricPulseSound"> Sound</label>
+              </div>
+              <p class="note">Pulse on the beat is for the whole project: every song and every column. Each syllable grows for as long as it was held when you recorded the timing.</p>
             </div>
-            <p class="note">Pulse on the beat is for the whole project: every song and every column. Each syllable grows for as long as it was held when you recorded the timing.</p>
-            <div class="btnrow"><label>Shape level height <input type="range" id="lyricLevelHeight" min="10" max="100" step="5"><output id="lyricLevelHeightOut" class="num"></output></label></div>
-            <p class="note">How far one shape level lifts or lowers a syllable, as a share of the text size. Lines don't get extra space, so keep it small if shaped words touch the line above.</p>
-            <div class="btnrow">
-              <label>Shape shows <select id="lyricShapeShow"><option value="always">Always</option><option value="line">When the line comes up</option><option value="syllable">As each syllable is sung</option></select></label>
-              <label>Glide <input type="range" id="lyricShapeGlide" min="0.25" max="1" step="0.05"><output id="lyricShapeGlideOut" class="num"></output></label>
-              <label>Lead-in <input type="number" id="lyricShapeLeadIn" min="0.5" max="5" step="0.5" style="width:4.5em"> s</label>
-              <label><input type="checkbox" id="lyricShapeFlatten"> Flatten after singing</label>
+            <div class="sec subsec" id="sec-songShapes">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songShapes" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Syllable shapes</button></h4></div>
+              <div class="btnrow"><label>Shape level height <input type="range" id="lyricLevelHeight" min="10" max="100" step="5"><output id="lyricLevelHeightOut" class="num"></output></label></div>
+              <p class="note">How far one shape level lifts or lowers a syllable, as a share of the text size. Lines don't get extra space, so keep it small if shaped words touch the line above.</p>
+              <div class="btnrow">
+                <label>Shape shows <select id="lyricShapeShow"><option value="always">Always</option><option value="line">When the line comes up</option><option value="syllable">As each syllable is sung</option></select></label>
+                <label>Glide <input type="range" id="lyricShapeGlide" min="0.25" max="1" step="0.05"><output id="lyricShapeGlideOut" class="num"></output></label>
+                <label>Lead-in <input type="number" id="lyricShapeLeadIn" min="0.5" max="5" step="0.5" style="width:4.5em"> s</label>
+                <label><input type="checkbox" id="lyricShapeFlatten"> Flatten after singing</label>
+              </div>
+              <p class="note">When the line comes up: the line shows flat, and its syllables glide into their shape as the line before it finishes (or the lead-in before it's sung, after a break). As each syllable is sung: each syllable glides into place as it's reached. Shape editing always shows the full shape.</p>
             </div>
-            <p class="note">When the line comes up: the line shows flat, and its syllables glide into their shape as the line before it finishes (or the lead-in before it's sung, after a break). As each syllable is sung: each syllable glides into place as it's reached. Shape editing always shows the full shape.</p>
-            <div class="btnrow">
-              <label>Highlight for words with no part <input type="color" id="lyricSingColor"></label>
-              <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
+            <div class="sec subsec" id="sec-songColors">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songColors" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Part colors</button></h4></div>
+              <div class="btnrow">
+                <label>Highlight for words with no part <input type="color" id="lyricSingColor"></label>
+                <label><input type="checkbox" id="lyricShowParts"> Show part names on screen</label>
+              </div>
+              <div id="lyricParts" class="btnrow lyricparts"></div>
+              <div class="btnrow"><button type="button" class="btn small quiet" id="lyricPartsClean">Remove unused parts</button><span class="note" id="lyricPartsCleanNote"></span></div>
             </div>
-            <div id="lyricParts" class="btnrow lyricparts"></div>
-            <div class="btnrow"><button type="button" class="btn small quiet" id="lyricPartsClean">Remove unused parts</button><span class="note" id="lyricPartsCleanNote"></span></div>
-            <div class="btnrow">
-              <label>Countdown after a break <select id="lyricCountdown"><option value="dots">Dots</option><option value="bar">Bar</option><option value="off">Off</option></select></label>
-              <label>Break of at least <input type="number" id="lyricBreakGap" min="2" max="30" step="0.5" style="width:5em"> s</label>
-              <label>Counts down for <input type="number" id="lyricCountLen" min="1" max="10" step="1" style="width:4em"> s</label>
+            <div class="sec subsec" id="sec-songCountdown">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songCountdown" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Countdown after a break</button></h4></div>
+              <div class="btnrow">
+                <label>Countdown <select id="lyricCountdown"><option value="dots">Dots</option><option value="bar">Bar</option><option value="off">Off</option></select></label>
+                <label>Break of at least <input type="number" id="lyricBreakGap" min="2" max="30" step="0.5" style="width:5em"> s</label>
+                <label>Counts down for <input type="number" id="lyricCountLen" min="1" max="10" step="1" style="width:4em"> s</label>
+              </div>
             </div>
-            <p class="note">The highlight shows on slides that have word timing.</p>
             <div id="songRoll" hidden>
-              <h4 class="edhead">Rolling lines</h4>
-              <div class="btnrow">
-                <label>Lines above the current one <input type="number" id="songRollAbove" min="0" max="4" step="1" style="width:4em"></label>
-                <label>Lines below <input type="number" id="songRollBelow" min="0" max="6" step="1" style="width:4em"></label>
+              <div class="sec subsec" id="sec-songRolling">
+                <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songRolling" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>Rolling lines</button></h4></div>
+                <div class="btnrow">
+                  <label>Lines above the current one <input type="number" id="songRollAbove" min="0" max="4" step="1" style="width:4em"></label>
+                  <label>Lines below <input type="number" id="songRollBelow" min="0" max="6" step="1" style="width:4em"></label>
+                </div>
+                <div class="btnrow">
+                  <label>Move on <select id="songRollMove"><option value="stay">Current line stays put</option><option value="page">Page by page</option></select></label>
+                  <label>Motion <select id="songRollMotion"><option value="smooth">Smooth scroll</option><option value="jump">Instant jump</option></select></label>
+                </div>
+                <div class="btnrow">
+                  <label>Verse starts <select id="songRollVerses"><option value="mark">Show a label</option><option value="screen">Start a fresh screen</option><option value="none">Nothing</option></select></label>
+                  <label>Line up <select id="songRollAlign"><option value="center">Centered</option><option value="left">Left</option></select></label>
+                </div>
+                <p class="note" id="songNormalBox" hidden>Normal box: where the column sits before its first move.</p>
+                <div class="grid">
+                  <label>Left <span><input type="number" id="songRollX" min="0" max="100" step="0.5"> %</span></label>
+                  <label>Top <span><input type="number" id="songRollY" min="0" max="100" step="0.5"> %</span></label>
+                  <label>Width <span><input type="number" id="songRollW" min="0" max="100" step="0.5"> %</span></label>
+                  <label>Height <span><input type="number" id="songRollH" min="0" max="100" step="0.5"> %</span></label>
+                </div>
+                <p class="note">Select a line on the timeline, then drag its box in the preview to move or resize it.</p>
+                <div class="btnrow" id="songMoveRow" hidden><button type="button" class="btn small" id="songRecordMoves" aria-pressed="false">Record moves</button><span class="note" id="songMoveNote"></span></div>
+                <div class="movelist" id="songMoveList" hidden></div>
               </div>
-              <div class="btnrow">
-                <label>Move on <select id="songRollMove"><option value="stay">Current line stays put</option><option value="page">Page by page</option></select></label>
-                <label>Motion <select id="songRollMotion"><option value="smooth">Smooth scroll</option><option value="jump">Instant jump</option></select></label>
-              </div>
-              <div class="btnrow">
-                <label>Verse starts <select id="songRollVerses"><option value="mark">Show a label</option><option value="screen">Start a fresh screen</option><option value="none">Nothing</option></select></label>
-                <label>Line up <select id="songRollAlign"><option value="center">Centered</option><option value="left">Left</option></select></label>
-              </div>
-              <p class="note" id="songNormalBox" hidden>Normal box: where the column sits before its first move.</p>
-              <div class="grid">
-                <label>Left <span><input type="number" id="songRollX" min="0" max="100" step="0.5"> %</span></label>
-                <label>Top <span><input type="number" id="songRollY" min="0" max="100" step="0.5"> %</span></label>
-                <label>Width <span><input type="number" id="songRollW" min="0" max="100" step="0.5"> %</span></label>
-                <label>Height <span><input type="number" id="songRollH" min="0" max="100" step="0.5"> %</span></label>
-              </div>
-              <p class="note">Select a line on the timeline, then drag its box in the preview to move or resize it.</p>
-              <div class="btnrow" id="songMoveRow" hidden><button type="button" class="btn small" id="songRecordMoves" aria-pressed="false">Record moves</button><span class="note" id="songMoveNote"></span></div>
-              <div class="movelist" id="songMoveList" hidden></div>
             </div>
-            <h4 class="edhead" id="songLookHead">Look for new lyric slides</h4>
-            <div class="grid look">
-              <div class="fontfield">
-                <label>Font <select id="songLookFont"></select></label>
-                <span class="btnrow"><label><input type="checkbox" id="songLookBold"> Bold</label> <label><input type="checkbox" id="songLookItalic"> Italic</label></span>
+            <div class="sec subsec" id="sec-songLook">
+              <div class="headrow"><h4 class="edhead"><button type="button" class="sectoggle" data-sec="songLook" aria-expanded="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg><span id="songLookHead">Look for new lyric slides</span></button></h4></div>
+              <div class="grid look">
+                <div class="fontfield">
+                  <label>Font <select id="songLookFont"></select></label>
+                  <span class="btnrow"><label><input type="checkbox" id="songLookBold"> Bold</label> <label><input type="checkbox" id="songLookItalic"> Italic</label></span>
+                </div>
+                <div class="sizefield">
+                  <label><span id="songLookSizeLabel">Size</span> <span class="btnrow"><input type="range" id="songLookSize" min="24" max="180" step="1"><output id="songLookSizeOut" class="num"></output></span></label>
+                  <span class="btnrow" id="songLookFitRow"><button type="button" class="btn small" id="songLookFit">Fit lines to the box</button></span>
+                  <span class="note" id="songLookFitNote" hidden></span>
+                </div>
+                <label>Text color <input type="color" id="songLookColor"></label>
+                <label>Behind the text <select id="songLookBehind"><option value="none">Nothing</option><option value="shadow">Soft shadow</option><option value="outline">Soft outline</option><option value="solid">Solid outline</option><option value="box">Dark box</option></select></label>
+                <label id="songLookLookColorRow"><span id="songLookLookColorLabel">Outline color</span> <input type="color" id="songLookLookColor"></label>
+                <label id="songLookOpacityRow">Opacity <span class="btnrow"><input type="range" id="songLookOpacity" min="0" max="100" step="5"><output id="songLookOpacityOut" class="num"></output></span></label>
+                <label id="songLookGlowWidthRow">Width <span class="btnrow"><input type="range" id="songLookGlowWidth" min="0" max="40" step="1"><output id="songLookGlowWidthOut" class="num"></output></span></label>
+                <label id="songLookGlowSoftRow">Softness <span class="btnrow"><input type="range" id="songLookGlowSoft" min="0" max="60" step="1"><output id="songLookGlowSoftOut" class="num"></output></span></label>
+                <label id="songLookSolidWidthRow">Thickness <span class="btnrow"><input type="range" id="songLookSolidWidth" min="1" max="20" step="1"><output id="songLookSolidWidthOut" class="num"></output></span></label>
               </div>
-              <div class="sizefield">
-                <label><span id="songLookSizeLabel">Size</span> <span class="btnrow"><input type="range" id="songLookSize" min="24" max="180" step="1"><output id="songLookSizeOut" class="num"></output></span></label>
-                <span class="btnrow" id="songLookFitRow"><button type="button" class="btn small" id="songLookFit">Fit lines to the box</button></span>
-                <span class="note" id="songLookFitNote" hidden></span>
-              </div>
-              <label>Text color <input type="color" id="songLookColor"></label>
-              <label>Behind the text <select id="songLookBehind"><option value="none">Nothing</option><option value="shadow">Soft shadow</option><option value="outline">Soft outline</option><option value="solid">Solid outline</option><option value="box">Dark box</option></select></label>
-              <label id="songLookLookColorRow"><span id="songLookLookColorLabel">Outline color</span> <input type="color" id="songLookLookColor"></label>
-              <label id="songLookOpacityRow">Opacity <span class="btnrow"><input type="range" id="songLookOpacity" min="0" max="100" step="5"><output id="songLookOpacityOut" class="num"></output></span></label>
-              <label id="songLookGlowWidthRow">Width <span class="btnrow"><input type="range" id="songLookGlowWidth" min="0" max="40" step="1"><output id="songLookGlowWidthOut" class="num"></output></span></label>
-              <label id="songLookGlowSoftRow">Softness <span class="btnrow"><input type="range" id="songLookGlowSoft" min="0" max="60" step="1"><output id="songLookGlowSoftOut" class="num"></output></span></label>
-              <label id="songLookSolidWidthRow">Thickness <span class="btnrow"><input type="range" id="songLookSolidWidth" min="1" max="20" step="1"><output id="songLookSolidWidthOut" class="num"></output></span></label>
+              <p class="note" id="songLookNote">New slides for this song start with this look. Slides already made keep theirs.</p>
+              <div class="btnrow"><button class="btn small" id="songLookAll">Use on every slide in this song</button></div>
             </div>
-            <p class="note" id="songLookNote">New slides for this song start with this look. Slides already made keep theirs.</p>
-            <div class="btnrow"><button class="btn small" id="songLookAll">Use on every slide in this song</button></div>
             <p class="msg" id="songSetMsg" role="status"></p>
           </div>
         </div>
@@ -3802,6 +3829,25 @@ var PanelLayout = (function () {
   }
   function anyFloating(layout) { return Object.keys(layout.panels).some(function (id) { return layout.panels[id].on === true; }); }
   return { KEY: KEY, IDS: IDS, MIN_W: MIN_W, MIN_H: MIN_H, MARGIN: MARGIN, SNAP: SNAP, clean: clean, fromLegacyFloat: fromLegacyFloat, fit: fit, snap: snap, snapSize: snapSize, toFront: toFront, dockAll: dockAll, anyFloating: anyFloating };
+})();
+
+/* Fold-up sections inside Song settings: their keys in page order, opening some, and the short note a folded one shows. Pure functions. */
+var SongFolds = (function () {
+  var IDS = ['songLyrics', 'songParts', 'songHighlight', 'songPulse', 'songShapes', 'songColors', 'songCountdown', 'songRolling', 'songLook'];
+  function open(collapsed, ids) {
+    var next = Object.assign({}, collapsed || {}), changed = false;
+    ids.forEach(function (id) { if (next[id]) { next[id] = false; changed = true; } });
+    return { next: next, changed: changed };
+  }
+  function summary(id, facts) {
+    if (!facts || !facts.hasSong) return '';
+    if (id === 'songLyrics') return facts.columnName ? facts.viewName + ' · ' + facts.columnName : facts.viewName;
+    if (id === 'songHighlight') return facts.highlight || '';
+    if (id === 'songPulse') return facts.pulseOn ? 'On' : 'Off';
+    if (id === 'songCountdown') return facts.countdown || '';
+    return '';
+  }
+  return { IDS: IDS, open: open, summary: summary };
 })();
 
 /* Color background: flat or fade colors, ready-made swatches, recent colors. Pure functions; inputs are never changed. */
@@ -11806,7 +11852,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var tx = selText(); if (!tx || !tx.lyric || !songClip(tx.lyric.song)) return;
     var songId = tx.lyric.song, col = colOf(tx);
     ui.songSet = songId; ui.songSetSlide = tx.id; ui.songCol = col;
-    if (document.getElementById('sec-song').classList.contains('collapsed')) document.querySelector('.sectoggle[data-sec="song"]').click();
+    openSections(['song', 'songLyrics']);
     if (isFloating('song')) bringToFront('song');
     renderSongSettings();
     var box = $('songLyrics');
@@ -13002,7 +13048,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     function set(elId, v) { var el = $(elId); if (document.activeElement !== el) el.value = v; }
     fillSongSelect($('songSetSong'), id);
     $('songSetEmpty').hidden = has;
-    $('songSet').querySelectorAll('input, select, button').forEach(function (el) { el.disabled = !has; });
+    $('songSet').querySelectorAll('input, select, button:not(.sectoggle)').forEach(function (el) { el.disabled = !has; });
     $('songViewSlides').checked = !roll; $('songViewRoll').checked = roll && !two; $('songViewCols').checked = two;
     $('songViewSlides').disabled = $('songViewRoll').disabled = $('songViewCols').disabled = !has || !!ui.rec;
     var count = two ? columnCount(id) : 1, tagged = two && isTagged(id);
@@ -13090,6 +13136,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('songLookFitNote').hidden = !roll || !!fitLines;
     $('songLookFitNote').textContent = 'Make lines first, then fit them to the box.';
     renderPulse(has, set);
+    document.querySelectorAll('#songSet .sec.subsec').forEach(function (sec) {
+      var key = sec.id.slice(4), hr = sec.querySelector('.headrow');
+      hr.setAttribute('data-summary', collapsed[key] ? sectionSummary(key) : '');
+    });
   }
   // The Record moves switch and the selected column's list of moves. Shown only in a Columns song, and never while recording.
   function renderColumnMoves(songId, two, col) {
@@ -17549,6 +17599,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function renderLayoutBar() { $('layoutReset').hidden = !PanelLayout.anyFloating(layout); }
   function setFloatButtons(id, on) {
     document.querySelectorAll('[data-float="' + id + '"]').forEach(function (b) { b.setAttribute('aria-pressed', String(on)); });
+    if (id === 'timeline') renderTimelineHeadButton();
+  }
+  function renderTimelineHeadButton() {
+    var btn = $('floatTimelineHead'), on = isFloating('timeline');
+    btn.hidden = WS.id !== 'karaoke';
+    btn.textContent = on ? 'Show timeline' : 'Float timeline';
+    btn.title = on ? 'Bring the floating timeline to the front' : 'Float the timeline so you can reach it from anywhere on the page';
+  }
+  function floatOrShowTimeline() {
+    if (isFloating('timeline')) { bringToFront('timeline'); showPanel('timeline'); }
+    else floatPanel('timeline');
   }
   function showPanel(id) {
     var box = panelBox(id), entry = layout.panels[id];
@@ -17660,6 +17721,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     });
     applyOrder();
     renderLayoutBar();
+    renderTimelineHeadButton();
   }
   (function () {
     document.addEventListener('pointerdown', function (ev) {
@@ -17674,6 +17736,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (id === 'preview') { floatPreview(b.hasAttribute('data-float') ? !floatState.on : false); return; }
       if (b.hasAttribute('data-dock') || isFloating(id)) dockPanel(id); else floatPanel(id);
     });
+    $('floatTimelineHead').onclick = floatOrShowTimeline;
     $('layoutReset').onclick = function () {
       if (floatState.on) floatPreview(false);
       PanelLayout.IDS.forEach(function (id) { if (id !== 'preview' && panelBox(id)) dockPanel(id, true); });
@@ -17980,7 +18043,27 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (id === 'scriptures') return scrColl.items.length + (scrColl.items.length === 1 ? ' reference' : ' references');
     if (id === 'talkref') { var n = talksInMix().length; return n ? n + (n === 1 ? ' talk' : ' talks') : 'no talks in this mix'; }
     if (id === 'screen') return caps.length + (caps.length === 1 ? ' title' : ' titles') + (mix.texts.length ? ', ' + mix.texts.length + ' of your own text' : '');
+    if (SongFolds.IDS.indexOf(id) >= 0) return SongFolds.summary(id, songFoldFacts());
     return '';
+  }
+  function checkedLabelText(selector) {
+    var input = document.querySelector(selector);
+    return input && input.parentNode ? input.parentNode.textContent.trim() : null;
+  }
+  function selectedOptionText(selectId) {
+    var option = $(selectId).selectedOptions[0];
+    return option ? option.textContent : null;
+  }
+  function songFoldFacts() {
+    var viewName = checkedLabelText('#songSet input[name="songView"]:checked');
+    return {
+      hasSong: !!settingsSongId() && viewName !== null,
+      viewName: viewName,
+      columnName: $('songViewCols').checked ? checkedLabelText('#songColTabs input:checked') : null,
+      highlight: selectedOptionText('lyricHighlight'),
+      pulseOn: $('lyricPulseOn').checked,
+      countdown: selectedOptionText('lyricCountdown')
+    };
   }
   function renderSections() {
     var secs = document.querySelectorAll('.sec');
@@ -17992,6 +18075,13 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
     document.querySelector('.cols').classList.toggle('lib-collapsed', !!collapsed.library || isFloating('library'));
   }
+  function openSections(ids) {
+    var res = SongFolds.open(collapsed, ids);
+    if (!res.changed) return;
+    collapsed = res.next;
+    lsSet('hp.collapsed', collapsed);
+    renderSections(); drawWaves(); drawScreen(); renderTimeline();
+  }
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('.sectoggle') : null;
     if (!b) return;
@@ -18000,6 +18090,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     lsSet('hp.collapsed', collapsed);
     renderSections();
     if (!collapsed[id]) { drawWaves(); drawScreen(); renderTimeline(); }
+    if (!collapsed[id] && (id === 'song' || SongFolds.IDS.indexOf(id) >= 0)) renderSongSettings();
   });
 
   /* ---------- linked music folder (when hosted on your own site) ---------- */
