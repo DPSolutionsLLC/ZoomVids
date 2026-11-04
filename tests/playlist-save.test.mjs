@@ -124,3 +124,10 @@ test('cleanName collapses inner spaces, trims and turns null into an empty strin
   assert.equal(PlaylistSave.cleanName(null), '');
   assert.equal(PlaylistSave.cleanName(undefined), '');
 });
+
+test('cleanName strips control characters, including the folder key separator, but still turns tabs and newlines into spaces', () => {
+  assert.equal(PlaylistSave.cleanName('Silent\u001FNight'), 'SilentNight');
+  assert.equal(PlaylistSave.cleanName('a\u0000b\u007Fc'), 'abc');
+  assert.equal(PlaylistSave.cleanName('a\tb\nc'), 'a b c');
+  assert.equal(PlaylistSave.cleanName('a\r\nb'), 'a b');
+});

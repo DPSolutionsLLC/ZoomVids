@@ -76,6 +76,7 @@ label { display: inline-flex; align-items: center; gap: 6px; }
 .finishnote[hidden] { display: none; }
 #plFinished[aria-pressed="true"] { color: var(--accent); }
 #plOpen option.done { color: var(--muted); }
+#plFolderPick, #plFolder { max-width: 180px; }
 
 /* the desk */
 .desk { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -436,6 +437,13 @@ dialog .dl { display: flex; flex-direction: column; gap: 14px; }
 .trackblk select { max-width: 100%; }
 .tracksline { display: flex; flex-direction: column; gap: 10px; }
 #tracksNote.err { color: var(--bad); }
+#projList { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow: auto; }
+.projsec { border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.projhead { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.projfold { background: none; border: 0; padding: 2px 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.projrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.projrow .projname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.projdone { color: var(--muted); font-size: 13px; }
 #tracksWave { width: 100%; height: 150px; display: block; background: var(--sunk); border-radius: var(--r); cursor: pointer; touch-action: none; }
 .fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; align-items: center; }
 .fields input[type="text"], .fields input[type="url"] { width: 100%; }
@@ -543,8 +551,12 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
       <label for="plName" class="visually-hidden">Playlist name</label>
       <input type="text" id="plName" placeholder="Name this playlist to keep it" data-karaoke-placeholder="Name this project to keep it">
       <span class="savenote" id="plSaved" role="status" aria-live="polite"></span>
+      <label class="note" data-karaoke-only>Folder <select id="plFolder"></select></label>
+      <label for="plFolderPick" class="visually-hidden">Show songs in</label>
+      <select id="plFolderPick" data-karaoke-only></select>
       <label for="plOpen" class="visually-hidden">Open a saved playlist</label>
       <select id="plOpen"></select>
+      <button class="btn quiet" id="plProjects" data-karaoke-only>Projects</button>
       <button class="btn quiet" id="plCopy">Save a copy</button>
       <button class="btn quiet" id="plFinished" aria-pressed="false">Mark finished</button>
       <span class="finishnote" id="finishNote" role="status" aria-live="polite" hidden>
@@ -1150,6 +1162,23 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
       <button class="btn quiet" id="trimReset">Use the whole recording</button>
       <button class="btn primary" id="trimDone">Done</button>
     </div>
+  </div>
+</dialog>
+
+<dialog id="projDlg" aria-labelledby="projTitle" class="wide">
+  <div class="dl">
+    <div>
+      <h3 id="projTitle">Projects</h3>
+      <p class="note">Keep songs in folders, such as one per year. Folders only sort your songs; they don't change how a song looks or plays.</p>
+    </div>
+    <div class="btnrow">
+      <label for="projNewName" class="visually-hidden">New folder name</label>
+      <input type="text" id="projNewName" placeholder="New folder name">
+      <button class="btn" id="projNewGo">Make folder</button>
+      <span class="note" id="projNote" role="status" aria-live="polite"></span>
+    </div>
+    <div id="projList"></div>
+    <div class="btnrow" style="justify-content:flex-end"><button class="btn primary" id="projDone">Done</button></div>
   </div>
 </dialog>
 
@@ -2475,7 +2504,7 @@ var TextGroup = (function () {
 
 /* Saved playlists: names, renames and the save note. Pure functions; inputs are never changed. */
 var PlaylistSave = (function () {
-  function cleanName(name) { return String(name == null ? '' : name).replace(/\s+/g, ' ').trim(); }
+  function cleanName(name) { return String(name == null ? '' : name).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim(); }
   function has(saved, name) { return Object.prototype.hasOwnProperty.call(saved, name); }
   function copyName(name, saved) {
     var out = name + ' copy';
@@ -2528,6 +2557,158 @@ var FinishedMark = (function () {
   function shouldAsk(state) { return !!state.finished && !state.answered && state.base !== state.now; }
   function noteText(word) { return 'This ' + word + ' is marked finished.'; }
   return { clean: clean, label: label, title: title, groups: groups, shouldAsk: shouldAsk, noteText: noteText };
+})();
+
+/* Karaoke project folders: keys, folder list rules, the Open list and moves. Pure functions; inputs are never changed. */
+var ProjectFolders = (function () {
+  var SEP = '\u001F', ALL = '*';
+  function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+  function keyOf(folderId, name) { return folderId ? folderId + SEP + name : name; }
+  function parseKey(key) {
+    var at = String(key).indexOf(SEP);
+    if (at < 0) return { folder: '', name: String(key) };
+    return { folder: key.slice(0, at), name: key.slice(at + 1) };
+  }
+  function cleanName(name) { return String(name == null ? '' : name).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim(); }
+  function byFolderName(a, b) { return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }); }
+  function plainOrder(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+  function sameName(a, b) { return a.toLowerCase() === b.toLowerCase(); }
+  function cleanList(raw) {
+    if (!Array.isArray(raw)) return [];
+    var out = [];
+    raw.forEach(function (entry) {
+      if (!entry || typeof entry.id !== 'string' || !/^pf[0-9a-z]+$/.test(entry.id)) return;
+      var name = cleanName(entry.name);
+      if (!name) return;
+      if (out.some(function (f) { return f.id === entry.id || sameName(f.name, name); })) return;
+      out.push({ id: entry.id, name: name });
+    });
+    return out.sort(byFolderName);
+  }
+  function find(list, id) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function cleanFolder(id, list) { return id && find(list, id) ? id : ''; }
+  function cleanView(raw, list) {
+    var view = raw && typeof raw === 'object' ? raw : {};
+    var pick = view.pick === ALL || view.pick === '' || (typeof view.pick === 'string' && find(list, view.pick)) ? view.pick : ALL;
+    var closed = {}, rawClosed = view.closed && typeof view.closed === 'object' ? view.closed : {};
+    Object.keys(rawClosed).forEach(function (id) {
+      if (rawClosed[id] === true && (id === '' || find(list, id))) closed[id] = true;
+    });
+    return { pick: pick, closed: closed };
+  }
+  function nameTaken(list, name, exceptId) {
+    var target = cleanName(name);
+    return list.some(function (f) { return f.id !== exceptId && sameName(f.name, target); });
+  }
+  function make(list, name, newId) {
+    var clean = cleanName(name);
+    if (!clean) return { result: 'empty', list: list, id: null };
+    if (nameTaken(list, clean, null)) return { result: 'taken', list: list, id: null };
+    return { result: 'made', list: cleanList(list.concat([{ id: newId, name: clean }])), id: newId };
+  }
+  function rename(list, id, name) {
+    var clean = cleanName(name), folder = find(list, id);
+    if (!clean) return { result: 'empty', list: list };
+    if (!folder) return { result: 'missing', list: list };
+    if (folder.name === clean) return { result: 'same', list: list };
+    if (nameTaken(list, clean, id)) return { result: 'taken', list: list };
+    return { result: 'renamed', list: cleanList(list.map(function (f) { return f.id === id ? { id: f.id, name: clean } : f; })) };
+  }
+  function folderOf(key, list) { return cleanFolder(parseKey(key).folder, list); }
+  function namesIn(saved, folderId) {
+    var out = {};
+    Object.keys(saved).forEach(function (key) {
+      var p = parseKey(key);
+      if (p.folder === folderId) out[p.name] = true;
+    });
+    return out;
+  }
+  function renameSong(saved, folderId, from, to, replace) {
+    var target = cleanName(to);
+    if (!target) return { result: 'empty', saved: saved };
+    if (target === from) return { result: 'same', saved: saved };
+    var fromKey = keyOf(folderId, from), toKey = keyOf(folderId, target);
+    if (has(saved, toKey) && !replace) return { result: 'taken', saved: saved };
+    var out = Object.assign({}, saved);
+    if (has(saved, fromKey)) { out[toKey] = saved[fromKey]; delete out[fromKey]; }
+    return { result: 'renamed', saved: out };
+  }
+  function move(saved, key, toFolder) {
+    if (!has(saved, key)) return { result: 'missing', saved: saved, key: key };
+    var p = parseKey(key);
+    if (p.folder === toFolder) return { result: 'same', saved: saved, key: key };
+    var next = keyOf(toFolder, p.name);
+    if (has(saved, next)) return { result: 'taken', saved: saved, key: key };
+    var out = Object.assign({}, saved);
+    out[next] = saved[key];
+    delete out[key];
+    return { result: 'moved', saved: out, key: next };
+  }
+  function removeFolder(list, saved, id) {
+    var folder = find(list, id);
+    if (!folder) return { list: list, saved: saved, moves: [] };
+    var out = Object.assign({}, saved), moves = [];
+    Object.keys(saved).sort(plainOrder).forEach(function (key) {
+      var p = parseKey(key);
+      if (p.folder !== id) return;
+      var name = p.name;
+      if (has(out, name)) {
+        var base = p.name + ' (' + folder.name + ')';
+        name = base;
+        for (var k = 2; has(out, name); k++) name = base + ' ' + k;
+      }
+      out[name] = saved[key];
+      delete out[key];
+      moves.push({ from: key, to: name });
+    });
+    return { list: list.filter(function (f) { return f.id !== id; }), saved: out, moves: moves };
+  }
+  function counts(saved, list) {
+    var out = { '*': 0, '': 0 };
+    list.forEach(function (f) { out[f.id] = 0; });
+    Object.keys(saved).forEach(function (key) {
+      out[ALL]++;
+      out[folderOf(key, list)]++;
+    });
+    return out;
+  }
+  function pickerOptions(list, count) {
+    function n(id) { return count[id] || 0; }
+    return [{ value: ALL, label: 'All songs (' + n(ALL) + ')' }, { value: '', label: 'No folder (' + n('') + ')' }]
+      .concat(list.map(function (f) { return { value: f.id, label: f.name + ' (' + n(f.id) + ')' }; }));
+  }
+  function folderName(id, list) { return id ? find(list, id).name : 'No folder'; }
+  function openList(saved, list, pick) {
+    var rows = Object.keys(saved).map(function (key) {
+      var folder = folderOf(key, list);
+      return { key: key, name: parseKey(key).name, folder: folder, folderName: folderName(folder, list) };
+    }).filter(function (row) { return pick === ALL || row.folder === pick; });
+    rows.sort(function (a, b) {
+      return plainOrder(a.name, b.name) || (a.folder === '' ? -1 : 0) - (b.folder === '' ? -1 : 0) || plainOrder(a.folderName, b.folderName);
+    });
+    var places = {};
+    rows.forEach(function (row) { places[row.name] = (places[row.name] || 0) + 1; });
+    var out = { open: [], done: [] };
+    rows.forEach(function (row) {
+      var label = pick === ALL && places[row.name] > 1 ? row.name + ' (' + row.folderName + ')' : row.name;
+      (saved[row.key] && saved[row.key].finished === true ? out.done : out.open).push({ key: row.key, label: label });
+    });
+    return out;
+  }
+  function songs(saved, list) {
+    var groups = [{ folder: '', name: 'No folder', items: [] }].concat(list.slice().sort(byFolderName).map(function (f) { return { folder: f.id, name: f.name, items: [] }; }));
+    var byId = {};
+    groups.forEach(function (g) { byId[g.folder] = g; });
+    Object.keys(saved).forEach(function (key) {
+      byId[folderOf(key, list)].items.push({ key: key, name: parseKey(key).name, finished: !!(saved[key] && saved[key].finished === true) });
+    });
+    groups.forEach(function (g) { g.items.sort(function (a, b) { return plainOrder(a.name, b.name) || plainOrder(a.key, b.key); }); });
+    return groups;
+  }
+  return { SEP: SEP, ALL: ALL, VIEW_KEY: 'hp.projView', KEY: 'hp.projFolders', keyOf: keyOf, parseKey: parseKey, cleanName: cleanName, cleanList: cleanList, find: find, cleanFolder: cleanFolder, cleanView: cleanView, nameTaken: nameTaken, make: make, rename: rename, namesIn: namesIn, renameSong: renameSong, move: move, removeFolder: removeFolder, counts: counts, pickerOptions: pickerOptions, openList: openList, songs: songs };
 })();
 
 /* The order of text rows on the timeline and in the text list, kept apart from the drawing order. Pure functions; inputs are never changed. */
@@ -7372,7 +7553,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var bootSavedAt = (function () { try { return JSON.parse(localStorage.getItem(sk('hp.savedAt'))) || 0; } catch (e) { return 0; } })();
   var onSaved = null; // set once the music folder is linked, to copy settings into it
   // Kept in this browser only: never bumps hp.savedAt, never goes into the folder file, never read back from it.
-  var LOCAL_KEYS = [PanelLayout.KEY, LineLabels.KEY];
+  var LOCAL_KEYS = [PanelLayout.KEY, LineLabels.KEY, ProjectFolders.VIEW_KEY];
   function isLocalKey(k) { return LOCAL_KEYS.indexOf(k) >= 0; }
   function lsSet(k, v) {
     try {
@@ -7426,6 +7607,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var scrUses = ScriptureCollection.cleanUses(lsGet('hp.scriptureUses'));  // which verses went into which video, by date
   var bgRecent = BgColor.readRecent(lsGet('hp.bgRecent'));                 // last colors picked for the Color background
   var lineLabelsOn = LineLabels.cleanOn(lsGet(LineLabels.KEY));            // Show line labels (karaoke page, this browser only)
+  var projFolders = ProjectFolders.cleanList(lsGet(ProjectFolders.KEY));            // project folders (karaoke page)
+  var projView = ProjectFolders.cleanView(lsGet(ProjectFolders.VIEW_KEY), projFolders); // folder picker and folds (this browser only)
   var mix = blankMix();
   var plan = E.layout(mix, {});
   var caps = [];
@@ -7462,6 +7645,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if ('vocalExport' in m) m.vocalExport = VocalExport.clean(m.vocalExport);
     if ('exportName' in m) { var en = ExportName.clean(m.exportName); if (en) m.exportName = en; else delete m.exportName; }
     if (FinishedMark.clean(m.finished)) m.finished = true; else delete m.finished;
+    var pf = ProjectFolders.cleanFolder(m.folder, projFolders); if (pf) m.folder = pf; else delete m.folder;
     parkStrayColumns(m);
     migrateLyrics(m);
     tidyGroups(m);
@@ -8277,11 +8461,12 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var saveState = { pending: false, failed: false };
   // A named playlist saves itself: every write of the working copy also updates hp.saved[name].
   // hp.saved is read fresh each time, because font removal and reconnect rewrite it too.
+  function savedKey() { return ProjectFolders.keyOf(mix.folder || '', mix.name); }
   function storeNow() {
     clearTimeout(saveTimer); saveTimer = null;
     var ok = lsSet('hp.work', mix);
     if (mix.name) {
-      var saved = PlaylistSave.put(lsGet('hp.saved') || {}, mix.name, clone(mix));
+      var saved = PlaylistSave.put(lsGet('hp.saved') || {}, savedKey(), clone(mix));
       ok = lsSet('hp.saved', saved) && ok;
     }
     saveState.pending = false; saveState.failed = !ok;
@@ -8307,8 +8492,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
   var undoTimer = null, undoNoteTimer = null, pointerHeld = false, undoPending = false, undoWaiting = false, historyBarrier = false;
   var finishAsk = { base: '', answered: false };
-  // Collapsing a group is a view choice, and the name, export versions, export file name and finished mark are file choices, so none is an Undo step.
-  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport' || k === 'exportName' || k === 'finished')) ? undefined : v; }); }
+  // Collapsing a group is a view choice, and the name, export versions, export file name, finished mark and folder are file choices, so none is an Undo step.
+  function historyJson() { return JSON.stringify(mix, function (k, v) { return k === 'closed' || (this === mix && (k === 'name' || k === 'vocalExport' || k === 'exportName' || k === 'finished' || k === 'folder')) ? undefined : v; }); }
   function resetHistory() {
     clearTimeout(undoTimer); undoPending = false; undoWaiting = false; historyBarrier = false;
     undoStack = UndoStack.create(UNDO_LIMIT, historyJson());
@@ -8329,6 +8514,120 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (!mix.name) return;
     if (on) mix.finished = true; else delete mix.finished;
     finishAsk.answered = true; renderFinishNote(false); storeNow(); renderHead();
+  }
+
+  // Project folders (karaoke). Folder actions are file actions, like Save: never Undo steps.
+  // Every write of the folder list or of moved songs goes through writeProjects.
+  var projUi = { renaming: null };
+  function folderLabel(id) {
+    var folder = id ? ProjectFolders.find(projFolders, id) : null;
+    return folder ? folder.name : 'No folder';
+  }
+  function folderOptionsHtml(selected) {
+    return [{ id: '', name: 'No folder' }].concat(projFolders).map(function (f) {
+      return '<option value="' + esc(f.id) + '"' + (f.id === selected ? ' selected' : '') + '>' + esc(f.name) + '</option>';
+    }).join('');
+  }
+  function renderFolderControls(saved) {
+    var pick = $('plFolderPick'), options = ProjectFolders.pickerOptions(projFolders, ProjectFolders.counts(saved, projFolders));
+    setHTML(pick, options.map(function (o) { return '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>'; }).join(''));
+    pick.value = projView.pick;
+    var box = $('plFolder');
+    setHTML(box, folderOptionsHtml(''));
+    box.value = mix.folder || '';
+    box.disabled = !mix.name;
+    box.title = mix.name ? '' : 'Name this project first';
+    box.parentNode.hidden = !projFolders.length;
+  }
+  function setProjNote(text) { $('projNote').textContent = text; }
+  function writeProjects(nextSaved, nextFolders, openKeyMoves) {
+    if (!lsSet(ProjectFolders.KEY, nextFolders)) { flashSaveNote('Couldn’t save the folders', true); setProjNote('Couldn’t save the folders'); return false; }
+    var savedOk = lsSet('hp.saved', nextSaved);
+    projFolders = nextFolders;
+    projView = ProjectFolders.cleanView(projView, projFolders);
+    lsSet(ProjectFolders.VIEW_KEY, projView);
+    if (savedOk && mix.name) {
+      var openKey = savedKey();
+      var moved = (openKeyMoves || []).filter(function (m) { return m.from === openKey; })[0];
+      if (moved) {
+        var to = ProjectFolders.parseKey(moved.to);
+        if (to.folder) mix.folder = to.folder; else delete mix.folder;
+        mix.name = to.name;
+        $('plName').value = to.name;
+        storeNow();
+      }
+    }
+    renderHead(); renderFileName();
+    if ($('projDlg').open) renderProjects();
+    if (!savedOk) { flashSaveNote('Couldn’t save the folders', true); setProjNote('Couldn’t save the folders'); return false; }
+    return true;
+  }
+  function moveSong(key, toFolder) {
+    flushSave();
+    var r = ProjectFolders.move(lsGet('hp.saved') || {}, key, toFolder);
+    if (r.result === 'taken') {
+      var text = folderLabel(toFolder) + ' already has a song called “' + ProjectFolders.parseKey(key).name + '”.';
+      flashSaveNote(text, true);
+      if ($('projDlg').open) setProjNote(text);
+      return false;
+    }
+    if (r.result !== 'moved') return false;
+    return writeProjects(r.saved, projFolders, [{ from: key, to: r.key }]);
+  }
+  function makeFolder() {
+    flushSave();
+    var box = $('projNewName'), r = ProjectFolders.make(projFolders, box.value, 'pf' + Date.now().toString(36) + (idSeq++));
+    if (r.result === 'empty') { setProjNote('Type a name first.'); return; }
+    if (r.result === 'taken') { setProjNote('There’s already a folder called “' + ProjectFolders.cleanName(box.value) + '”.'); return; }
+    if (!writeProjects(lsGet('hp.saved') || {}, r.list, [])) return;
+    box.value = '';
+    setProjNote('Made “' + folderLabel(r.id) + '”.');
+  }
+  function renameFolder(id, name) {
+    flushSave();
+    var r = ProjectFolders.rename(projFolders, id, name);
+    if (r.result === 'empty') { setProjNote('Type a name first.'); return; }
+    if (r.result === 'taken') { setProjNote('There’s already a folder called “' + ProjectFolders.cleanName(name) + '”.'); return; }
+    projUi.renaming = null;
+    if (r.result !== 'renamed') { renderProjects(); return; }
+    if (writeProjects(lsGet('hp.saved') || {}, r.list, [])) setProjNote('');
+  }
+  function deleteFolder(id) {
+    var folder = ProjectFolders.find(projFolders, id);
+    if (!folder) return;
+    flushSave();
+    var n = Object.keys(ProjectFolders.namesIn(lsGet('hp.saved') || {}, id)).length;
+    var question = 'Delete the folder “' + folder.name + '”? ' + (n ? 'Its ' + n + ' song' + (n === 1 ? ' moves' : 's move') + ' to No folder. No songs are deleted.' : 'It has no songs.');
+    if (!confirm(question)) return;
+    var r = ProjectFolders.removeFolder(projFolders, lsGet('hp.saved') || {}, id);
+    if (!writeProjects(r.saved, r.list, r.moves)) return;
+    var renamed = r.moves.filter(function (m) { return ProjectFolders.parseKey(m.from).name !== m.to; });
+    setProjNote(renamed.map(function (m) { return '“' + ProjectFolders.parseKey(m.from).name + '” was renamed “' + m.to + '” because No folder already had one.'; }).join(' '));
+  }
+  function renderProjects() {
+    var groups = ProjectFolders.songs(lsGet('hp.saved') || {}, projFolders), openKey = mix.name ? savedKey() : null;
+    var html = groups.map(function (g) {
+      var closed = !!projView.closed[g.folder], id = esc(g.folder), head;
+      if (g.folder && projUi.renaming === g.folder) {
+        head = '<input type="text" data-projrenbox="' + id + '" value="' + esc(g.name) + '" aria-label="Folder name">' +
+          '<button class="btn small" data-projrensave="' + id + '">Save</button>' +
+          '<button class="btn small quiet" data-projrencancel="' + id + '">Cancel</button>';
+      } else {
+        head = '<button class="projfold" data-projfold="' + id + '" aria-expanded="' + !closed + '">' + (closed ? '▸ ' : '▾ ') + esc(g.name) + ' <span class="note">(' + g.items.length + ')</span></button>' +
+          (g.folder ? '<button class="btn small quiet" data-projren="' + id + '">Rename</button><button class="btn small quiet" data-projdel="' + id + '">Delete</button>' : '');
+      }
+      var body = '';
+      if (!closed) {
+        body = '<div class="projbody">' + (g.items.length ? g.items.map(function (it) {
+          return '<div class="projrow"><span class="projname">' + esc(it.name) + '</span>' +
+            (it.finished ? '<span class="projdone">' + esc(FinishedMark.label(true)) + '</span>' : '') +
+            (it.key === openKey ? '<span class="note">(open now)</span>' : '') +
+            '<label class="note">Move to <select data-projmove="' + esc(it.key) + '">' + folderOptionsHtml(g.folder) + '</select></label></div>';
+        }).join('') : '<p class="note">No songs here yet.</p>') + '</div>';
+      }
+      return '<section class="projsec"><div class="projhead">' + head + '</div>' + body + '</section>';
+    }).join('');
+    setHTML($('projList'), html);
   }
   function checkpoint() {
     clearTimeout(undoTimer); undoWaiting = false;
@@ -8363,6 +8662,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (mix.vocalExport) after.vocalExport = mix.vocalExport; else delete after.vocalExport;
     if (mix.exportName) after.exportName = mix.exportName; else delete after.exportName;
     if (mix.finished) after.finished = true; else delete after.finished;
+    if (mix.folder) after.folder = mix.folder; else delete after.folder;
     mix = upgradeMix(after); ui.picTool = null; ui.taps = []; ui.renamingGroup = null; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; pickHint();
     undoStack = UndoStack.settle(r.stack, historyJson());
     changed();
@@ -9008,16 +9308,19 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     else if (gap > 0.5) { st.textContent = fmt(gap) + ' short of ' + fmt(mix.target); st.className = 'pill short'; }
     else { st.textContent = 'Covers ' + fmt(mix.target) + ' with ' + fmt(-gap) + ' to spare'; st.className = 'pill'; }
     if (document.activeElement !== $('plName')) $('plName').value = mix.name || '';
-    var saved = lsGet('hp.saved') || {}, names = Object.keys(saved), g = FinishedMark.groups(saved);
-    function optionHtml(n, done) { return '<option value="' + esc(n) + '"' + (done ? ' class="done"' : '') + '>' + (done ? '✓ ' : '') + esc(n) + '</option>'; }
-    function optionsOf(list, done) { return list.map(function (n) { return optionHtml(n, done); }).join(''); }
+    var saved = lsGet('hp.saved') || {}, names = Object.keys(saved), karaoke = WS.id === 'karaoke';
+    var g = ProjectFolders.openList(saved, projFolders, karaoke ? projView.pick : ProjectFolders.ALL), shown = g.open.length + g.done.length;
+    function optionHtml(row, done) { return '<option value="' + esc(row.key) + '"' + (done ? ' class="done"' : '') + '>' + (done ? '✓ ' : '') + esc(row.label) + '</option>'; }
+    function optionsOf(list, done) { return list.map(function (row) { return optionHtml(row, done); }).join(''); }
     var listHtml = g.done.length
       ? (g.open.length ? '<optgroup label="In progress">' + optionsOf(g.open, false) + '</optgroup>' : '') +
         '<optgroup label="Finished">' + optionsOf(g.done, true) + '</optgroup>'
       : optionsOf(g.open, false);
-    $('plOpen').innerHTML = '<option value="">' + (names.length ? 'Open a saved playlist' : 'No saved playlists yet') + '</option>' + listHtml;
-    $('plOpen').disabled = !names.length;
-    $('plDelete').hidden = !(mix.name && saved[mix.name]);
+    var placeholder = shown ? 'Open a saved ' + projectWord() : !names.length ? 'No saved ' + projectWord() + 's yet' : 'No songs in this folder yet';
+    $('plOpen').innerHTML = '<option value="">' + esc(placeholder) + '</option>' + listHtml;
+    $('plOpen').disabled = !shown;
+    $('plDelete').hidden = !(mix.name && saved[savedKey()]);
+    if (karaoke) renderFolderControls(saved);
     $('plCopy').disabled = !mix.name;
     $('plCopy').title = mix.name ? '' : 'Name this playlist first';
     var fin = !!mix.finished;
@@ -14984,16 +15287,16 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     var entry = TextFont.find(id, addedFonts());
     if (!entry || !entry.added) return;
     var saved = lsGet('hp.saved') || {}, n = TextFont.usage(mix.texts.concat(mix.queue, parkedTexts(mix.items)), id), p = n ? 1 : 0;
-    Object.keys(saved).forEach(function (name) {
-      if (name === mix.name) return;
-      var c = TextFont.usage((saved[name].texts || []).concat(saved[name].queue || [], parkedTexts(saved[name].items || [])), id);
+    Object.keys(saved).forEach(function (key) {
+      if (key === savedKey()) return;
+      var c = TextFont.usage((saved[key].texts || []).concat(saved[key].queue || [], parkedTexts(saved[key].items || [])), id);
       if (c) { n += c; p++; }
     });
     var question = 'Remove “' + entry.family + '” from your fonts?';
     if (n) question += ' ' + n + ' text' + (n === 1 ? '' : 's') + ' in ' + p + ' playlist' + (p === 1 ? '' : 's') + (n === 1 ? ' uses' : ' use') + ' it and will switch to Clean.';
     if (!confirm(question)) return;
-    Object.keys(saved).forEach(function (name) {
-      var m = saved[name];
+    Object.keys(saved).forEach(function (key) {
+      var m = saved[key];
       m.texts = TextFont.replaceFont(m.texts || [], id).texts;
       if (m.queue) m.queue = TextFont.replaceFont(m.queue, id).texts;
       (m.items || []).forEach(function (it) { if (it.lyrics && it.lyrics.parked) it.lyrics.parked.texts = TextFont.replaceFont(it.lyrics.parked.texts || [], id).texts; });
@@ -15309,7 +15612,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function twoFiles() { return WS.id === 'karaoke' && VocalExport.check(mix.items).available && VocalExport.clean(mix.vocalExport).pick === 'both'; }
   function renderFileName() {
-    var auto = defaultFileName(), key = [mix.name || '', mix.exportName || '', exportDate()].join('|');
+    var auto = defaultFileName(), key = [mix.folder || '', mix.name || '', mix.exportName || '', exportDate()].join('|');
     if (key !== ui.fileKey) { ui.fileKey = key; ui.fileTyped = null; }
     var box = $('fileName');
     if (document.activeElement !== box) box.value = ui.fileTyped !== null ? ui.fileTyped : auto;
@@ -16069,7 +16372,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       return true;
     }
     document.addEventListener('keydown', function (ev) {
-      if ($('trimDlg').open || $('infoDlg').open || $('tracksDlg').open) return;
+      if ($('trimDlg').open || $('infoDlg').open || $('tracksDlg').open || $('projDlg').open) return;
       if (recordKeyPress(ev)) return;
       var mod = (ev.ctrlKey || ev.metaKey) && !ev.altKey, k = (ev.key || '').toLowerCase();
       if (ui.rec) {
@@ -17467,14 +17770,18 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('xfAll').onclick = function () { mix.items.forEach(function (it) { delete it.xf; }); if (Player.tag) Player.stop(); changed(); };
 
     // saved playlists
-    function replaceQuestion(name) { return 'A saved playlist named “' + name + '” already exists. Replace it with this one?'; }
+    function replaceQuestion(name, folder) {
+      if (folder) return '“' + name + '” is already saved in ' + folderLabel(folder) + '. Replace it with this one?';
+      return 'A saved playlist named “' + name + '” already exists. Replace it with this one?';
+    }
     function hasContent(m) { return !!(m.items.length || m.spoken.length || m.texts.length || m.pictures.length || (m.anims && m.anims.length)); }
     $('plName').addEventListener('change', function () {
       var box = this, from = mix.name || '', to = PlaylistSave.cleanName(box.value);
       if (!from) {
         if (!to) { box.value = ''; return; }
-        var savedNow = lsGet('hp.saved') || {};
-        if (Object.prototype.hasOwnProperty.call(savedNow, to) && !confirm(replaceQuestion(to))) { box.value = ''; return; }
+        var savedNow = lsGet('hp.saved') || {}, folder = WS.id === 'karaoke' ? ProjectFolders.cleanFolder(projView.pick, projFolders) : '';
+        if (Object.prototype.hasOwnProperty.call(savedNow, ProjectFolders.keyOf(folder, to)) && !confirm(replaceQuestion(to, folder))) { box.value = ''; return; }
+        if (folder) mix.folder = folder; else delete mix.folder;
         mix.name = to; box.value = to;
         storeNow(); renderHead(); renderFileName();
         return;
@@ -17482,10 +17789,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!to) { box.value = from; flashSaveNote('To stop saving it, use Delete saved'); return; }
       if (to === from) { box.value = from; return; }
       flushSave();
-      var saved = lsGet('hp.saved') || {}, r = PlaylistSave.rename(saved, from, to, false);
+      var saved = lsGet('hp.saved') || {}, folderNow = mix.folder || '', r = ProjectFolders.renameSong(saved, folderNow, from, to, false);
       if (r.result === 'taken') {
-        if (!confirm(replaceQuestion(to))) { box.value = from; return; }
-        r = PlaylistSave.rename(saved, from, to, true);
+        if (!confirm(replaceQuestion(to, folderNow))) { box.value = from; return; }
+        r = ProjectFolders.renameSong(saved, folderNow, from, to, true);
       }
       if (!lsSet('hp.saved', r.saved)) { box.value = from; saveState.failed = true; renderSaveNote(); return; }
       mix.name = to; box.value = to;
@@ -17494,7 +17801,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('plCopy').onclick = function () {
       if (!mix.name) return;
       flushSave();
-      var name = PlaylistSave.copyName(mix.name, lsGet('hp.saved') || {});
+      var name = PlaylistSave.copyName(mix.name, ProjectFolders.namesIn(lsGet('hp.saved') || {}, mix.folder || ''));
       mix.name = name; $('plName').value = name;
       delete mix.finished;
       storeNow(); resetHistory(); renderHead(); renderFileName();
@@ -17503,22 +17810,26 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('plOpen').onchange = function () {
       var pick = this.value;
       if (!pick) return;
-      if (!mix.name && hasContent(mix) && !confirm('This playlist has no name, so it isn’t kept. Open “' + pick + '” anyway?')) { this.value = ''; return; }
+      var p = ProjectFolders.parseKey(pick);
+      if (!mix.name && hasContent(mix) && !confirm('This playlist has no name, so it isn’t kept. Open “' + p.name + '” anyway?')) { this.value = ''; return; }
       flushSave();
       var saved = lsGet('hp.saved') || {}, m = saved[pick];
       if (!m) return;
       Player.stop();
       mix = upgradeMix(clone(m)); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.fillWin = null; ui.fillPick = false; cui.fillTicks = []; ui.expanded = {}; ui.renamingGroup = null;
+      mix.name = p.name;
+      var openFolder = ProjectFolders.cleanFolder(p.folder, projFolders);
+      if (openFolder) mix.folder = openFolder; else delete mix.folder;
       ui.cursor = 0; ui.sel = null; ui.lastExport = null; $('saveAgain').hidden = true;
       changed();
       resetHistory();
     };
     $('plDelete').onclick = function () {
-      var name = mix.name;
+      var name = mix.name, key = savedKey();
       if (!name) return;
       if (!confirm('Delete the saved playlist “' + name + '”? What’s open now stays open, without a name.')) return;
-      if (!lsSet('hp.saved', PlaylistSave.remove(lsGet('hp.saved') || {}, name))) { flashSaveNote('Couldn’t delete it', true); return; }
-      mix.name = ''; delete mix.finished;
+      if (!lsSet('hp.saved', PlaylistSave.remove(lsGet('hp.saved') || {}, key))) { flashSaveNote('Couldn’t delete it', true); return; }
+      mix.name = ''; delete mix.finished; delete mix.folder;
       renderFinishNote(false);
       storeNow(); renderHead(); renderFileName();
     };
@@ -17541,6 +17852,51 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       changed();
       resetHistory();
     };
+    $('plFolderPick').onchange = function () { projView.pick = this.value; lsSet(ProjectFolders.VIEW_KEY, projView); renderHead(); };
+    $('plFolder').onchange = function () { if (!moveSong(savedKey(), this.value)) this.value = mix.folder || ''; };
+    $('plProjects').onclick = function () {
+      flushSave();
+      projUi.renaming = null; setProjNote('');
+      renderProjects();
+      var d = $('projDlg'); if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+    };
+    $('projDone').onclick = function () { $('projDlg').close(); };
+    $('projNewGo').onclick = makeFolder;
+    $('projNewName').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); makeFolder(); } });
+    $('projList').addEventListener('click', function (ev) {
+      var b = ev.target.closest('button');
+      if (!b) return;
+      if (b.hasAttribute('data-projfold')) {
+        var id = b.getAttribute('data-projfold');
+        if (projView.closed[id]) delete projView.closed[id]; else projView.closed[id] = true;
+        lsSet(ProjectFolders.VIEW_KEY, projView);
+        renderProjects();
+      } else if (b.hasAttribute('data-projren')) {
+        projUi.renaming = b.getAttribute('data-projren'); setProjNote('');
+        renderProjects();
+        var box = $('projList').querySelector('[data-projrenbox]');
+        if (box) { box.focus(); box.select(); }
+      } else if (b.hasAttribute('data-projrensave')) {
+        renameFolder(b.getAttribute('data-projrensave'), $('projList').querySelector('[data-projrenbox]').value);
+      } else if (b.hasAttribute('data-projrencancel')) {
+        projUi.renaming = null; setProjNote('');
+        renderProjects();
+      } else if (b.hasAttribute('data-projdel')) {
+        deleteFolder(b.getAttribute('data-projdel'));
+      }
+    });
+    $('projList').addEventListener('change', function (ev) {
+      var sel = ev.target;
+      if (!sel.hasAttribute('data-projmove')) return;
+      setProjNote('');
+      if (!moveSong(sel.getAttribute('data-projmove'), sel.value)) { $('projList')._html = null; renderProjects(); }
+    });
+    $('projList').addEventListener('keydown', function (ev) {
+      var box = ev.target;
+      if (!box.hasAttribute('data-projrenbox')) return;
+      if (ev.key === 'Enter') { ev.preventDefault(); renameFolder(box.getAttribute('data-projrenbox'), box.value); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); projUi.renaming = null; setProjNote(''); renderProjects(); }
+    });
 
     // export
     ['fmtMp3', 'fmtWav', 'fmtWebm', 'fmtVideo'].forEach(function (id) {
@@ -18316,6 +18672,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     hymnSkip = lsGet('hp.hymnSkip') || {};
     hymnFolderPick = lsGet('hp.hymnFolders');
     collapsed = lsGet('hp.collapsed') || {};
+    projFolders = ProjectFolders.cleanList(lsGet(ProjectFolders.KEY));
+    projView = ProjectFolders.cleanView(lsGet(ProjectFolders.VIEW_KEY), projFolders);
     var work = lsGet('hp.work');
     if (work && work.items && work.spoken) { mix = upgradeMix(work); ui.taps = []; ui.checked = {}; ui.bulk = false; ui.expanded = {}; ui.renamingGroup = null; }
     var lv = lsGet('hp.libview'); if (lv) { ui.show = lv.show || 'all'; ui.sort = lv.sort || 'name'; }
