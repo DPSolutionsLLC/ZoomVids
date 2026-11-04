@@ -289,6 +289,17 @@ Known limits: in separate boxes, `=` only links to Column 1; with many columns e
 
 **Two versions.** In karaoke, **Export** has a **Versions** choice: **Both, as two files**, **With vocals** or **Music only**. Both is the default, and each project remembers your choice. Both files have the same picture. In the music-only one, every track marked Vocal is silent and every track marked Instrumental plays, whatever their Sound ticks say. The files end in `-with-vocals` and `-music-only`. Both are built in one pass, so it takes about as long as one. Export shows when you last exported and which versions you made. If no track is marked Vocal, the choice is greyed out and you get one file, as before. Clips over the music keep their own sound in both versions.
 
+**Project speed.** In karaoke, **Export** has **Speed of the song**, from 75% to 125% in steps of 5% (100% is normal). Each project remembers its speed, and changing it is one Undo step.
+
+- **Keep the pitch** (the default) only changes the tempo, so the song is slower or faster but in the same key. **Let the pitch change with it** works like a tape: slower is lower, faster is higher. At 100% the pitch choice is greyed out.
+- The preview always plays at the project speed. When it isn't 100%, a label such as *Project speed 90% · keep pitch* shows next to the clock and in the floating preview's controls. Click it to jump to the setting. Changing the speed while the song plays carries on from the same spot.
+- The **1.25×**, **1.5×** and **2×** preview buttons still work for checking quickly. They play on top of the project speed (the label then adds *· preview 1.5×*) and never change the export.
+- Every export (MP3, WAV, WebM audio, video, and both versions) comes out at the project speed. At 90%, a 3:00 song makes a 3:20 file. Lyrics, highlights, pulses, shapes, animations, column moves, pictures and video clips all stay in time with the song. Video clips play slower or faster with it; a motion background keeps its own **Motion speed**.
+- **Exactly the length to cover** means the length of the file. At 90% a 20-minute file covers 18 minutes of the mix.
+- The file name gets the speed when it isn't 100%, for example `Song-2026-11-03 (90%)` or `Song-2026-11-03 (90%)-music-only`. The name box and a remembered name stay as they are.
+- Recording lyric timing or beats ignores the project speed: it plays at normal speed (or the recorder's own 0.75× / 0.5×), and the recording bar says so. Timing is always saved at normal speed, so changing the project speed never moves your timing.
+- The hymn side has no project speed.
+
 ### Scripture collection
 
 **Scripture collection** keeps the references you'd like to use again. Type or paste one or more, such as `Alma 32:21-23, John 3:16`, and press **Add to collection**. A reference that's already there is refused. One that only overlaps another, such as Alma 32:21 next to Alma 32:21–23, is fine. After adding, the app suggests tags from your own tags on nearby verses and from words in the verse text. Click a suggestion to keep it, or **No thanks**.

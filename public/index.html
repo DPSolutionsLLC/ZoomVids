@@ -556,6 +556,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
       <button class="btn primary" id="playBtn"></button>
       <div class="clock num"><span id="now">0:00</span> <small>of <span id="total">0:00</span></small></div>
       <button class="pill" id="speedPill" hidden></button>
+      <button class="pill" id="projSpeedPillHead" hidden></button>
       <span class="pill" id="status"></span>
       <span class="note" id="fillHint" role="status" hidden></span>
       <div class="zoom">
@@ -647,6 +648,7 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
                   <button class="btn small" id="trPlace" hidden>Place next</button>
                 </div>
                 <div class="btnrow speeds" role="group" aria-label="Playback speed" id="trSpeeds"></div>
+                <button class="pill" id="projSpeedPill" hidden></button>
                 <div class="btnrow sizes" role="group" aria-label="Preview size" id="trSizes">
                   <button class="btn small" id="sizePhone">Phone</button>
                   <button class="btn small" data-slot="0">1</button>
@@ -1060,6 +1062,14 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
             <p class="note" id="lenNote" style="width:100%"></p>
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
+          <fieldset class="btnrow" id="speedRowOut" data-karaoke-only style="border:0;padding:0;margin:0">
+            <legend class="note" style="width:100%;padding:0;margin-bottom:4px">Speed of the song</legend>
+            <label for="outSpeed" class="visually-hidden">Speed of the song</label>
+            <select id="outSpeed"></select>
+            <label><input type="radio" name="pitch" id="keepPitch" value="keep"> Keep the pitch</label>
+            <label><input type="radio" name="pitch" id="letPitch" value="tape"> Let the pitch change with it</label>
+            <p class="note" id="outSpeedNote" style="width:100%">The preview plays at this speed, and the export uses it. The 1.25×–2× preview buttons are for checking quickly and don't change the export.</p>
+          </fieldset>
           <fieldset class="btnrow" id="versionsRow" data-karaoke-only style="border:0;padding:0;margin:0">
             <legend class="note" style="width:100%;padding:0;margin-bottom:4px">Versions</legend>
             <label><input type="radio" name="vexp" id="vexpBoth" value="both"> Both, as two files</label>
@@ -4218,6 +4228,177 @@ var ExportName = (function () {
   return { safe: safe, clean: clean, auto: auto, fallback: fallback };
 })();
 
+/* Project speed (karaoke): how fast the song plays in the preview and the export. Pure functions. */
+var ProjectSpeed = (function () {
+  var DEFAULTS = { pct: 100, keepPitch: true };
+  var MIN = 75, MAX = 125, STEP = 5;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function clean(raw) {
+    var out = Object.assign({}, DEFAULTS);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    if (isNum(raw.pct)) out.pct = Math.max(MIN, Math.min(MAX, Math.round(raw.pct / STEP) * STEP));
+    out.keepPitch = raw.keepPitch !== false;
+    return out;
+  }
+  function steps() {
+    var out = [];
+    for (var p = MIN; p <= MAX; p += STEP) out.push(p);
+    return out;
+  }
+  function factor(setting, workspaceId) { return workspaceId === 'karaoke' ? clean(setting).pct / 100 : 1; }
+  function isNormal(setting, workspaceId) { return factor(setting, workspaceId) === 1; }
+  function outputLength(songSeconds, k) { return songSeconds / k; }
+  function songTimeAt(outputSeconds, k) { return outputSeconds * k; }
+  function label(setting) {
+    var s = clean(setting);
+    return 'Project speed ' + s.pct + '% · ' + (s.keepPitch ? 'keep pitch' : 'pitch changes');
+  }
+  function fileSuffix(setting, workspaceId) { return isNormal(setting, workspaceId) ? '' : ' (' + clean(setting).pct + '%)'; }
+  return {
+    DEFAULTS: DEFAULTS, MIN: MIN, MAX: MAX, STEP: STEP,
+    clean: clean, steps: steps, factor: factor, isNormal: isNormal, outputLength: outputLength, songTimeAt: songTimeAt, label: label, fileSuffix: fileSuffix
+  };
+})();
+
+/* Plays stereo audio faster or slower, a piece at a time: song-time samples in, output-time samples out.
+   Keep pitch overlaps short windows placed where they match best (WSOLA); tape style resamples, so the pitch moves too.
+   The total output is always Math.round(input / factor) samples, whatever the audio. Pure functions. */
+var Stretch = (function () {
+  var NONE = new Float32Array(0);
+  function join(a, b) {
+    var out = new Float32Array(a.length + b.length);
+    out.set(a, 0); out.set(b, a.length);
+    return out;
+  }
+  function joinAll(chunks) {
+    var n = 0, i;
+    for (i = 0; i < chunks.length; i++) n += chunks[i].length;
+    var out = new Float32Array(n), o = 0;
+    for (i = 0; i < chunks.length; i++) { out.set(chunks[i], o); o += chunks[i].length; }
+    return out;
+  }
+  function checkPair(L, R) {
+    if (!L || !R || L.length !== R.length) throw new Error('Stretch needs two channels of the same length');
+  }
+  function passThrough() {
+    return {
+      push: function (L, R) { checkPair(L, R); return { L: L, R: R }; },
+      finish: function () { return { L: NONE, R: NONE }; }
+    };
+  }
+  function tape(factor) {
+    var inL = NONE, inR = NONE, base = 0, total = 0, made = 0;
+    function at(buf, i) { var j = i - base; return j >= 0 && j < buf.length ? buf[j] : 0; }
+    function cubic(y0, y1, y2, y3, t) {
+      return y1 + 0.5 * t * (y2 - y0 + t * (2 * y0 - 5 * y1 + 4 * y2 - y3 + t * (3 * (y1 - y2) + y3 - y0)));
+    }
+    function run(limit, available) {
+      var end = made;
+      while (end < limit && Math.floor(end * factor) + 2 < available) end++;
+      var L = new Float32Array(end - made), R = new Float32Array(end - made);
+      for (var j = made; j < end; j++) {
+        var p = j * factor, i = Math.floor(p), t = p - i;
+        L[j - made] = cubic(at(inL, i - 1), at(inL, i), at(inL, i + 1), at(inL, i + 2), t);
+        R[j - made] = cubic(at(inR, i - 1), at(inR, i), at(inR, i + 1), at(inR, i + 2), t);
+      }
+      made = end;
+      var keepFrom = Math.floor(made * factor) - 1;
+      if (keepFrom > base) {
+        var drop = Math.min(keepFrom - base, inL.length);
+        inL = inL.subarray(drop); inR = inR.subarray(drop); base += drop;
+      }
+      return { L: L, R: R };
+    }
+    return {
+      push: function (L, R) {
+        checkPair(L, R);
+        inL = join(inL, L); inR = join(inR, R); total += L.length;
+        return run(Infinity, total);
+      },
+      finish: function () { return run(Math.round(total / factor), Infinity); }
+    };
+  }
+  function keepPitch(factor, sampleRate) {
+    var N = 2 * Math.round(sampleRate * 0.02), H = N / 2, tol = Math.round(sampleRate * 0.01), DEC = 4;
+    var win = new Float32Array(N);
+    for (var w = 0; w < N; w++) win[w] = 0.5 - 0.5 * Math.cos(2 * Math.PI * w / N);
+    var inL = NONE, inR = NONE, base = 0, total = 0;
+    var accL = new Float32Array(N), accR = new Float32Array(N), accW = new Float32Array(N), outPos = -H;
+    var frameNo = 0, prevStart = 0, made = 0;
+    var mono = new Float32Array(N + 2 * tol), ref = new Float32Array(Math.ceil(N / DEC));
+    function at(buf, i) { var j = i - base; return j >= 0 && j < buf.length ? buf[j] : 0; }
+    function nominal(k) { return Math.round(k * H * factor) - H; }
+    function lookahead(k) { return nominal(k) + N + 2 * tol + H + 2; }
+    function score(offset) {
+      var dot = 0, energy = 0;
+      for (var i = 0, m = offset; i < ref.length; i++, m += DEC) { var b = mono[m]; dot += ref[i] * b; energy += b * b; }
+      return dot / Math.sqrt(energy + 1e-9);
+    }
+    function bestStart(nom) {
+      if (frameNo === 0) return nom;
+      var natural = prevStart + H, i, m;
+      for (i = 0, m = natural; i < ref.length; i++, m += DEC) ref[i] = at(inL, m) + at(inR, m);
+      for (i = 0; i < mono.length; i++) mono[i] = at(inL, nom - tol + i) + at(inR, nom - tol + i);
+      var best = tol, bestScore = score(tol), off, sc;
+      for (off = 0; off <= 2 * tol; off += DEC) { sc = score(off); if (sc > bestScore) { bestScore = sc; best = off; } }
+      var coarse = best, lo = Math.max(0, coarse - DEC + 1), hi = Math.min(2 * tol, coarse + DEC - 1);
+      for (off = lo; off <= hi; off++) { if (off === coarse) continue; sc = score(off); if (sc > bestScore) { bestScore = sc; best = off; } }
+      return nom - tol + best;
+    }
+    function addFrame(outL, outR, limit) {
+      var start = bestStart(nominal(frameNo)), i;
+      for (i = 0; i < N; i++) {
+        var wi = win[i];
+        accL[i] += wi * at(inL, start + i); accR[i] += wi * at(inR, start + i); accW[i] += wi;
+      }
+      prevStart = start; frameNo++;
+      var from = made - outPos, to = Math.min(H, limit - outPos);
+      if (to > from) {
+        var cL = new Float32Array(to - from), cR = new Float32Array(to - from);
+        for (i = from; i < to; i++) {
+          var sum = accW[i] > 1e-6 ? accW[i] : 1;
+          cL[i - from] = accL[i] / sum; cR[i - from] = accR[i] / sum;
+        }
+        outL.push(cL); outR.push(cR); made += to - from;
+      }
+      accL.copyWithin(0, H); accL.fill(0, H);
+      accR.copyWithin(0, H); accR.fill(0, H);
+      accW.copyWithin(0, H); accW.fill(0, H);
+      outPos += H;
+    }
+    function trimInput() {
+      var keepFrom = Math.min(nominal(frameNo) - tol, prevStart + H);
+      if (keepFrom > base) {
+        var drop = Math.min(keepFrom - base, inL.length);
+        inL = inL.subarray(drop); inR = inR.subarray(drop); base += drop;
+      }
+    }
+    return {
+      push: function (L, R) {
+        checkPair(L, R);
+        inL = join(inL, L); inR = join(inR, R); total += L.length;
+        var outL = [], outR = [];
+        while (lookahead(frameNo) <= total) addFrame(outL, outR, Infinity);
+        trimInput();
+        return { L: joinAll(outL), R: joinAll(outR) };
+      },
+      finish: function () {
+        var target = Math.round(total / factor), outL = [], outR = [];
+        while (made < target) addFrame(outL, outR, target);
+        return { L: joinAll(outL), R: joinAll(outR) };
+      }
+    };
+  }
+  function create(opts) {
+    var factor = opts && opts.factor, rate = opts && opts.sampleRate;
+    if (typeof factor !== 'number' || !isFinite(factor) || factor <= 0) throw new Error('Stretch needs a speed above 0');
+    if (factor === 1) return passThrough();
+    if (typeof rate !== 'number' || !isFinite(rate) || rate <= 0) throw new Error('Stretch needs a sample rate');
+    return opts.keepPitch === false ? tape(factor) : keepPitch(factor, rate);
+  }
+  return { create: create };
+})();
+
 /* Finds how far a song's second track is shifted from the first, by matching their onsets. Pure functions. */
 var TrackAlign = (function () {
   var RATE = 100;
@@ -7122,7 +7303,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   var DEFAULTS = {
     level: true, trimSilence: true, defaultXf: 5, fadeIn: 2, fadeOut: 8, duckDb: -14,
     showSongs: true, songSecs: 10, showTalks: true, talkFade: 3, capPos: 'left', bg: 'color', bgStyle: 'fade', bgTop: '#16231d', bgBottom: '#0b110e', textScale: 100, showQr: true, motionSpeed: 1, capX: 0.052, capY: 0.917, wpm: 150,
-    pulse: Pulse.clean(null)
+    pulse: Pulse.clean(null), speed: ProjectSpeed.clean(null)
   };
   var lib = {}, libOrder = [];
   var LM = lsGet('hp.libmeta') || {};          // per recording: folder, on-screen details, dates used
@@ -7150,6 +7331,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     m.opts = Object.assign(clone(DEFAULTS), m.opts || {}); m.target = m.target || 1200; m.texts = m.texts || []; m.queue = m.queue || [];
     m.opts = BgColor.cleanOpts(m.opts);
     m.opts.pulse = Pulse.clean(m.opts.pulse);
+    m.opts.speed = ProjectSpeed.clean(m.opts.speed);
     m.texts.concat(m.queue).forEach(function (tx) { TextLayout.upgradeText(tx); TextLook.upgrade(tx); TextFont.upgrade(tx); });
     m.pictures = (m.pictures || []).map(PictureBox.cleanItem);
     m.anims = (m.anims || []).map(Anim.cleanItem).filter(Boolean);
@@ -7788,7 +7970,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
 
   /* ---------- playback ---------- */
   var Player = {
-    ctx: null, token: 0, sources: [], tag: null, from: 0, to: 0, t0: 0, started: false, rate: 1,
+    ctx: null, token: 0, sources: [], tag: null, from: 0, to: 0, t0: 0, started: false, rate: 1, bufRate: 1,
     stop: function (keepRec) {
       var wasRec = Player.tag === 'rec';
       Player.token++;
@@ -7804,29 +7986,39 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       if (!Player.ctx) { var AC = window.AudioContext || window.webkitAudioContext; try { Player.ctx = new AC({ sampleRate: SR }); } catch (e) { Player.ctx = new AC(); } }
       if (Player.ctx.state === 'suspended') Player.ctx.resume();
       Player.tag = tag; Player.from = from; Player.to = to; Player.started = false;
-      Player.rate = tag === 'rec' ? ui.rec.speed : tag === 'pulse' ? 1 : isMixTag(tag) ? ui.speed : 1;
+      var project = isProjectSpeedTag(tag) ? outFactor() : 1;
+      var quick = tag === 'rec' ? ui.rec.speed : tag === 'pulse' ? 1 : isMixTag(tag) ? ui.speed : 1;
+      Player.rate = project * quick; Player.bufRate = quick;
+      var conv = Stretch.create({ factor: project, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR });
       syncPlay();
       var pos = Math.round(from * SR), end = Math.round(to * SR), when = 0, first = true, out = Player.ctx.destination;
       if (tag === 'pulse' && !ui.pulseSound) { out = Player.ctx.createGain(); out.gain.value = 0; out.connect(Player.ctx.destination); }
+      function queueSound(got) {
+        var len = got.L.length;
+        if (!len) return;
+        var ab = Player.ctx.createBuffer(2, len, SR);
+        ab.getChannelData(0).set(got.L); ab.getChannelData(1).set(got.R);
+        var src = Player.ctx.createBufferSource();
+        src.buffer = ab; src.playbackRate.value = Player.bufRate; src.connect(out);
+        var ct = Player.ctx.currentTime;
+        if (first) { when = ct + 0.08; Player.t0 = when; Player.started = true; first = false; requestAnimationFrame(frame); }
+        else if (when < ct + 0.01) { var lag = ct + 0.05 - when; Player.t0 += lag; when += lag; }
+        src.start(when);
+        Player.sources.push(src);
+        if (Player.sources.length > 4) Player.sources.shift();
+        when += len / SR / Player.bufRate;
+      }
       try {
         while (pos < end && my === Player.token) {
           var n = Math.min(first ? 2 * SR : 6 * SR, end - pos);
           await Pcm.ensure(E.keysBetween(pl, pos / SR, (pos + n) / SR));
           if (my !== Player.token) return;
           var blk = E.renderBlock(pl, pos, n, Pcm.peek);
-          var ab = Player.ctx.createBuffer(2, n, SR);
-          ab.getChannelData(0).set(blk.L); ab.getChannelData(1).set(blk.R);
-          var src = Player.ctx.createBufferSource();
-          src.buffer = ab; src.playbackRate.value = Player.rate; src.connect(out);
-          var ct = Player.ctx.currentTime;
-          if (first) { when = ct + 0.08; Player.t0 = when; Player.started = true; first = false; requestAnimationFrame(frame); }
-          else if (when < ct + 0.01) { var lag = ct + 0.05 - when; Player.t0 += lag; when += lag; }
-          src.start(when);
-          Player.sources.push(src);
-          if (Player.sources.length > 4) Player.sources.shift();
-          when += n / SR / Player.rate; pos += n;
+          queueSound(conv.push(blk.L, blk.R));
+          pos += n;
           while (my === Player.token && when - Player.ctx.currentTime > 2.5) await sleep(120);
         }
+        if (my === Player.token) queueSound(conv.finish());
         while (my === Player.token && Player.ctx.currentTime < when) await sleep(80);
         if (my === Player.token) {
           if (tag === 'pulse' && ui.pulseLoop && ui.pulsePlay) { startPulsePreview(); return; }
@@ -7839,6 +8031,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     }
   };
   function isMixTag(t) { return t === 'mix' || t === 'rec' || t === 'pulse' || (t && (t.indexOf('seam:') === 0 || t.indexOf('voice:') === 0)); }
+  function isProjectSpeedTag(t) { return isMixTag(t) && t !== 'rec' && t !== 'pulse'; }
+  function outFactor() { return ProjectSpeed.factor(mix.opts.speed, WS.id); }
   function heardNow() {
     var lag = (Player.ctx && (Player.ctx.outputLatency || Player.ctx.baseLatency)) || 0;
     return Math.max(0, Player.now() - lag * Player.rate);
@@ -7895,6 +8089,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     pill.hidden = ui.speed === 1;
     pill.textContent = ui.speed + '× speed';
     pill.title = 'Back to normal speed';
+    renderProjectSpeed();
   }
   function playMix(from, to, tag) {
     if (!plan.total) return;
@@ -7917,6 +8112,35 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ui.speed = s;
     if (Player.tag && isMixTag(Player.tag) && Player.tag !== 'rec' && Player.tag !== 'pulse') playMix(Player.now());
     syncPlay();
+  }
+  function setProjectSpeed(next) {
+    var playing = Player.tag && isProjectSpeedTag(Player.tag), at = playing ? Player.now() : 0;
+    mix.opts.speed = ProjectSpeed.clean(next);
+    ui.lastExport = null; $('saveAgain').hidden = true;
+    changed();
+    if (playing) playMix(at);
+    renderProjectSpeed();
+  }
+  function renderProjectSpeed() {
+    var set = ProjectSpeed.clean(mix.opts.speed), normal = ProjectSpeed.isNormal(set, WS.id);
+    var text = normal ? '' : ProjectSpeed.label(set) + (ui.speed !== 1 ? ' · preview ' + ui.speed + '×' : '');
+    ['projSpeedPill', 'projSpeedPillHead'].forEach(function (id) {
+      var pill = $(id);
+      pill.hidden = normal;
+      pill.textContent = text;
+      pill.title = 'Change the project speed in Export';
+    });
+    var box = $('outSpeed');
+    if (!box.options.length) box.innerHTML = ProjectSpeed.steps().map(function (p) { return '<option value="' + p + '">' + (p === 100 ? '100% (normal)' : p + '%') + '</option>'; }).join('');
+    box.value = String(set.pct);
+    $('keepPitch').checked = set.keepPitch; $('letPitch').checked = !set.keepPitch;
+    $('keepPitch').disabled = set.pct === 100; $('letPitch').disabled = set.pct === 100;
+  }
+  function openProjectSpeed() {
+    if ($('sec-export').classList.contains('collapsed')) document.querySelector('.sectoggle[data-sec="export"]').click();
+    if (isFloating('export')) bringToFront('export');
+    $('speedRowOut').scrollIntoView({ block: 'nearest' });
+    $('outSpeed').focus();
   }
   function pauseMix() {
     if (Player.tag === 'mix') ui.cursor = Player.now();
@@ -10426,7 +10650,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     paintCropTool(screenCtx, t, ui.screenBoxes, fromBg);
     paintShapeSel(screenCtx, ui.screenBoxes);
     paintLineLabels(screenCtx);
-    if (!fromBg) requestBg(t * (mix.opts.motionSpeed || 1));
+    if (!fromBg) requestBg(t / outFactor() * (mix.opts.motionSpeed || 1));
     if (Date.now() - lastIdleCheck > 1000) { lastIdleCheck = Date.now(); closeIdleClipPlayers(t); }
     $('screenAt').textContent = 'At ' + fmt(t);
     $('screenWhat').textContent = cap || ui.screenBoxes.length ? '' : 'Nothing on screen at this point';
@@ -13640,10 +13864,14 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       animSay(rec.cleared ? 'Recorded ' + rec.count + ' ' + beatWord(rec.count) + '.' : 'Stopped before any beat was recorded. Nothing changed.', false);
     } finally { finishingRec = false; }
   }
+  function recNormalSpeedPill() {
+    if (ProjectSpeed.isNormal(mix.opts.speed, WS.id)) return '';
+    return '<span class="pill">' + esc('Recording at normal speed (project is ' + ProjectSpeed.clean(mix.opts.speed).pct + '%)') + '</span>';
+  }
   function renderBeatRec(bar, rec) {
     var a = findItem('anims', rec.animId);
     if (!a) return;
-    setHTML(bar, '<b>Recording beats — ' + esc(animName(a)) + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') +
+    setHTML(bar, '<b>Recording beats — ' + esc(animName(a)) + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') + recNormalSpeedPill() +
       '<div class="recline">' + rec.count + ' ' + beatWord(rec.count) + ' so far' + (rec.down ? ' <span class="rsyl held">holding</span>' : '') + '</div>' +
       '<span class="note">Hold Space for each beat. Backspace takes back the last beat and jumps back a moment. Esc stops and keeps what you’ve recorded.</span>');
   }
@@ -14186,7 +14414,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       }).join(' ');
     }).join(' <span aria-hidden="true">/</span> ');
     var hint = vocalOffHint(rec.songId);
-    setHTML(bar, '<b>Recording words — slide ' + (rec.slides.indexOf(tx.id) + 1) + ' of ' + rec.slides.length + (labels && nowLine >= 0 && labels[nowLine] ? ' · ' + esc(labels[nowLine]) : '') + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') +
+    setHTML(bar, '<b>Recording words — slide ' + (rec.slides.indexOf(tx.id) + 1) + ' of ' + rec.slides.length + (labels && nowLine >= 0 && labels[nowLine] ? ' · ' + esc(labels[nowLine]) : '') + '</b>' + (rec.speed !== 1 ? '<span class="pill">' + esc(rec.speed + '× speed') + '</span>' : '') + recNormalSpeedPill() +
       '<div class="recline">' + line + '</div>' +
       '<span class="note">Hold Space while each word is sung. Backspace takes back the last word and jumps back a moment. Esc stops and keeps what you’ve recorded.</span>' +
       (hint ? '<span class="note warn">' + esc(hint) + '</span>' : ''));
@@ -14865,7 +15093,8 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   // "Exactly the length to cover" cuts a longer mix there (with a fade) and
   // fills a shorter one with the background.
-  function exportLen() { return ui.expLen === 'full' ? mix.target : contentEnd(); }
+  // In song time. The length to cover is the file's own length, so at 90% it covers 0.9 × that much of the song.
+  function exportLen() { return ui.expLen === 'full' ? mix.target * outFactor() : contentEnd(); }
   function videoShape() {
     var motion = mix.opts.bg === 'motion' && ui.motion;
     var smooth = !!motion || mix.anims.length > 0 || pictureLayers().some(function (l) { return l.kind === 'video' || (l.motion && l.motion !== 'none'); });
@@ -14912,14 +15141,17 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     $('vidSize').value = String(ui.vidSize);
     $('exportBtn').disabled = ui.exporting || !plan.total;
     $('lenMix').checked = ui.expLen !== 'full'; $('lenFull').checked = ui.expLen === 'full';
-    var ce = contentEnd();
+    var ce = contentEnd(), k = outFactor(), pct = ProjectSpeed.clean(mix.opts.speed).pct, ceOut = ProjectSpeed.outputLength(ce, k);
     $('lenMixT').textContent = '(' + fmt(ce) + ')'; $('lenFullT').textContent = '(' + fmt(mix.target) + ')';
-    $('lenNote').textContent = ui.expLen !== 'full' ? '' : ce > mix.target + 0.5 ? 'The mix runs ' + fmt(ce - mix.target) + ' past ' + fmt(mix.target) + ', so it fades out over the last 3 seconds and stops at ' + fmt(mix.target) + '.' : ce < mix.target - 0.5 ? 'The mix ends at ' + fmt(ce) + '; the background keeps playing to ' + fmt(mix.target) + '.' : '';
+    var atSpeed = k === 1 ? '' : ' at ' + pct + '%';
+    $('lenNote').textContent = ui.expLen !== 'full'
+      ? (k === 1 ? '' : 'At ' + pct + '% the file runs ' + fmt(ceOut) + ' (' + fmt(ce) + ' at normal speed).')
+      : ceOut > mix.target + 0.5 ? 'The mix runs ' + fmt(ceOut - mix.target) + ' past ' + fmt(mix.target) + atSpeed + ', so it fades out over the last 3 seconds and stops at ' + fmt(mix.target) + '.' : ceOut < mix.target - 0.5 ? 'The mix ends at ' + fmt(ceOut) + atSpeed + '; the background keeps playing to ' + fmt(mix.target) + '.' : '';
     if (ui.exporting || ui.lastExport) return;
     if (!plan.total) { say(''); return; }
     var v = videoShape();
     var rate = { mp3: 24000, wav: 192000, webm: 20000, video: (v.bitrate * 0.8 + 160000) / 8 }[ui.format];
-    var mb = exportLen() * rate / 1e6;
+    var songLen = exportLen(), outLen = ProjectSpeed.outputLength(songLen, k), mb = outLen * rate / 1e6;
     var extra = '';
     if (!mp3ok) extra += ' MP3 needs an internet connection when the page loads.';
     if (!canVideo) extra += ' Video export needs Chrome or Edge.';
@@ -14929,7 +15161,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         : ' Building it takes a few minutes for a full mix.';
       if (mix.opts.bg === 'motion' && !ui.motion) extra += ' Choose the motion background first, or it will use your Color background.';
     }
-    say(fmt(exportLen()) + ', about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + (twoFiles() ? ' MB each, two files.' : ' MB.') + extra);
+    say((k === 1 ? fmt(songLen) : fmt(outLen) + ' at ' + pct + '% (' + fmt(songLen) + ' at normal speed)') + ', about ' + (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + (twoFiles() ? ' MB each, two files.' : ' MB.') + extra);
   }
   // When the file stops before the mix does, fade the sound out over the
   // last 3 seconds instead of cutting it off.
@@ -14964,23 +15196,31 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function progress(done, total, verb) { $('barFill').style.width = (done * 100).toFixed(1) + '%'; say(verb + ' ' + fmt(total * done) + ' of ' + fmt(total) + '…'); setExportTitle('progress', done); }
   async function encodeAudioFile(pl, fmtNow, len, verb) {
     verb = verb || 'Mixing';
-    var N = Math.round(len * SR), block = 10 * SR, parts = [], enc = fmtNow === 'mp3' ? new lamejs.Mp3Encoder(2, SR, 192) : null;
-    for (var s = 0; s < N; s += block) {
-      var n = Math.min(block, N - s);
-      await Pcm.ensure(E.keysBetween(pl, s / SR, (s + n) / SR));
-      var blk = cutFade(E.renderBlock(pl, s, n, Pcm.peek), s, len, pl), l = E.toInt16(blk.L), r = E.toInt16(blk.R);
+    var k = outFactor(), N = Math.round(len * SR), block = 10 * SR, parts = [], enc = fmtNow === 'mp3' ? new lamejs.Mp3Encoder(2, SR, 192) : null;
+    var conv = Stretch.create({ factor: k, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR }), outLen = ProjectSpeed.outputLength(len, k);
+    async function write(got) {
+      var count = got.L.length;
+      if (!count) return;
+      var l = E.toInt16(got.L), r = E.toInt16(got.R);
       if (enc) {
-        for (var o = 0; o < n; o += 57600) {
+        for (var o = 0; o < count; o += 57600) {
           var out = enc.encodeBuffer(l.subarray(o, o + 57600), r.subarray(o, o + 57600));
           if (out.length) parts.push(u8(out));
           if (o % 115200 === 0) await ExportPace.yieldNow();
         }
       } else parts.push(u8(E.interleave(l, r)));
-      progress((s + n) / N, len, verb);
+    }
+    for (var s = 0; s < N; s += block) {
+      var n = Math.min(block, N - s);
+      await Pcm.ensure(E.keysBetween(pl, s / SR, (s + n) / SR));
+      var blk = cutFade(E.renderBlock(pl, s, n, Pcm.peek), s, len, pl);
+      await write(conv.push(blk.L, blk.R));
+      progress((s + n) / N, outLen, verb);
       await ExportPace.yieldNow();
     }
+    await write(conv.finish());
     if (enc) { var tail = enc.flush(); if (tail.length) parts.push(u8(tail)); }
-    else parts.unshift(new Uint8Array(E.wavHeader(N)));
+    else parts.unshift(new Uint8Array(E.wavHeader(Math.round(N / k))));
     return { blob: new Blob(parts, { type: fmtNow === 'mp3' ? 'audio/mpeg' : 'audio/wav' }), parts: parts, ext: fmtNow };
   }
   // Ways to build the video, best first: H.264 in MP4 uses the graphics
@@ -15052,41 +15292,55 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         g = cv.getContext('2d');
         if (v.motion) bgp = new Media.Player(ui.motion);
       }
-      var N = Math.round(len * SR), block = 10 * SR, f = 0, frames = Math.ceil(len * v.fps), key = v.fps * 2;
+      var speed = outFactor(), outLen = ProjectSpeed.outputLength(len, speed), motionSpeed = mix.opts.motionSpeed || 1;
+      var convs = pls.map(function () { return Stretch.create({ factor: speed, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR }); });
+      var outPos = pls.map(function () { return 0; });
+      var N = Math.round(len * SR), block = 10 * SR, f = 0, frames = Math.ceil(outLen * v.fps), key = v.fps * 2;
+      var sendAudio = function (pi, got) {
+        var count = got.L.length;
+        if (!count) return;
+        var data = new Float32Array(count * 2);
+        data.set(got.L, 0); data.set(got.R, count);
+        var ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: count, numberOfChannels: 2, timestamp: Math.round(outPos[pi] / SR * 1e6), data: data });
+        aes[pi].encode(ad); ad.close();
+        outPos[pi] += count;
+      };
+      var drawFramesUntil = async function (until) {
+        for (; f < until; f++) {
+          var outT = f / v.fps, T = outT * speed;
+          var bgFrame = bgp ? await bgp.frameAt(outT * motionSpeed) : null;
+          for (var cid in clips) {
+            var ck = clips[cid], cl = ck.layer;
+            if (T >= cl.start && T <= cl.start + cl.dur) clipFrames[cid] = await ck.player.frameAt(cl.srcIn + (T - cl.start));
+            else if (T > cl.start + cl.dur) { ck.player.close(); delete clips[cid]; delete clipFrames[cid]; }
+          }
+          paintScreen(g, v.W, v.H, T, mix.opts, bgFrame, undefined, exportSource);
+          var vf = new VideoFrame(cv, { timestamp: Math.round(f * 1e6 / v.fps), duration: Math.round(1e6 / v.fps) });
+          ve.encode(vf, { keyFrame: f % key === 0 });
+          vf.close();
+          await ExportPace.untilRoom(ve, 6);
+          if (err) throw err;
+          if (f % 15 === 0) { progress(f / frames, outLen, 'Building the video'); await ExportPace.yieldNow(); }
+        }
+      };
       for (var s = 0; s < N; s += block) {
         var n = Math.min(block, N - s);
         var keys = [];
         pls.forEach(function (p) { E.keysBetween(p, s / SR, (s + n) / SR).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); }); });
         await Pcm.ensure(keys);
         pls.forEach(function (p, pi) {
-          var blk = cutFade(E.renderBlock(p, s, n, Pcm.peek), s, len, p), data = new Float32Array(n * 2);
-          data.set(blk.L, 0); data.set(blk.R, n);
-          var ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(s / SR * 1e6), data: data });
-          aes[pi].encode(ad); ad.close();
+          var blk = cutFade(E.renderBlock(p, s, n, Pcm.peek), s, len, p);
+          sendAudio(pi, convs[pi].push(blk.L, blk.R));
         });
-        if (withVideo) {
-          var until = Math.min(frames, Math.ceil((s + n) / SR * v.fps));
-          for (; f < until; f++) {
-            var frame = bgp ? await bgp.frameAt(f / v.fps * (mix.opts.motionSpeed || 1)) : null, T = f / v.fps;
-            for (var cid in clips) {
-              var ck = clips[cid], cl = ck.layer;
-              if (T >= cl.start && T <= cl.start + cl.dur) clipFrames[cid] = await ck.player.frameAt(cl.srcIn + (T - cl.start));
-              else if (T > cl.start + cl.dur) { ck.player.close(); delete clips[cid]; delete clipFrames[cid]; }
-            }
-            paintScreen(g, v.W, v.H, T, mix.opts, frame, undefined, exportSource);
-            var vf = new VideoFrame(cv, { timestamp: Math.round(f * 1e6 / v.fps), duration: Math.round(1e6 / v.fps) });
-            ve.encode(vf, { keyFrame: f % key === 0 });
-            vf.close();
-            await ExportPace.untilRoom(ve, 6);
-            if (err) throw err;
-            if (f % 15 === 0) { progress(f / frames, len, 'Building the video'); await ExportPace.yieldNow(); }
-          }
-        }
+        if (withVideo) await drawFramesUntil(Math.min(frames, Math.ceil(outPos[0] / SR * v.fps)));
         for (var ai2 = 0; ai2 < aes.length; ai2++) await ExportPace.untilRoom(aes[ai2], 4);
         if (err) throw err;
-        progress((s + n) / N, len, withVideo ? 'Building the video' : 'Mixing');
+        progress((s + n) / N, outLen, withVideo ? 'Building the video' : 'Mixing');
         await ExportPace.yieldNow();
       }
+      convs.forEach(function (conv, pi) { sendAudio(pi, conv.finish()); });
+      if (withVideo) await drawFramesUntil(frames);
+      if (err) throw err;
       if (ve) await ve.flush();
       for (var ai = 0; ai < aes.length; ai++) await aes[ai].flush();
       if (err) throw err;
@@ -15129,7 +15383,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     if (ui.exporting || !plan.total) return;
     Player.stop();
     var pl = plan, fmtNow = ui.format, lock = null, len = exportLen();
-    var base = ExportName.safe($('fileName').value) || defaultFileName();
+    var base = (ExportName.safe($('fileName').value) || defaultFileName()) + ProjectSpeed.fileSuffix(mix.opts.speed, WS.id);
     ui.exporting = true; ui.lastExport = null;
     $('saveAgain').hidden = true; $('bar').hidden = false; $('barFill').style.width = '0%'; $('exportBtn').disabled = true;
     setExportTitle('progress', 0);
@@ -17095,6 +17349,9 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     ['fmtMp3', 'fmtWav', 'fmtWebm', 'fmtVideo'].forEach(function (id) {
       $(id).onchange = function () { ui.format = this.value; lsSet('hp.format', ui.format); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); };
     });
+    $('outSpeed').onchange = function () { setProjectSpeed(Object.assign({}, mix.opts.speed, { pct: parseInt(this.value, 10) })); };
+    ['keepPitch', 'letPitch'].forEach(function (id) { $(id).onchange = function () { setProjectSpeed(Object.assign({}, mix.opts.speed, { keepPitch: id === 'keepPitch' })); }; });
+    ['projSpeedPill', 'projSpeedPillHead'].forEach(function (id) { $(id).onclick = openProjectSpeed; });
     ['vexpBoth', 'vexpVocals', 'vexpMusic'].forEach(function (id) { $(id).onchange = function () { setVocalExport(VocalExport.withPick(VocalExport.clean(mix.vocalExport), this.value)); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); }; });
     $('exportBtn').onclick = exportMix;
     $('saveAgain').onclick = deliver;
