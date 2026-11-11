@@ -1106,11 +1106,13 @@ html:not([data-workspace="karaoke"]) [data-karaoke-only] { display: none !import
           </fieldset>
           <label id="vidSizeRow">Video size <select id="vidSize"><option value="720">720p, matches what Zoom sends, faster to build</option><option value="1080">1080p</option></select></label>
           <fieldset class="btnrow" id="speedRowOut" data-karaoke-only style="border:0;padding:0;margin:0">
-            <legend class="note" style="width:100%;padding:0;margin-bottom:4px">Speed of the song</legend>
+            <legend class="note" style="width:100%;padding:0;margin-bottom:4px">Speed and key of the song</legend>
             <label for="outSpeed" class="visually-hidden">Speed of the song</label>
             <select id="outSpeed"></select>
             <label><input type="radio" name="pitch" id="keepPitch" value="keep"> Keep the pitch</label>
             <label><input type="radio" name="pitch" id="letPitch" value="tape"> Let the pitch change with it</label>
+            <label>Key <select id="outKey"></select></label>
+            <p class="note" id="outKeyNote" style="width:100%">Moves the whole song up or down in half steps without changing its speed. 3 lower turns a high F into a D. Small changes sound the most natural.</p>
             <p class="note" id="outSpeedNote" style="width:100%">The preview plays at this speed, and the export uses it. The 1.25×–2× preview buttons are for checking quickly and don't change the export.</p>
           </fieldset>
           <fieldset class="btnrow" id="versionsRow" data-karaoke-only style="border:0;padding:0;margin:0">
@@ -4520,14 +4522,16 @@ var ExportName = (function () {
 
 /* Project speed (karaoke): how fast the song plays in the preview and the export. Pure functions. */
 var ProjectSpeed = (function () {
-  var DEFAULTS = { pct: 100, keepPitch: true };
+  var DEFAULTS = { pct: 100, keepPitch: true, semis: 0 };
   var MIN = 75, MAX = 125, STEP = 5;
+  var KEY_MIN = -6, KEY_MAX = 6;
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
   function clean(raw) {
     var out = Object.assign({}, DEFAULTS);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
     if (isNum(raw.pct)) out.pct = Math.max(MIN, Math.min(MAX, Math.round(raw.pct / STEP) * STEP));
     out.keepPitch = raw.keepPitch !== false;
+    if (isNum(raw.semis)) out.semis = Math.max(KEY_MIN, Math.min(KEY_MAX, Math.round(raw.semis))) || 0;
     return out;
   }
   function steps() {
@@ -4539,19 +4543,39 @@ var ProjectSpeed = (function () {
   function isNormal(setting, workspaceId) { return factor(setting, workspaceId) === 1; }
   function outputLength(songSeconds, k) { return songSeconds / k; }
   function songTimeAt(outputSeconds, k) { return outputSeconds * k; }
-  function label(setting) {
-    var s = clean(setting);
-    return 'Project speed ' + s.pct + '% · ' + (s.keepPitch ? 'keep pitch' : 'pitch changes');
+  function semis(setting, workspaceId) { return workspaceId === 'karaoke' ? clean(setting).semis : 0; }
+  function keyRatio(setting, workspaceId) { return Math.pow(2, semis(setting, workspaceId) / 12); }
+  function isOriginalKey(setting, workspaceId) { return semis(setting, workspaceId) === 0; }
+  function isUnchanged(setting, workspaceId) { return isNormal(setting, workspaceId) && isOriginalKey(setting, workspaceId); }
+  function keySteps() {
+    var out = [];
+    for (var s = KEY_MIN; s <= KEY_MAX; s++) out.push(s);
+    return out;
   }
-  function fileSuffix(setting, workspaceId) { return isNormal(setting, workspaceId) ? '' : ' (' + clean(setting).pct + '%)'; }
+  function keyText(value) { return value > 0 ? '+' + value : value < 0 ? '−' + Math.abs(value) : '0'; }
+  function label(setting) {
+    var s = clean(setting), parts = [];
+    if (s.pct !== 100) parts.push('Project speed ' + s.pct + '% · ' + (s.keepPitch ? 'keep pitch' : 'pitch changes'));
+    if (s.semis !== 0) parts.push((parts.length ? 'key ' : 'Key ') + keyText(s.semis));
+    return parts.join(' · ');
+  }
+  function fileSuffix(setting, workspaceId) {
+    if (workspaceId !== 'karaoke') return '';
+    var s = clean(setting), parts = [];
+    if (s.pct !== 100) parts.push(s.pct + '%');
+    if (s.semis !== 0) parts.push((s.semis > 0 ? '+' : '-') + Math.abs(s.semis) + ' key');
+    return parts.length ? ' (' + parts.join(', ') + ')' : '';
+  }
   return {
-    DEFAULTS: DEFAULTS, MIN: MIN, MAX: MAX, STEP: STEP,
-    clean: clean, steps: steps, factor: factor, isNormal: isNormal, outputLength: outputLength, songTimeAt: songTimeAt, label: label, fileSuffix: fileSuffix
+    DEFAULTS: DEFAULTS, MIN: MIN, MAX: MAX, STEP: STEP, KEY_MIN: KEY_MIN, KEY_MAX: KEY_MAX,
+    clean: clean, steps: steps, factor: factor, isNormal: isNormal, outputLength: outputLength, songTimeAt: songTimeAt, label: label, fileSuffix: fileSuffix,
+    semis: semis, keyRatio: keyRatio, isOriginalKey: isOriginalKey, isUnchanged: isUnchanged, keySteps: keySteps, keyText: keyText
   };
 })();
 
 /* Plays stereo audio faster or slower, a piece at a time: song-time samples in, output-time samples out.
    Keep pitch overlaps short windows placed where they match best (WSOLA); tape style resamples, so the pitch moves too.
+   Can also move the pitch without changing the length: stretch by factor/pitch, then resample by pitch.
    The total output is always Math.round(input / factor) samples, whatever the audio. Pure functions. */
 var Stretch = (function () {
   var NONE = new Float32Array(0);
@@ -4679,12 +4703,37 @@ var Stretch = (function () {
       }
     };
   }
+  function shift(factor, pitch, sampleRate) {
+    var a = keepPitch(factor / pitch, sampleRate), b = tape(pitch), total = 0, made = 0;
+    return {
+      push: function (L, R) {
+        checkPair(L, R);
+        total += L.length;
+        var mid = a.push(L, R);
+        var got = mid.L.length ? b.push(mid.L, mid.R) : { L: NONE, R: NONE };
+        made += got.L.length;
+        return got;
+      },
+      finish: function () {
+        var mid = a.finish(), got = mid.L.length ? b.push(mid.L, mid.R) : { L: NONE, R: NONE }, last = b.finish();
+        var L = join(got.L, last.L), R = join(got.R, last.R), need = Math.round(total / factor) - made;
+        // Pushed output always trails the target (WSOLA lookahead, resampler hold), so only this tail is ever trimmed.
+        if (L.length > need) { L = L.subarray(0, need); R = R.subarray(0, need); }
+        else if (L.length < need) { L = join(L, new Float32Array(need - L.length)); R = join(R, new Float32Array(need - R.length)); }
+        return { L: L, R: R };
+      }
+    };
+  }
   function create(opts) {
     var factor = opts && opts.factor, rate = opts && opts.sampleRate;
     if (typeof factor !== 'number' || !isFinite(factor) || factor <= 0) throw new Error('Stretch needs a speed above 0');
-    if (factor === 1) return passThrough();
+    var pitch = opts.pitch === undefined ? (opts.keepPitch === false ? factor : 1) : opts.pitch;
+    if (typeof pitch !== 'number' || !isFinite(pitch) || pitch <= 0) throw new Error('Stretch needs a pitch above 0');
+    if (factor === 1 && pitch === 1) return passThrough();
     if (typeof rate !== 'number' || !isFinite(rate) || rate <= 0) throw new Error('Stretch needs a sample rate');
-    return opts.keepPitch === false ? tape(factor) : keepPitch(factor, rate);
+    if (pitch === factor) return tape(factor);
+    if (pitch === 1) return keepPitch(factor, rate);
+    return shift(factor, pitch, rate);
   }
   return { create: create };
 })();
@@ -8283,7 +8332,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       var project = isProjectSpeedTag(tag) ? outFactor() : 1;
       var quick = tag === 'rec' ? ui.rec.speed : tag === 'pulse' ? 1 : isMixTag(tag) ? ui.speed : 1;
       Player.rate = project * quick; Player.bufRate = quick;
-      var conv = Stretch.create({ factor: project, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR });
+      var conv = isMixTag(tag) ? convFor(project) : Stretch.create({ factor: 1, sampleRate: SR });
       syncPlay();
       var pos = Math.round(from * SR), end = Math.round(to * SR), when = 0, first = true, out = Player.ctx.destination;
       if (tag === 'pulse' && !ui.pulseSound) { out = Player.ctx.createGain(); out.gain.value = 0; out.connect(Player.ctx.destination); }
@@ -8327,6 +8376,11 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   function isMixTag(t) { return t === 'mix' || t === 'rec' || t === 'pulse' || (t && (t.indexOf('seam:') === 0 || t.indexOf('voice:') === 0)); }
   function isProjectSpeedTag(t) { return isMixTag(t) && t !== 'rec' && t !== 'pulse'; }
   function outFactor() { return ProjectSpeed.factor(mix.opts.speed, WS.id); }
+  // The key applies whenever the song plays, even at normal speed (recording, the pulse preview).
+  function convFor(project) {
+    var set = mix.opts.speed, pitch = ProjectSpeed.keyRatio(set, WS.id) * (set.keepPitch === false ? project : 1);
+    return Stretch.create({ factor: project, pitch: pitch, sampleRate: SR });
+  }
   function heardNow() {
     var lag = (Player.ctx && (Player.ctx.outputLatency || Player.ctx.baseLatency)) || 0;
     return Math.max(0, Player.now() - lag * Player.rate);
@@ -8408,22 +8462,30 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     syncPlay();
   }
   function setProjectSpeed(next) {
-    var playing = Player.tag && isProjectSpeedTag(Player.tag), at = playing ? Player.now() : 0;
+    var playing = Player.tag && isProjectSpeedTag(Player.tag), at = playing ? Player.now() : 0, pulsing = Player.tag === 'pulse';
     mix.opts.speed = ProjectSpeed.clean(next);
     ui.lastExport = null; $('saveAgain').hidden = true;
     changed();
     if (playing) playMix(at);
+    else if (pulsing) startPulsePreview();
     renderProjectSpeed();
   }
   function renderProjectSpeed() {
-    var set = ProjectSpeed.clean(mix.opts.speed), normal = ProjectSpeed.isNormal(set, WS.id);
+    var set = ProjectSpeed.clean(mix.opts.speed), normal = ProjectSpeed.isUnchanged(set, WS.id);
     var text = normal ? '' : ProjectSpeed.label(set) + (ui.speed !== 1 ? ' · preview ' + ui.speed + '×' : '');
     ['projSpeedPill', 'projSpeedPillHead'].forEach(function (id) {
       var pill = $(id);
       pill.hidden = normal;
       pill.textContent = text;
-      pill.title = 'Change the project speed in Export';
+      pill.title = 'Change the speed or key in Export';
     });
+    var keyBox = $('outKey');
+    if (!keyBox.options.length) keyBox.innerHTML = ProjectSpeed.keySteps().slice().reverse().map(function (s) {
+      return '<option value="' + s + '">' + ProjectSpeed.keyText(s) + (s > 0 ? ' (higher)' : s < 0 ? ' (lower)' : ' (original key)') + '</option>';
+    }).join('');
+    keyBox.value = String(set.semis);
+    keyBox.disabled = !!ui.rec;
+    keyBox.title = ui.rec ? 'Stop recording to change the key' : '';
     var box = $('outSpeed');
     if (!box.options.length) box.innerHTML = ProjectSpeed.steps().map(function (p) { return '<option value="' + p + '">' + (p === 100 ? '100% (normal)' : p + '%') + '</option>'; }).join('');
     box.value = String(set.pct);
@@ -14355,8 +14417,10 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
     } finally { finishingRec = false; }
   }
   function recNormalSpeedPill() {
-    if (ProjectSpeed.isNormal(mix.opts.speed, WS.id)) return '';
-    return '<span class="pill">' + esc('Recording at normal speed (project is ' + ProjectSpeed.clean(mix.opts.speed).pct + '%)') + '</span>';
+    var out = '';
+    if (!ProjectSpeed.isNormal(mix.opts.speed, WS.id)) out += '<span class="pill">' + esc('Recording at normal speed (project is ' + ProjectSpeed.clean(mix.opts.speed).pct + '%)') + '</span>';
+    if (!ProjectSpeed.isOriginalKey(mix.opts.speed, WS.id)) out += '<span class="pill">' + esc('Playing in key ' + ProjectSpeed.keyText(ProjectSpeed.semis(mix.opts.speed, WS.id))) + '</span>';
+    return out;
   }
   function renderBeatRec(bar, rec) {
     var a = findItem('anims', rec.animId);
@@ -14884,6 +14948,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   }
   function renderRec() {
     renderShapeToggle();
+    renderProjectSpeed();
     var bar = $('recBar'), rec = ui.rec;
     bar.hidden = !rec;
     if (!rec) { setHTML(bar, ''); return; }
@@ -15690,7 +15755,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
   async function encodeAudioFile(pl, fmtNow, len, verb) {
     verb = verb || 'Mixing';
     var k = outFactor(), N = Math.round(len * SR), block = 10 * SR, parts = [], enc = fmtNow === 'mp3' ? new lamejs.Mp3Encoder(2, SR, 192) : null;
-    var conv = Stretch.create({ factor: k, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR }), outLen = ProjectSpeed.outputLength(len, k);
+    var conv = convFor(k), outLen = ProjectSpeed.outputLength(len, k);
     async function write(got) {
       var count = got.L.length;
       if (!count) return;
@@ -15786,7 +15851,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
         if (v.motion) bgp = new Media.Player(ui.motion);
       }
       var speed = outFactor(), outLen = ProjectSpeed.outputLength(len, speed), motionSpeed = mix.opts.motionSpeed || 1;
-      var convs = pls.map(function () { return Stretch.create({ factor: speed, keepPitch: mix.opts.speed.keepPitch, sampleRate: SR }); });
+      var convs = pls.map(function () { return convFor(speed); });
       var outPos = pls.map(function () { return 0; });
       var N = Math.round(len * SR), block = 10 * SR, f = 0, frames = Math.ceil(outLen * v.fps), key = v.fps * 2;
       var sendAudio = function (pi, got) {
@@ -17903,6 +17968,7 @@ var SAMPLES = [{"key":"sample:1","name":"Sample tone 1, A major","freqs":[220,27
       $(id).onchange = function () { ui.format = this.value; lsSet('hp.format', ui.format); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); };
     });
     $('outSpeed').onchange = function () { setProjectSpeed(Object.assign({}, mix.opts.speed, { pct: parseInt(this.value, 10) })); };
+    $('outKey').onchange = function () { setProjectSpeed(Object.assign({}, mix.opts.speed, { semis: parseInt(this.value, 10) })); };
     ['keepPitch', 'letPitch'].forEach(function (id) { $(id).onchange = function () { setProjectSpeed(Object.assign({}, mix.opts.speed, { keepPitch: id === 'keepPitch' })); }; });
     ['projSpeedPill', 'projSpeedPillHead'].forEach(function (id) { $(id).onclick = openProjectSpeed; });
     ['vexpBoth', 'vexpVocals', 'vexpMusic'].forEach(function (id) { $(id).onchange = function () { setVocalExport(VocalExport.withPick(VocalExport.clean(mix.vocalExport), this.value)); ui.lastExport = null; $('saveAgain').hidden = true; renderExportNote(); }; });

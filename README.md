@@ -298,7 +298,7 @@ Known limits: in separate boxes, `=` only links to Column 1; with many columns e
 
 **Two versions.** In karaoke, **Export** has a **Versions** choice: **Both, as two files**, **With vocals** or **Music only**. Both is the default, and each project remembers your choice. Both files have the same picture. In the music-only one, every track marked Vocal is silent and every track marked Instrumental plays, whatever their Sound ticks say. The files end in `-with-vocals` and `-music-only`. Both are built in one pass, so it takes about as long as one. Export shows when you last exported and which versions you made. If no track is marked Vocal, the choice is greyed out and you get one file, as before. Clips over the music keep their own sound in both versions.
 
-**Project speed.** In karaoke, **Export** has **Speed of the song**, from 75% to 125% in steps of 5% (100% is normal). Each project remembers its speed, and changing it is one Undo step.
+**Project speed.** In karaoke, **Export** has **Speed and key of the song**. The speed goes from 75% to 125% in steps of 5% (100% is normal). Each project remembers its speed, and changing it is one Undo step.
 
 - **Keep the pitch** (the default) only changes the tempo, so the song is slower or faster but in the same key. **Let the pitch change with it** works like a tape: slower is lower, faster is higher. At 100% the pitch choice is greyed out.
 - The preview always plays at the project speed. When it isn't 100%, a label such as *Project speed 90% · keep pitch* shows next to the clock and in the floating preview's controls. Click it to jump to the setting. Changing the speed while the song plays carries on from the same spot.
@@ -307,7 +307,8 @@ Known limits: in separate boxes, `=` only links to Column 1; with many columns e
 - The file always runs to the end of the project (see Project length), so at 90% a project that ends at 3:20 makes a 3:42 file. **Exactly the length to cover** is on the hymn page only.
 - The file name gets the speed when it isn't 100%, for example `Song-2026-11-03 (90%)` or `Song-2026-11-03 (90%)-music-only`. The name box and a remembered name stay as they are.
 - Recording lyric timing or beats ignores the project speed: it plays at normal speed (or the recorder's own 0.75× / 0.5×), and the recording bar says so. Timing is always saved at normal speed, so changing the project speed never moves your timing.
-- The hymn side has no project speed.
+- **Key** moves the whole song up or down in half steps, from 6 lower to 6 higher, without changing its speed. For example, 3 lower turns a high F into a D. Both tracks and both exported versions change together, and the preview plays in the new key straight away, so you can find it by ear. It works with any speed; with **Let the pitch change with it**, the key adds to the pitch change. Recording word timing and beats plays in the new key. The label shows it, for example *Key −3*, and the file name gets it, for example `Song-2026-11-11 (90%, -3 key)`. Small changes (2–3) sound the most natural; voices start to sound odd beyond about 4. Changing it is one Undo step. The Tracks window and Trim play the original file.
+- The hymn side has no project speed or key.
 
 ### Scripture collection
 
